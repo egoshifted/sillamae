@@ -7,3 +7,7 @@ export function shadowCoverage(camera, target) {
   const halfHeight = (camera.top-camera.bottom)/(2*camera.zoom);
   return Math.ceil((Math.hypot(halfWidth,halfHeight/vertical)+150/vertical+100)/50)*50;
 }
+// Detail quality depends on vertical framing, not the browser's aspect ratio.
+export function useBuildingShadowDetail(camera,target,anchor){
+  return (camera.top-camera.bottom)/camera.zoom<110 && target.distanceTo(anchor)<55;
+}
