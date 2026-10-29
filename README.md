@@ -6,7 +6,7 @@ Search for an address, drag to move, scroll to zoom, and use the rotation button
 
 ## Develop
 
-Requires Node.js 22 or newer.
+Requires Node.js 24 or newer.
 
 ```
 npm install
@@ -30,10 +30,12 @@ Buildings are grouped into blocks: areas enclosed by streets and the edge of the
 Code layout:
 
 - `src/engine/`: the renderer. It knows nothing about a particular town.
-- `src/city/sillamae/`: town settings and refined building models (Kesk 1).
+- `src/city/sillamae/`: town settings and refined building models (Kesk 1 and Kesk 5).
 - `src/app/`: the on-screen controls, in React. The engine is created once outside React's render cycle; components use its API.
 
 The build uses relative URLs, so `dist/` works under a repository subdirectory. It needs a modern browser supporting WebGL and DecompressionStream.
+
+Kesk 5 is the current refinement target. Its plain shape is approved; the detailed model remains in progress. Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository.
 
 ## Publish with GitHub Pages
 

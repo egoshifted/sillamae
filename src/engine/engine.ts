@@ -107,7 +107,7 @@ export class Engine {
     for (const o of this.#city.overrides) {
       const building = this.#building(o.id), ground = this.#data.siteGround[o.id];
       if (!ground) throw new Error(`No site ground for ${o.id}; rebuild the data`);
-      const built = o.build({scene: this.#scene, building, terrain: this.#data.terrain, frame: this.frame, ground});
+      const built = o.build({scene: this.#scene, building, terrain: this.#data.terrain, frame: this.frame, ground, changed: () => { this.#redraw = true; }});
       this.#built.set(o.id, built);
       if (built.ready) ready.push(built.ready);
       tagBuilding(built.root, building.pick);
