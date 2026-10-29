@@ -29,6 +29,10 @@ Rules for AI coding agents (and people) working in this repository. The code and
 - Refactors that should not change rendering must keep fixed views pixel-identical to the last accepted build (renders are deterministic). Survey bucket order is preserved because equal-depth survey meshes draw in creation order.
 - For headless checks against the dev server pass `--host 127.0.0.1`; Vite listens on IPv6 `localhost` by default.
 
+## Documentation
+
+- Keep README.md for global and structural documentation. Do not add individual building updates, progress notes or review status; keep these in the local review records outside the repository.
+
 ## Scope
 
 - People/agents simulation is deferred by the project owner. Do not start it unprompted.

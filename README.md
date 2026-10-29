@@ -35,7 +35,7 @@ Code layout:
 
 The build uses relative URLs, so `dist/` works under a repository subdirectory. It needs a modern browser supporting WebGL and DecompressionStream.
 
-Kesk 5 is the current refinement target. Its plain shape is approved; the detailed model remains in progress. Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository.
+Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository.
 
 ## Publish with GitHub Pages
 

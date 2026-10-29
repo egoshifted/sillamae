@@ -1,16 +1,18 @@
-import {preloadFelt} from './felt.js';
+import {createRearSurroundings} from '../surroundings/rear-access.js';
+import {preloadSurfaces} from './surfaces.js';
+import {orthogonalPlan} from './plan.ts';
 import {addSteppedApartment} from './model.js';
 import {concat, readTriangle, splitPolygon, type SurveyVertex} from '../../../engine/survey/carve.ts';
 import {TRIANGLE, type Building, type BuildingOverride, type Point2} from '../../../engine/types.ts';
 
-// Verified Kesk 1 settings. Floor indices are zero-based (L1 = 0).
+// Floor indices are zero-based (L1 = 0).
 // These settings are not evidence for other addresses.
 export const kesk1Design = Object.freeze({
   height: 28.5, floors: 9, floorPitch: 2.85,
   foundationLevel: 12.8, // survey height of local Y = 0
   balconyEdges: [2, 9, 11, 13, 18],
   openBalconies: [[2, 6], [18, 1]],
-  rearBrownFloors: [2, 4, 6, 8],
+  rearBrownFloors: [2, 4, 6, 8], balconyFrameInset: .09,
   number: '1', street: 'Kesk tn',
   // Individually counted from supplied June/September 2023 Street View elevations.
   vents: [{edge: 1, count: 5}, {edge: 4, count: 2}, {edge: 8, count: 8}, {edge: 14, count: 7}, {edge: 16, count: 1}],
@@ -20,19 +22,26 @@ export const kesk1Design = Object.freeze({
   liftRoofDetails: true, // Rear door and small rooftop cowl from the user's aerial reference; dimensions approximate.
   // Aerial-supported relationships; dimensions provisional pending review.
   steppedFacadeEdges: [2, 9, 11, 13, 18], balconyShoulder: .26, roofShelfDepth: .45, baseProjection: .35,
-  sideWallStep: {edge: 8, width: .60, depth: .12}, entranceReturnStep: {edge: 7, widthFraction: .60, projection: .12},
+  sideWallStep: {edge: 8, width: .60, depth: .12}, entranceReturnStep: {edge: 7, widthFraction: 1 / 3, projection: .12},
 });
 
 export const kesk1: BuildingOverride = {
   id: '213321385',
-  carveSurvey: carveEntrancePit,
-  preload: preloadFelt,
-  build({scene, building, terrain, frame, ground}) {
-    const root = addSteppedApartment(scene, building, {...terrain, siteGround: ground}, kesk1Design, frame);
-    return {root, groundPatches: root.userData.groundPatches ?? [], setTextures: root.userData.setTextures, ready: root.userData.ready};
+  carveSurvey(vertices, building) {
+    building.g = orthogonalPlan(building.g);
+    return carveEntrancePit(vertices, building);
   },
-  // Main door at the foot of the edge 6 stair, rear door below the edge 16 steps.
-  // Positions follow the model's entrance layout (see model.js).
+  preload: preloadSurfaces,
+  build({scene, building, terrain, frame, ground, changed}) {
+    const siteGround = ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10);
+    const root = addSteppedApartment(scene, building, {...terrain, siteGround}, kesk1Design, frame);
+    const surroundings = createRearSurroundings(building, terrain, frame, siteGround);
+    scene.add(surroundings);
+    const dispose = root.userData.dispose;
+    root.userData.dispose = () => { surroundings.userData.dispose(); dispose(); };
+    root.userData.ready.then(() => changed?.());
+    return {root, groundPatchMinHeight: 10, groundPatches: [...(root.userData.groundPatches ?? []), ...surroundings.userData.groundPatches], setTextures: root.userData.setTextures};
+  },
   entrances: building => [facePoint(building, 6, .2394, 3), facePoint(building, 16, .5, 2.7)],
   view: {offset: [110, 80, 45], span: 65},
   detailShadows: true,
@@ -59,7 +68,7 @@ function carveEntrancePit(vertices: Float32Array, building: Building, bounds?: {
   const out: number[] = [], chunks: Float32Array[] = [];
   let runStart = 0;
   for (let i = 0; i < vertices.length; i += TRIANGLE) {
-    if (vertices[i + 6]) continue;
+    if (vertices[i + 6] || Math.max(vertices[i + 2], vertices[i + 9], vertices[i + 16]) < 10) continue;
     const corners = [i, i + 7, i + 14].map(j => [vertices[j], vertices[j + 1]]);
     const s = corners.map(along), d = corners.map(across);
     if (Math.max(...s) < min || Math.min(...s) > max || Math.max(...d) < minD || Math.min(...d) > depth) continue;
