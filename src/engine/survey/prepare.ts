@@ -25,7 +25,7 @@ export function prepareSurvey(vertices: Float32Array, data: SceneData, city: Cit
     const site = {minX: Math.min(...xs) - SITE_MARGIN, maxX: Math.max(...xs) + SITE_MARGIN, minZ: Math.min(...zs) - SITE_MARGIN, maxZ: Math.max(...zs) + SITE_MARGIN};
     const ground = siteGround[o.id] = groundWithin(vertices, site);
     const built = o.build({scene: new THREE.Scene(), building: b, terrain: data.terrain, frame, ground});
-    vertices = carveGroundPatches(vertices, built.groundPatches);
+    vertices = carveGroundPatches(vertices, built.groundPatches, built.groundPatchMinHeight);
     sites.push(site);
     skip.add(b.pick);
   }

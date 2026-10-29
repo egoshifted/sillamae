@@ -67,6 +67,7 @@ export interface OverrideContext {
 export interface BuiltOverride {
   root: THREE.Object3D;
   groundPatches: Polygon[];
+  groundPatchMinHeight?: number; // exclude underlying water planes from material replacement
   setTextures(enabled: boolean): void;
   ready?: Promise<unknown>; // textures painted off the main thread
 }

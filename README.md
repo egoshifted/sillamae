@@ -35,6 +35,8 @@ Code layout:
 
 The build uses relative URLs, so `dist/` works under a repository subdirectory. It needs a modern browser supporting WebGL and DecompressionStream.
 
+Kesk 1 restores the approved local model and the 28 October reduced-resolution roof textures. Rear stair supports extend to the current site ground while retaining their tread elevations. Its fitted footprint is shared by the model, navigation and offline ground preparation; runtime PNGs load without blocking the plain preview.
+
 Kesk 5 is the current refinement target. Its plain shape is approved; the detailed model remains in progress. Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository.
 
 ## Publish with GitHub Pages
