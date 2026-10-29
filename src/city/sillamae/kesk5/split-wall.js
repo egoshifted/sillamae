@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-// Split existing wall surfaces at a local elevation without adding overlay faces.
-// Interpolate every vertex attribute so the two materials own adjacent surfaces.
 export function splitWallAtHeight(root,height){
  for(const mesh of [...root.children].filter(m=>m.name.startsWith('wall-')||m.name.startsWith('shared-return-'))){const g=mesh.geometry.index?mesh.geometry.toNonIndexed():mesh.geometry.clone(),p=g.getAttribute('position'),n=g.getAttribute('normal'),uv=g.getAttribute('uv'),bounds=new THREE.Box3().setFromBufferAttribute(p),cut=height-mesh.position.y;
   if(bounds.max.y<=cut+1e-8){mesh.userData.basePart=true;g.dispose();continue;}if(bounds.min.y>=cut-1e-8){mesh.userData.basePart=false;g.dispose();continue;}

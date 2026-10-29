@@ -3,7 +3,6 @@ import {createOffsetSlabStudy} from './offset-slab.js';
 import {splitWallAtHeight} from './split-wall.js';
 import {applyWindowLintels} from './lintel-surfaces.js';
 
-// A separate, reversible detail study. The approved plain generator is unchanged.
 // Materials and frames are an initial September 2023 entrance-side pass, not
 // a claim that individual windows or terrain are fully surveyed.
 export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, sharedRoof){
@@ -15,8 +14,6 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
  audit.detailDoorWidth={width:spec.doorWidth,basis:'Inner red-jamb faces; Anton 28 October 2026',inferred:true};
  // Illustrative brick bond with a provisional metre-scale module.
  function brickTexture(red,relief=false){
-  // White masonry: alternating stretcher/header courses with chipped edges,
-  // irregular joints and occasional proud mortar, interpreted from June 2012.
   const w=512,h=512,data=new Uint8Array(w*h*4),hash=(a,b)=>{let v=Math.imul(a+7919,b+3719);v=Math.imul(v^(v>>>13),1274126177);return (v>>>0)/4294967296;};
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
    const row=Math.floor(y*12/h),pitch=row%2?32:64,shift=(row%4>=2?pitch/2:0),col=Math.floor((x+shift)/pitch),r=hash(row,col),xx=(x+shift)%pitch,yy=y-row*h/12;
@@ -35,7 +32,6 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
  function canopyTexture(){const w=256,h=64,data=new Uint8Array(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const v=x%16<3?60:76,i=(y*w+x)*4;data.set([v,v+4,v+3,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  const textures=[brickTexture(false),brickTexture(true),panelTexture(),roofTexture(),brickTexture(false,true),brickTexture(true,true),roughcast(),roughcast(true),canopyTexture()];
  if(sharedMasonry){textures[1].dispose();textures[5].dispose();textures[1]=sharedMasonry[0];textures[5]=sharedMasonry[1];for(const [i,index] of [[1,0],[5,1]])textures[i].userData.sharedSurface={key:'masonry-v1',index};}
- // Existing approved roof surfaces are leased by key, never copied as pixels.
  textures[3].userData.sharedSurface={key:'felt-colour-v1',index:0};
  const neutral=new THREE.DataTexture(new Uint8Array([128,128,128,255]),1,1);neutral.wrapS=neutral.wrapT=THREE.RepeatWrapping;neutral.needsUpdate=true;neutral.userData.sharedSurface={key:'felt-relief-v1',index:0};textures.push(neutral);
  if(sharedRoof){textures[3].dispose();textures[9].dispose();textures[3]=sharedRoof[0];textures[9]=sharedRoof[1];textures[3].userData.sharedSurface={key:'felt-colour-v1',index:0};textures[9].userData.sharedSurface={key:'felt-relief-v1',index:0};}
@@ -67,15 +63,10 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
  // The aerial shows twelve elongated upstands with pale tops. The shallow
  // sheet cap and 20 mm overhang are inferred, not surveyed.
  for(const m of [...root.children].filter(m=>m.name==='roof-vent')){const {width,height,depth}=m.geometry.parameters,g=new THREE.BoxGeometry(width+.04,.04,depth+.04),cap=new THREE.Mesh(g,mats.ventCap);cap.position.copy(m.position);cap.position.y+=height/2+.02;cap.rotation.copy(m.rotation);cap.name='detail-roof-upstand-cap';cap.castShadow=true;cap.receiveShadow=true;root.add(cap);}
- // Corrugation runs out from the facade across each entrance canopy.
  for(const m of root.children.filter(m=>m.name==='canopy')){const p=m.geometry.attributes.position,uv=m.geometry.attributes.uv;for(let i=0;i<p.count;i++)uv.setXY(i,p.getX(i),p.getZ(i));uv.needsUpdate=true;}
- // Roughcast follows each physical surface at approximately two metres per tile.
  root.updateMatrixWorld(true);for(const m of root.children.filter(m=>m.material===mats.foundation)){const p=m.geometry.attributes.position,n=m.geometry.attributes.normal,uv=m.geometry.attributes.uv,v=new THREE.Vector3(),normal=new THREE.Vector3();for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);normal.fromBufferAttribute(n,i).transformDirection(m.matrixWorld);uv.setXY(i,(Math.abs(normal.y)>.5?v.x:Math.abs(normal.x)>.5?v.z:v.x)/2,(Math.abs(normal.y)>.5?v.z:v.y)/2);}uv.needsUpdate=true;}
- // Roof texture uses local plan metres, independent of the facade bond.
  for(const m of root.children.filter(m=>m.name==='roof')){const pos=m.geometry.attributes.position,uv=m.geometry.attributes.uv;for(let i=0;i<pos.count;i++)uv.setXY(i,pos.getX(i)/16,pos.getZ(i)/16);uv.needsUpdate=true;}
- // Panel texture represents narrow vertical corrugations below a smooth band.
  for(const m of root.children.filter(m=>m.name==='loggia-parapet')){const pos=m.geometry.attributes.position,uv=m.geometry.attributes.uv,w=m.geometry.parameters.width,h=m.geometry.parameters.height;for(let i=0;i<pos.count;i++)uv.setXY(i,(pos.getX(i)+w/2), (pos.getY(i)+h/2)/h);uv.needsUpdate=true;}
- // Align courses across adjoining strips in each elevation's local coordinates.
  root.updateMatrixWorld(true);
  for(const m of root.children.filter(m=>(m.name.startsWith('wall-')||m.name.startsWith('shared-return-'))&&(m.material===mats.brick||m.material===mats.red))){const edge=Number(m.name.split('-').at(-1)),a=g[edge],b=g[(edge+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=[(b[0]-a[0])/L,(b[1]-a[1])/L],pos=m.geometry.attributes.position,uv=m.geometry.attributes.uv,norm=m.geometry.attributes.normal,v=new THREE.Vector3(),normal=new THREE.Vector3();for(let i=0;i<pos.count;i++){v.fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld);normal.fromBufferAttribute(norm,i).transformDirection(m.matrixWorld);const along=(v.x-a[0])*u[0]+(v.z-a[1])*u[1],out=(v.x-a[0])*u[1]-(v.z-a[1])*u[0],horizontal=Math.abs(normal.x*u[0]+normal.z*u[1])>.5?out:along;uv.setXY(i,horizontal/2.2,v.y/.996);}uv.needsUpdate=true;}
  applyWindowLintels(root,spec,mats.lintel);
@@ -83,8 +74,6 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
  for(const o of audit.openings.filter(o=>o.kind==='window'||o.kind==='stair'||o.kind==='entrance')){
   const fw=o.kind==='stair'?.065:.055, z=-.16, d=.04;
   if(o.kind!=='entrance'){
-   // Reveals close the full depth between facade plane and recessed backing.
-   // Frame and reveal occupy adjacent strips rather than intersecting solids.
    const r=.025,ix=o.x+r,iy=o.y+r,iw=o.w-2*r,ih=o.h-2*r;
    for(const x of [o.x,o.x+o.w-r])solid(o.edge,x,o.y,r,o.h,-.11,.22,'reveal','detail-'+o.kind+'-reveal');
    for(const y of [o.y,o.y+o.h-r])solid(o.edge,ix,y,iw,r,-.11,.22,'reveal','detail-'+o.kind+'-reveal');
@@ -98,7 +87,6 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
    const section=spec.facades.find(f=>f.edge===o.edge).section,observed=section<=3;
    const backing=root.children.find(m=>m.name==='backing-'+o.edge+'-entrance');
    if(observed&&backing)backing.material=mats['doorS'+section];
-   // Broad central access stile visible in all three dated close views.
    solid(o.edge,o.x+o.w/2-(observed?.07*o.w:.018),o.y,observed?.14*o.w:.036,o.h,observed?-.21:-.17,observed?.02:.04,observed?'doorS'+section:'doorTrim','detail-door-seam');
    for(const x of [o.x,o.x+o.w-.055])solid(o.edge,x,o.y,.055,o.h,observed?-.11:-.15,observed?.22:.06,'doorTrim','detail-door-frame');
    solid(o.edge,o.x+.055,o.y+o.h-.055,o.w-.11,.055,observed?-.11:-.15,observed?.22:.06,'doorTrim','detail-door-frame');
@@ -107,11 +95,9 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
    solid(o.edge,o.x+o.w*(section===1?.405:.61),o.y+1.0,.03,.12,observed?-.2025:-.115,.035,'hardware','detail-door-handle');
    if(observed){
     solid(o.edge,o.x+o.w*.465-.035,1.20,.07,.18,-.19,.02,section===1?'hardware':'keypad','detail-door-keypad');
-    // Fine button pattern is a simplified silhouette, no invented labels.
     for(let row=0;row<4;row++)for(let column=0;column<3;column++)solid(o.edge,o.x+o.w*.465-.022+column*.016,1.216+row*.025,.009,.012,-.177,.006,section===1?'keypad':'hardware','detail-keypad-button');
     const plates=section===3?[[.57,.40]]:[[.025,.375],[.57,.40]];
     for(const [from,width]of plates)solid(o.edge,o.x+o.w*from,.16,o.w*width,.18,-.216,.008,'kickplate','detail-door-kickplate');
-    // Small unlit dome attached to the canopy underside, not a light source.
     solid(o.edge,o.x+o.w/2-.065,spec.entryHeight-.012,.13,.012,.15,.13,'doorTrim','detail-entry-lamp-base');
     const lamp=new THREE.Mesh(new THREE.SphereGeometry(.06,12,6,0,Math.PI*2,Math.PI/2,Math.PI/2),mats.lamp),base=root.children.at(-1);
     lamp.position.copy(base.position);lamp.position.y=spec.entryHeight-.012;lamp.name='detail-entry-lamp';lamp.castShadow=true;lamp.receiveShadow=true;root.add(lamp);
@@ -200,7 +186,6 @@ export function createEntranceDetailStudy(spec, balconySchedule, sharedMasonry, 
    for(const [kind,rows]of groups){if(!rows.p.length)continue;const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(rows.p,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(rows.n,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(rows.uv,2));const m=new THREE.Mesh(geometry,kind==='masonry'?mats.red:kind==='lining'?mats.roofFinish:mats.roofEdgeMetal);m.name='roof-finish-'+mesh.name+'-'+kind;m.userData.roofFinishKind=kind;m.userData.roofOwner=mesh.name;m.castShadow=true;m.receiveShadow=true;root.add(m);}
   }
   for(const mesh of bodies){root.remove(mesh);mesh.geometry.dispose();}
-  // Existing twelve caps retain their positions, size and closed geometry.
   for(const m of root.children.filter(m=>m.name==='detail-roof-upstand-cap'))m.material=mats.roofEdgeMetal;
   audit.roofFinish=stats;
  }

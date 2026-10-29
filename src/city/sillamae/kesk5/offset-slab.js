@@ -16,8 +16,6 @@ function intersection(p,clip){clip=ccw(clip);for(let i=0;i<clip.length&&p.length
 function subtract(p,clip){clip=ccw(clip);const result=[];for(let i=0;i<clip.length&&p.length;i++){const outside=halfPlane(p,clip[i],clip[(i+1)%clip.length],false);if(outside.length)result.push(outside);p=halfPlane(p,clip[i],clip[(i+1)%clip.length]);}return result;}
 function convexHull(points){const sorted=points.sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);const chain=ps=>{const h=[];for(const p of ps){while(h.length>1&&cross(h.at(-2),h.at(-1),p)<=1e-9)h.pop();h.push(p);}return h.slice(0,-1);};return [...chain(sorted),...chain([...sorted].reverse())];}
 
-// Offset slab family, stage 1: reference-led plain shape. No address, fixtures,
-// textures, opening variation or site ownership is embedded in this generator.
 export function fitOrthogonalOutline(source){
   if(source.length<4||source.length%2||source.some(p=>p.length!==2||!p.every(Number.isFinite)))throw Error('Invalid alternating orthogonal outline');
   let c=0,s=0;
@@ -110,8 +108,6 @@ export function createOffsetSlabStudy(spec){
       if(h.kind!=='loggia'&&h.kind!=='foundation-recess')f.solid(h.x,h.y,h.w,h.h,.06,-d-.03,'glass','backing-'+i+'-'+h.kind);
       if(h.kind==='foundation-recess'){
         for(const x of [h.x])f.solid(x,h.y,.12,h.h,d,-d/2,'base','foundation-recess-cheek');
-        // Three basement windows below each balcony block; cut actual apertures
-        // into the recessed foundation rather than applying surface decals.
         const wy=.18,wh=.43,ww=.75,centres=[.2,.5,.8].map(v=>h.x+h.w*v),label='backing-'+i+'-foundation-recess';
         f.solid(h.x,h.y,h.w,wy-h.y,spec.wallThickness,-d-spec.wallThickness/2,'base',label);
         f.solid(h.x,wy+wh,h.w,h.y+h.h-wy-wh,spec.wallThickness,-d-spec.wallThickness/2,'base',label);
@@ -127,8 +123,6 @@ export function createOffsetSlabStudy(spec){
         audit.lightwells.push({edge:i,window:h.id,corners,floor:fy,ground:-.015});
       }
       if(h.kind==='loggia'){
-        // Five separately cut windows behind a simple open balcony. Individual
-        // enclosure glazing and fine corrugated finish remain deferred.
         const cfg=spec.rearWindows,wy=h.y+(h.floor===spec.floors?(spec.topRearWindowBottomOffset??cfg.bottomOffset):cfg.bottomOffset),wh=cfg.height,fw=cfg.frameWidth,centres=cfg.fractions.map(f=>h.x+h.w*f);
         f.solid(h.x,h.y,h.w,.16,d-.12,-(d+.12)/2,'base','loggia-floor');
         const setback=h.floor===spec.floors?(spec.roofBalconySetback??0):0,covered=d-setback;
@@ -151,7 +145,6 @@ export function createOffsetSlabStudy(spec){
       }
     }
     if(r){
-      // Side-wall tips continue through the roof edge, higher than front coping.
       const left=ends.includes('start')?r.edgeWidth:0,right=ends.includes('end')?r.edgeWidth:0;
       const roofSetback=facade?.type==='loggia'?(spec.roofBalconySetback??0):0;
       const ledge=roofSetback?spec.rearRoofLedge:null,roofHeight=ledge?.height??spec.parapetHeight,roofWidth=ledge?.thickness??edgeThickness;
@@ -211,7 +204,6 @@ export function createOffsetSlabStudy(spec){
   root.userData.audit=audit;root.userData.stage='plain-shape';root.userData.dispose=()=>{root.traverse(o=>o.geometry?.dispose());Object.values(materials).forEach(m=>m.dispose());};return root;
 }
 
-// Flat review ground with true lightwell openings. Site terrain integration is separate.
 export function createStudyGroundGeometry(audit){
  const shape=new THREE.Shape([new THREE.Vector2(-200,-200),new THREE.Vector2(200,-200),new THREE.Vector2(200,200),new THREE.Vector2(-200,200)]);
  for(const well of audit.lightwells||[])shape.holes.push(new THREE.Path(well.corners.map(p=>new THREE.Vector2(p[0],-p[1]))));

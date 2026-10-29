@@ -27,7 +27,24 @@ export const kesk5: BuildingOverride = {
   preload: preloadSurfaces,
   build({scene, frame, changed}) {
     const {masonry, roof, ready} = surfaces();
-    const root = batchDetailStudy(createEntranceDetailStudy(design, balconySchedule, masonry, roof));
+    const root = createEntranceDetailStudy(design, balconySchedule, masonry, roof);
+    const stepMaterials = new Map<THREE.Material, THREE.Material>();
+    root.traverse((o: THREE.Object3D) => {
+      if (!(o instanceof THREE.Mesh) || !['landing', 'detail-entry-step'].includes(o.name)) return;
+      if (!stepMaterials.has(o.material)) {
+        const material = o.material.clone();
+        // Survey layers have a depth lift; without the stairs' 1 m lift they can show through the steps.
+        material.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
+          shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>',
+            '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * 1.;');
+        };
+        stepMaterials.set(o.material, material);
+      }
+      o.material = stepMaterials.get(o.material);
+    });
+    const dispose = root.userData.dispose;
+    root.userData.dispose = () => { dispose(); stepMaterials.forEach(m => m.dispose()); };
+    batchDetailStudy(root);
     root.name = 'kesk5';
     root.position.set(design.origin[0] - frame.origin[0], DATUM - frame.base, design.origin[1] - frame.origin[1]);
     root.rotation.y = -audit.fit.angle;

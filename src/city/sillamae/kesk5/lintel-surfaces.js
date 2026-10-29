@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-// Assign concrete to the actual outward wall surface above entrance windows.
 // Clip triangles into adjacent material regions; do not overlay a coplanar box.
 export function applyWindowLintels(root,spec,material){
  root.updateMatrixWorld(true);const plan=root.userData.audit.localFootprint,openings=root.userData.audit.openings,area=plan.reduce((s,a,i)=>{const b=plan[(i+1)%plan.length];return s+a[0]*b[1]-b[0]*a[1];},0);
