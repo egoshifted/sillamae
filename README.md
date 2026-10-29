@@ -52,3 +52,5 @@ Survey geometry and vegetation: Maa- ja Ruumiamet.
 Rendering: Three.js (MIT).
 
 This is an independent visualisation, not an official survey or navigation service.
+
+Kesk 1 also composes a separate rear-access surroundings model through its override: turning platform, handrail, paved walk, five street steps and local grass bank. The retained photo-derived layout remains provisional for review. Its ground patches are prepared with the same model code as the viewer.

@@ -1,3 +1,4 @@
+import {createRearSurroundings} from '../surroundings/rear-access.js';
 import {preloadSurfaces} from './surfaces.js';
 import {orthogonalPlan} from './plan.ts';
 import {addSteppedApartment} from './model.js';
@@ -32,9 +33,14 @@ export const kesk1: BuildingOverride = {
   },
   preload: preloadSurfaces,
   build({scene, building, terrain, frame, ground, changed}) {
-    const root = addSteppedApartment(scene, building, {...terrain, siteGround: ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10)}, kesk1Design, frame);
+    const siteGround = ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10);
+    const root = addSteppedApartment(scene, building, {...terrain, siteGround}, kesk1Design, frame);
+    const surroundings = createRearSurroundings(building, terrain, frame, siteGround);
+    scene.add(surroundings);
+    const dispose = root.userData.dispose;
+    root.userData.dispose = () => { surroundings.userData.dispose(); dispose(); };
     root.userData.ready.then(() => changed?.());
-    return {root, groundPatchMinHeight: 10, groundPatches: root.userData.groundPatches ?? [], setTextures: root.userData.setTextures};
+    return {root, groundPatchMinHeight: 10, groundPatches: [...(root.userData.groundPatches ?? []), ...surroundings.userData.groundPatches], setTextures: root.userData.setTextures};
   },
   entrances: building => [facePoint(building, 6, .2394, 3), facePoint(building, 16, .5, 2.7)],
   view: {offset: [110, 80, 45], span: 65},
