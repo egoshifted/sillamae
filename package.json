@@ -1,0 +1,31 @@
+{
+  "name": "sillamae",
+  "description": "An interactive 3D model of Sillamäe, Estonia. The town model is being progressively refined against reference imagery; detail varies between buildings.",
+  "scripts": {
+    "data": "node pipeline/build.ts",
+    "osm": "node pipeline/fetch-osm.ts",
+    "dev": "node pipeline/build.ts && vite",
+    "check": "tsc -p .",
+    "build": "tsc -p . && node pipeline/build.ts && vite build",
+    "preview": "vite preview",
+    "dtm": "node pipeline/fetch-dtm.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "meshoptimizer": "1.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.180.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "geotiff": "3.0.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  },
+  "private": true
+}
