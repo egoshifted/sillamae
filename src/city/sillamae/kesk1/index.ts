@@ -1,7 +1,7 @@
-import {createRearSurroundings} from '../surroundings/rear-access.js';
-import {preloadSurfaces} from './surfaces.js';
+import {createRearSurroundings} from '../surroundings/rear-access.ts';
+import {preloadSurfaces} from './surfaces.ts';
 import {orthogonalPlan} from './plan.ts';
-import {addSteppedApartment} from './model.js';
+import {addSteppedApartment} from './model.ts';
 import {concat, readTriangle, splitPolygon, type SurveyVertex} from '../../../engine/survey/carve.ts';
 import {TRIANGLE, type Building, type BuildingOverride, type Point2} from '../../../engine/types.ts';
 

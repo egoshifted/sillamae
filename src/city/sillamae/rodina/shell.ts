@@ -1,11 +1,13 @@
+import type {Block, Emit, Face, Point3, ShellMaterials} from './types.ts';
+
 export const shellDesign={
  bays:[
-  {face:'WNW-NNE',centres:[-3.9,-11.05,-18.2],exit:-18.2},
-  {face:'WNW-SSW',centres:[-3.9,-11.05,-18.2],exit:-18.2},
-  {face:'SSW-ESE',centres:[27.2,33.3,39.4],exit:39.4},
-  {face:'SSW-WNW',centres:[27.2,33.3],exit:null},
-  {face:'WNW-end',centres:[10.68],exit:null},
-  {face:'SSW-end',centres:[11.15],exit:null}
+  {face:'WNW-NNE' as const,centres:[-3.9,-11.05,-18.2],exit:-18.2},
+  {face:'WNW-SSW' as const,centres:[-3.9,-11.05,-18.2],exit:-18.2},
+  {face:'SSW-ESE' as const,centres:[27.2,33.3,39.4],exit:39.4},
+  {face:'SSW-WNW' as const,centres:[27.2,33.3],exit:null},
+  {face:'WNW-end' as const,centres:[10.68],exit:null},
+  {face:'SSW-end' as const,centres:[11.15],exit:null}
  ],
  dormers:[
   ...[-5.4,-12,-18.6].map((centre,i)=>({id:'WNW-court-vent-'+(i+1),wing:'WNW',centre,front:16.1,depth:2,radius:.55,jamb:.2})),
@@ -15,7 +17,7 @@ export const shellDesign={
  limits:'Plain envelopes only. Bay widths, band levels, hood size/depth and ladder anchors inferred. Unseen outer courtyard bay, main-roof stacks and ornament remain unresolved.'
 };
 
-export function facadePoint(face,a,y,d=0){
+export function facadePoint(face: Face,a: number,y: number,d=0): Point3{
  if(face==='WNW-NNE')return[a,y,3.93-d];
  if(face==='WNW-SSW')return[a,y,17.43+d];
  if(face==='SSW-ESE')return[17.8+d,y,a];
@@ -29,25 +31,25 @@ export function facadePoint(face,a,y,d=0){
  throw Error('Unknown shell face '+face);
 }
 
-export function addShell(block,emit,materials){
- const {wall,frame,infill}=materials,inventory=[];
- function surface(name,points,normal,material=wall){
+export function addShell(block: Block,emit: Emit,materials: ShellMaterials){
+ const {wall,frame,infill}=materials,inventory: Record<string,unknown>[]=[];
+ function surface(name: string,points: number[][],normal: number[],material=wall){
   const p=points[0],q=points[1],r=points[2],u=q.map((v,i)=>v-p[i]),v=r.map((t,i)=>t-p[i]),cross=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],forward=cross.reduce((n,t,i)=>n+t*normal[i],0)>0;
   const ids=[];for(let i=1;i<points.length-1;i++)ids.push(...(forward?[0,i,i+1]:[0,i+1,i]));return emit(name,points,ids,material);
  }
- function box(face,name,a0,a1,b,t,d0,d1,material=wall){const p=facadePoint(face,a0,b,d0),q=facadePoint(face,a1,t,d1);return block(name,Math.min(p[0],q[0]),Math.max(p[0],q[0]),b,t,Math.min(p[2],q[2]),Math.max(p[2],q[2]),material);}
+ function box(face: Face,name: string,a0: number,a1: number,b: number,t: number,d0: number,d1: number,material=wall){const p=facadePoint(face,a0,b,d0),q=facadePoint(face,a1,t,d1);return block(name,Math.min(p[0],q[0]),Math.max(p[0],q[0]),b,t,Math.min(p[2],q[2]),Math.max(p[2],q[2]),material);}
  for(const row of shellDesign.bays)for(const a of row.centres){
   const open=a===row.exit,width=open?1.85:2.3,b=row.face==='SSW-end'?.65:.2,t=4.5,j=.22,id=row.face+'-bay-'+a;
   box(row.face,id+'-left',a-width/2-j,a-width/2,b,t,-.025,.105);
   box(row.face,id+'-right',a+width/2,a+width/2+j,b,t,-.025,.105);
-  const lintel=box(row.face,id+'-lintel',a-width/2-j,a+width/2+j,t,t+.22,-.025,.12),g=lintel.geometry,indices=g.index.array,normals=g.attributes.normal,keep=[];
+  const lintel=box(row.face,id+'-lintel',a-width/2-j,a+width/2+j,t,t+.22,-.025,.12),g=lintel.geometry,indices=g.index!.array,normals=g.attributes.normal,keep=[];
   // The continuous band owns the shared top; retaining the lintel cap creates opposite coplanar faces.
   for(let i=0;i<indices.length;i+=3)if(normals.getY(indices[i])<.9)keep.push(...indices.slice(i,i+3));g.setIndex(keep);
   if(!open)box(row.face,id+'-sill',a-width/2,a+width/2,b,b+.14,-.025,.15);
   inventory.push({id,face:row.face,centre:a,type:open?'exit surround':'blind surround',width,bottom:b,top:t+.22});
  }
- const paths={WNW:d=>[[0,3.93-d],[-23.92-d,3.93-d],[-23.92-d,17.43+d],[0,17.43+d]],SSW:d=>[[3.95-d,21.65],[3.95-d,45.47+d],[17.8+d,45.47+d],[17.8+d,21.65]],pavilion:d=>[[-d,-d],[21.4+d,-d],[21.4+d,21.65+d],[-d,21.65+d],[-d,-d]]};
- function band(name,path,y0,y1,projection,{top=true,under=-.025}={}){
+ const paths={WNW:(d: number)=>[[0,3.93-d],[-23.92-d,3.93-d],[-23.92-d,17.43+d],[0,17.43+d]],SSW:(d: number)=>[[3.95-d,21.65],[3.95-d,45.47+d],[17.8+d,45.47+d],[17.8+d,21.65]],pavilion:(d: number)=>[[-d,-d],[21.4+d,-d],[21.4+d,21.65+d],[-d,21.65+d],[-d,-d]]};
+ function band(name: string,path: (d: number)=>number[][],y0: number,y1: number,projection: number,{top=true,under=-.025}={}){
   const inner=path(-.025),outer=path(projection);
   for(let i=1;i<outer.length;i++){
    const a=outer[i-1],b=outer[i],c=inner[i-1],d=inner[i],normal=[b[1]-a[1],0,a[0]-b[0]],mid=[(a[0]+b[0])/2,0,(a[1]+b[1])/2],centre=name.startsWith('pavilion')?[10.7,0,10.825]:name.startsWith('WNW')?[-12,0,10.68]:[10.875,0,33.56];
@@ -57,9 +59,9 @@ export function addShell(block,emit,materials){
    const lower=path(under);surface(name+'-under-'+i,[[a[0],y0,a[1]],[b[0],y0,b[1]],[lower[i][0],y0,lower[i][1]],[lower[i-1][0],y0,lower[i-1][1]]],[0,-1,0]);
   }
  }
- for(const wing of ['WNW','SSW'])for(const[b,t,p,label,profile]of [[4.72,4.88,.14,'lower-frieze',{}],[5.9,6.12,.17,'upper-frieze',{}],[6.98,7.14,.12,'eave-bed',{top:false}],[7.14,7.3,.28,'eave-crown',{under:.12}]])band(wing+'-'+label,paths[wing],b,t,p,profile);
- for(const[b,t,p,label,profile]of [[8.55,8.78,.18,'sign-band',{}],[9.65,9.82,.18,'pediment-bed',{top:false}],[9.82,10,.3,'pediment-crown',{under:.18}]])band('pavilion-'+label,paths.pavilion,b,t,p,profile);
- function rake(face,start,end,peak,h,r){
+ for(const wing of ['WNW','SSW'] as const)for(const[b,t,p,label,profile]of [[4.72,4.88,.14,'lower-frieze',{}],[5.9,6.12,.17,'upper-frieze',{}],[6.98,7.14,.12,'eave-bed',{top:false}],[7.14,7.3,.28,'eave-crown',{under:.12}]] as const)band(wing+'-'+label,paths[wing],b,t,p,profile);
+ for(const[b,t,p,label,profile]of [[8.55,8.78,.18,'sign-band',{}],[9.65,9.82,.18,'pediment-bed',{top:false}],[9.82,10,.3,'pediment-crown',{under:.18}]] as const)band('pavilion-'+label,paths.pavilion,b,t,p,profile);
+ function rake(face: Face,start: number,end: number,peak: number,h: number,r: number){
   const normal=facadePoint(face,0,0,1).map((v,i)=>v-facadePoint(face,0,0,0)[i]);
   for(const[a,b,ya,yb]of [[start,peak,h,r],[peak,end,r,h]]){
    const poly=[[a,ya],[b,yb],[b,yb-.3],[a,ya-.3]],front=poly.map(([x,y])=>facadePoint(face,x,y,.2)),back=poly.map(([x,y])=>facadePoint(face,x,y,0));
@@ -68,10 +70,10 @@ export function addShell(block,emit,materials){
   }
  }
  rake('WNW-end',3.93,17.43,10.78,7.3,9.95);rake('SSW-end',3.95,17.8,11.15,7.3,9.95);
- for(const[face,end,peak]of [['NNE',21.4,11.3],['ESE',21.65,10.95],['SSW',21.4,11.3],['WNW',21.65,10.95]])rake(face,0,end,peak,10,13.8);
- function roofY(d,depth){return d.wing==='WNW'?7.3+(17.43-d.front+depth)*2.65/(17.43-10.78):7.3+(d.front+depth-3.95)*2.65/(11.15-3.95);}
+ for(const[face,end,peak]of [['NNE',21.4,11.3],['ESE',21.65,10.95],['SSW',21.4,11.3],['WNW',21.65,10.95]] as const)rake(face,0,end,peak,10,13.8);
+ function roofY(d: typeof shellDesign.dormers[number],depth: number){return d.wing==='WNW'?7.3+(17.43-d.front+depth)*2.65/(17.43-10.78):7.3+(d.front+depth-3.95)*2.65/(11.15-3.95);}
  for(const d of shellDesign.dormers){
-  const point=(a,y,s)=>d.wing==='WNW'?[d.centre+a,y,d.front-s]:[d.front+s,y,d.centre+a],normal=d.wing==='WNW'?[0,0,1]:[-1,0,0],y=roofY(d,0),n=12,arc=Array.from({length:n+1},(_,i)=>{const t=Math.PI-i*Math.PI/n;return[d.radius*Math.cos(t),d.jamb+d.radius*Math.sin(t)];});
+  const point=(a: number,y: number,s: number)=>d.wing==='WNW'?[d.centre+a,y,d.front-s]:[d.front+s,y,d.centre+a],normal=d.wing==='WNW'?[0,0,1]:[-1,0,0],y=roofY(d,0),n=12,arc=Array.from({length:n+1},(_,i)=>{const t=Math.PI-i*Math.PI/n;return[d.radius*Math.cos(t),d.jamb+d.radius*Math.sin(t)];});
   for(let i=1;i<arc.length;i++){
    const[a,ya]=arc[i-1],[b,yb]=arc[i];surface(d.id+'-hood', [point(a,y+ya,0),point(b,y+yb,0),point(b,roofY(d,d.depth),d.depth),point(a,roofY(d,d.depth),d.depth)],[0,1,0],frame);
    const ai=a*(d.radius-.09)/d.radius,bi=b*(d.radius-.09)/d.radius,yai=d.jamb+(ya-d.jamb)*(d.radius-.09)/d.radius,ybi=d.jamb+(yb-d.jamb)*(d.radius-.09)/d.radius;

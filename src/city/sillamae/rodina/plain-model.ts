@@ -1,7 +1,19 @@
 import * as THREE from 'three';
-import {accessDesign,addAccess,exitLevel} from './access.js';
-import {addShell} from './shell.js';
-import {addRodinaServices} from './services.js';
+import {accessDesign,addAccess,exitLevel} from './access.ts';
+import {addShell} from './shell.ts';
+import {addRodinaServices} from './services.ts';
+import type {Feature, MeshGroup, ModelMesh, Opening} from './types.ts';
+
+interface PlainRodina extends MeshGroup {
+ userData: {audit: {
+  stage: string; dimensions: typeof dimensions;
+  frontOpenings: typeof frontOpenings; gardenOpenings: typeof gardenOpenings; courtyardOpenings: typeof courtyardOpenings;
+  access: ReturnType<typeof addAccess>; architecture: ReturnType<typeof addShell>; services: ReturnType<typeof addRodinaServices>;
+  features: Feature[]; triangles: number; geometryBytes: number; materials: number; ground: string; limits: string;
+ }};
+}
+
+type Wing = {u: number[]; v: number[]; eave: number; ridge: number; ridgeU?: number; ridgeV?: number};
 
 export const dimensions={main:{u:[0,21.4],v:[0,21.65],eave:10,ridge:13.8,ridgeU:11.3,ridgeV:10.95},westWing:{u:[-23.92,0],v:[3.93,17.43],eave:7.3,ridge:9.95,ridgeV:10.78},southWing:{u:[3.95,17.8],v:[21.65,45.47],eave:7.3,ridge:9.95,ridgeU:11.15},datum:14.5};
 
@@ -23,11 +35,11 @@ export const frontOpenings=observedGardenLayout.filter(o=>!o.id.includes('-B')&&
 export const courtyardOpenings={WNW:[{id:'COURT-WNW-D1',x:1.75,w:.95,b:.95,t:3.2,type:'door'},{id:'COURT-WNW-W1',x:1.75,w:1,b:5.5,t:7.3,type:'window'}],SSW:[{id:'COURT-SSW-W1',x:18.4,w:1.05,b:2.65,t:4.15,type:'window'},{id:'COURT-SSW-D1',x:18.4,w:.95,b:5.25,t:7.45,type:'door'}]};
 
 export function createRodina(){
- const root=new THREE.Group();root.name='rodina-plain-study';
+ const root=new THREE.Group() as PlainRodina;root.name='rodina-plain-study';
  const wall=new THREE.MeshStandardMaterial({color:0xb9c3c8,roughness:1}),roof=new THREE.MeshStandardMaterial({color:0x8497a3,roughness:1,flatShading:true}),infill=new THREE.MeshStandardMaterial({color:0x465d68,roughness:1}),frame=new THREE.MeshStandardMaterial({color:0x8399a5,roughness:1}),step=new THREE.MeshStandardMaterial({color:0xa9b4bb,roughness:1});
- function mesh(name,points,indices,material){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(points.flat(),3));g.setIndex(indices);g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.name=name;m.castShadow=m.receiveShadow=true;root.add(m);return m;}
- function block(name,x0,x1,y0,y1,z0,z1,material=wall){const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),material);m.name=name;m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);m.castShadow=m.receiveShadow=true;root.add(m);return m;}
- function entranceFace(name,openings,width,start=0,{height=10,pilasters=true}={}){
+ function mesh(name: string,points: number[][],indices: number[],material: THREE.MeshStandardMaterial){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(points.flat(),3));g.setIndex(indices);g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.name=name;m.castShadow=m.receiveShadow=true;root.add(m);return m;}
+ function block(name: string,x0: number,x1: number,y0: number,y1: number,z0: number,z1: number,material=wall){const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),material);m.name=name;m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);m.castShadow=m.receiveShadow=true;root.add(m);return m;}
+ function entranceFace(name: string,openings: Opening[],width: number,start=0,{height=10,pilasters=true}={}){
   const first=root.children.length;
   const shape=new THREE.Shape();shape.moveTo(start,-2);shape.lineTo(width,-2);shape.lineTo(width,height);shape.lineTo(start,height);shape.closePath();
   for(const o of openings){const a=o.x-o.w/2,b=o.x+o.w/2,hole=new THREE.Path();hole.moveTo(a,o.b);hole.lineTo(a,o.t);hole.lineTo(b,o.t);hole.lineTo(b,o.b);hole.closePath();shape.holes.push(hole);}
@@ -35,7 +47,7 @@ export function createRodina(){
   for(const o of openings){
    const a=o.x-o.w/2,b=o.x+o.w/2;
    block(o.id+'-backing',a,b,o.b,o.t,.34,.4,infill);
-   for(const [name,x0,x1,y0,y1]of [['left',a,a+.065,o.b,o.t],['right',b-.065,b,o.b,o.t],['head',a+.065,b-.065,o.t-.065,o.t],['sill',a+.065,b-.065,o.b,o.b+.065]])block(o.id+'-'+name,x0,x1,y0,y1,.22,.34,frame);
+   for(const [name,x0,x1,y0,y1]of [['left',a,a+.065,o.b,o.t],['right',b-.065,b,o.b,o.t],['head',a+.065,b-.065,o.t-.065,o.t],['sill',a+.065,b-.065,o.b,o.b+.065]] as const)block(o.id+'-'+name,x0,x1,y0,y1,.22,.34,frame);
    if(o.type==='well'){
     for(let i=1;i<=6;i++){const x=a+o.w*i/7;block(o.id+'-grille-vertical',x-.012,x+.012,o.b+.065,o.t-.065,.12,.15,frame);}
     for(const f of [.28,.65]){const y=o.b+(o.t-o.b)*f;block(o.id+'-grille-horizontal',a+.065,b-.065,y-.016,y+.016,.12,.15,frame);}
@@ -44,7 +56,7 @@ export function createRodina(){
   if(pilasters)for(const x of [4.15,5.55,15.85,17.25])block(name+'-pilaster',x-.38,x+.38,-.15,7.9,-.22,0);
   const face=new THREE.Group();face.name=name+'-assembly';face.add(...root.children.slice(first));root.add(face);return face;
  }
- function wingWalls(name,d,along){
+ function wingWalls(name: string,d: Wing,along: string){
   const[x0,x1]=d.u,[z0,z1]=d.v,h=d.eave;
   if(along==='u'){
    const exitN=accessDesign.exits[0],exitS=accessDesign.exits[1];
@@ -59,9 +71,9 @@ export function createRodina(){
    block(name+'-floor',x0+.4,x1-.4,-2,-1.8,z0,z1-.4);
   }
  }
- function gableWing(name,d,along){const[x0,x1]=d.u,[z0,z1]=d.v,h=d.eave,r=d.ridge;wingWalls(name,d,along);
-  if(along==='u'){const mid=d.ridgeV;mesh(name+'-gable-end',[[x0,h,z0],[x0,h,z1],[x0,r,mid]],[0,1,2],wall);mesh(name+'-roof',[[x0,h,z0],[x1,h,z0],[x1,r,mid],[x0,r,mid],[x0,h,z1],[x1,h,z1]],[0,3,2,0,2,1,3,4,5,3,5,2],roof);}
-  else{const mid=d.ridgeU;mesh(name+'-gable-end',[[x0,h,z1],[x1,h,z1],[mid,r,z1]],[0,1,2],wall);mesh(name+'-roof',[[x0,h,z0],[x0,h,z1],[mid,r,z1],[mid,r,z0],[x1,h,z0],[x1,h,z1]],[0,1,2,0,2,3,3,2,5,3,5,4],roof);}
+ function gableWing(name: string,d: Wing,along: string){const[x0,x1]=d.u,[z0,z1]=d.v,h=d.eave,r=d.ridge;wingWalls(name,d,along);
+  if(along==='u'){const mid=d.ridgeV!;mesh(name+'-gable-end',[[x0,h,z0],[x0,h,z1],[x0,r,mid]],[0,1,2],wall);mesh(name+'-roof',[[x0,h,z0],[x1,h,z0],[x1,r,mid],[x0,r,mid],[x0,h,z1],[x1,h,z1]],[0,3,2,0,2,1,3,4,5,3,5,2],roof);}
+  else{const mid=d.ridgeU!;mesh(name+'-gable-end',[[x0,h,z1],[x1,h,z1],[mid,r,z1]],[0,1,2],wall);mesh(name+'-roof',[[x0,h,z0],[x0,h,z1],[mid,r,z1],[mid,r,z0],[x1,h,z0],[x1,h,z1]],[0,1,2,0,2,3,3,2,5,3,5,4],roof);}
  }
  const d=dimensions.main,[x0,x1]=d.u,[z0,z1]=d.v,h=d.eave,r=d.ridge,x=d.ridgeU,z=d.ridgeV;
  entranceFace('NNE',frontOpenings,21.4);
@@ -83,17 +95,17 @@ export function createRodina(){
  const architecture=addShell(block,mesh,{wall,frame,infill});
  const services=addRodinaServices(block,mesh,{wall,frame,infill});
  root.updateMatrixWorld(true);
- const groups=new Map(),features=[];
+ const groups=new Map<THREE.MeshStandardMaterial, THREE.BufferGeometry[]>(),features: Feature[]=[];
  const roots=new Map([['WNW-wing-NNE-wall',[0,0]],['WNW-wing-SSW-wall',[0,0]],['WNW-auditorium-floor',[0,0]],['SSW-wing-ESE-wall',[2,21.65]],['SSW-auditorium-WNW-wall',[2,21.65]],['SSW-auditorium-floor',[2,21.65]]]);
  root.traverse(m=>{
-  if(!m.isMesh)return;let g=m.geometry.index?m.geometry.toNonIndexed():m.geometry.clone();g.applyMatrix4(m.matrixWorld);
+  if(!(m as ModelMesh).isMesh)return;let g=(m as ModelMesh).geometry.index?(m as ModelMesh).geometry.toNonIndexed():(m as ModelMesh).geometry.clone();g.applyMatrix4(m.matrixWorld);
   // These root caps are buried against the owning pavilion wall and otherwise coincide with it.
   if(roots.has(m.name)){
-   const[axis,value]=roots.get(m.name),a=g.attributes.position.array,keep=[];
+   const[axis,value]=roots.get(m.name)!,a=g.attributes.position.array,keep=[];
    for(let i=0;i<a.length;i+=9)if(![0,3,6].every(j=>Math.abs(a[i+j+axis]-value)<1e-5))keep.push(i);
    const trimmed=new THREE.BufferGeometry();for(const attr of ['position','normal']){const source=g.attributes[attr].array,values=new Float32Array(keep.length*9);keep.forEach((i,j)=>values.set(source.slice(i,i+9),j*9));trimmed.setAttribute(attr,new THREE.BufferAttribute(values,3));}g.dispose();g=trimmed;
   }
-  let parts=groups.get(m.material);if(!parts)groups.set(m.material,parts=[]);parts.push(g);features.push({name:m.name,vertices:g.attributes.position.count,material:m.material===wall?'shell':m.material===roof?'roof':m.material===frame?'frames':m.material===step?'access':'backings'});m.geometry.dispose();
+  let parts=groups.get((m as ModelMesh).material);if(!parts)groups.set((m as ModelMesh).material,parts=[]);parts.push(g);features.push({name:m.name,vertices:g.attributes.position.count,material:(m as ModelMesh).material===wall?'shell':(m as ModelMesh).material===roof?'roof':(m as ModelMesh).material===frame?'frames':(m as ModelMesh).material===step?'access':'backings'});(m as ModelMesh).geometry.dispose();
  });
  root.clear();let triangles=0,geometryBytes=0;
  for(const[material,parts]of groups){const g=new THREE.BufferGeometry();for(const attr of ['position','normal']){const values=new Float32Array(parts.reduce((n,p)=>n+p.attributes[attr].array.length,0));let offset=0;for(const p of parts){values.set(p.attributes[attr].array,offset);offset+=p.attributes[attr].array.length;}g.setAttribute(attr,new THREE.BufferAttribute(values,3));geometryBytes+=values.byteLength;}parts.forEach(p=>p.dispose());const m=new THREE.Mesh(g,material);m.name='rodina-'+(material===wall?'shell':material===roof?'roof':material===frame?'frames':material===step?'access':'backings');m.castShadow=m.receiveShadow=true;root.add(m);triangles+=g.attributes.position.count/3;}

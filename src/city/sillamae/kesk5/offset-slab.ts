@@ -1,37 +1,39 @@
 import * as THREE from 'three';
+import type {Point2, Polygon} from '../../../engine/types.ts';
+import type {Audit, Design, ModelMesh, Opening, Study} from './types.ts';
 
 // Convex clipping keeps roof-junction solids inside the retained outline and
 // removes their overlap with existing parapets. No epsilon-lifted top patches.
-function signedArea(p){return p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-a[1]*b[0];},0)/2;}
-function halfPlane(p,a,b,inside=true){
- const cross=q=>(b[0]-a[0])*(q[1]-a[1])-(b[1]-a[1])*(q[0]-a[0]),out=[];
+function signedArea(p: Polygon){return p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-a[1]*b[0];},0)/2;}
+function halfPlane(p: Polygon,a: Point2,b: Point2,inside=true): Polygon{
+ const cross=(q: Point2)=>(b[0]-a[0])*(q[1]-a[1])-(b[1]-a[1])*(q[0]-a[0]),out: Polygon=[];
  for(let i=0;i<p.length;i++){const s=p[i],e=p[(i+1)%p.length],ds=cross(s),de=cross(e),si=inside?ds>=-1e-9:ds<=1e-9,ei=inside?de>=-1e-9:de<=1e-9;
   if(si)out.push(s);if(si!==ei){const t=ds/(ds-de);out.push([s[0]+t*(e[0]-s[0]),s[1]+t*(e[1]-s[1])]);}}
  const clean=out.filter((a,i)=>!i||Math.hypot(a[0]-out[i-1][0],a[1]-out[i-1][1])>1e-8);
- if(clean.length>1&&Math.hypot(clean[0][0]-clean.at(-1)[0],clean[0][1]-clean.at(-1)[1])<1e-8)clean.pop();
+ if(clean.length>1&&Math.hypot(clean[0][0]-clean.at(-1)![0],clean[0][1]-clean.at(-1)![1])<1e-8)clean.pop();
  return clean.length>=3&&Math.abs(signedArea(clean))>1e-8?clean:[];
 }
-function ccw(p){return signedArea(p)<0?[...p].reverse():p;}
-function intersection(p,clip){clip=ccw(clip);for(let i=0;i<clip.length&&p.length;i++)p=halfPlane(p,clip[i],clip[(i+1)%clip.length]);return p;}
-function subtract(p,clip){clip=ccw(clip);const result=[];for(let i=0;i<clip.length&&p.length;i++){const outside=halfPlane(p,clip[i],clip[(i+1)%clip.length],false);if(outside.length)result.push(outside);p=halfPlane(p,clip[i],clip[(i+1)%clip.length]);}return result;}
-function convexHull(points){const sorted=points.sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);const chain=ps=>{const h=[];for(const p of ps){while(h.length>1&&cross(h.at(-2),h.at(-1),p)<=1e-9)h.pop();h.push(p);}return h.slice(0,-1);};return [...chain(sorted),...chain([...sorted].reverse())];}
+function ccw(p: Polygon){return signedArea(p)<0?[...p].reverse():p;}
+function intersection(p: Polygon,clip: Polygon){clip=ccw(clip);for(let i=0;i<clip.length&&p.length;i++)p=halfPlane(p,clip[i],clip[(i+1)%clip.length]);return p;}
+function subtract(p: Polygon,clip: Polygon){clip=ccw(clip);const result=[];for(let i=0;i<clip.length&&p.length;i++){const outside=halfPlane(p,clip[i],clip[(i+1)%clip.length],false);if(outside.length)result.push(outside);p=halfPlane(p,clip[i],clip[(i+1)%clip.length]);}return result;}
+function convexHull(points: Polygon){const sorted=points.sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cross=(o: Point2,a: Point2,b: Point2)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);const chain=(ps: Polygon)=>{const h: Polygon=[];for(const p of ps){while(h.length>1&&cross(h.at(-2)!,h.at(-1)!,p)<=1e-9)h.pop();h.push(p);}return h.slice(0,-1);};return [...chain(sorted),...chain([...sorted].reverse())];}
 
-export function fitOrthogonalOutline(source){
+export function fitOrthogonalOutline(source: Polygon){
   if(source.length<4||source.length%2||source.some(p=>p.length!==2||!p.every(Number.isFinite)))throw Error('Invalid alternating orthogonal outline');
   let c=0,s=0;
   for(let i=0;i<source.length;i+=2){const a=source[i],b=source[(i+1)%source.length],x=b[0]-a[0],z=b[1]-a[1];c+=x*x-z*z;s+=2*x*z;}
   const angle=Math.atan2(s,c)/2,u=[Math.cos(angle),Math.sin(angle)],v=[-u[1],u[0]];
   const lines=source.map((a,i)=>{const b=source[(i+1)%source.length],n=i%2?u:v;return ((a[0]+b[0])*n[0]+(a[1]+b[1])*n[1])/2;});
-  const points=source.map((_,i)=>{const prev=(i+source.length-1)%source.length,x=lines[i%2?i:prev],z=lines[i%2?prev:i];return [x*u[0]+z*v[0],x*u[1]+z*v[1]];});
+  const points=source.map((_,i): Point2=>{const prev=(i+source.length-1)%source.length,x=lines[i%2?i:prev],z=lines[i%2?prev:i];return [x*u[0]+z*v[0],x*u[1]+z*v[1]];});
   return {angle,points,maximumMovement:Math.max(...points.map((p,i)=>Math.hypot(p[0]-source[i][0],p[1]-source[i][1])))};
 }
 
-export function createOffsetSlabStudy(spec){
+export function createOffsetSlabStudy(spec: Design){
   if(spec.stage!=='plain-shape')throw Error('Only plain-shape studies supported by this version');
   if(spec.windowColumnWidths && (spec.windowColumnWidths.length!==spec.windowColumns.length || spec.windowColumnWidths.some(w=>!Number.isFinite(w)||w<=0)))throw Error('Invalid window column widths');
-  const fit=fitOrthogonalOutline(spec.footprint),root=new THREE.Group();
-  const g=fit.points.map(p=>{const x=p[0]-spec.origin[0],z=p[1]-spec.origin[1];return [x*Math.cos(fit.angle)+z*Math.sin(fit.angle),-x*Math.sin(fit.angle)+z*Math.cos(fit.angle)];});
-  const importedLocal=g.map(p=>[...p]);
+  const fit=fitOrthogonalOutline(spec.footprint),root=new THREE.Group() as Study;
+  const g=fit.points.map((p): Point2=>{const x=p[0]-spec.origin[0],z=p[1]-spec.origin[1];return [x*Math.cos(fit.angle)+z*Math.sin(fit.angle),-x*Math.sin(fit.angle)+z*Math.cos(fit.angle)];});
+  const importedLocal=g.map((p): Point2=>[...p]);
   // Reference-led section alignment is separate from rounding-only fitting.
   // Preserve original coordinates; retain unequal section widths and setbacks.
   for(const corners of spec.sectionBoundaryGroups||[]){
@@ -42,13 +44,13 @@ export function createOffsetSlabStudy(spec){
   const edgeThickness=spec.roofEdgeThickness??.18;
   if(!(edgeThickness>0&&Number.isFinite(edgeThickness)))throw Error('Invalid roof edge thickness');
   const relief=spec.facadeRelief;
-  if(relief&&(!['edgeWidth','edgeProjection','jambWidth','jambProjection','headHeight'].every(k=>Number.isFinite(relief[k])&&relief[k]>0)||!Number.isFinite(relief.baseDatum)||relief.baseDatum>0))throw Error('Invalid facade relief');
+  if(relief&&(!(['edgeWidth','edgeProjection','jambWidth','jambProjection','headHeight'] as const).every(k=>Number.isFinite(relief[k])&&relief[k]>0)||!Number.isFinite(relief.baseDatum)||relief.baseDatum>0))throw Error('Invalid facade relief');
   const materials={frame:new THREE.MeshStandardMaterial({color:0xdddcd5,roughness:1}),wall:new THREE.MeshStandardMaterial({color:0xd5d1c8,roughness:1}),end:new THREE.MeshStandardMaterial({color:0xbdb7ac,roughness:1}),roof:new THREE.MeshStandardMaterial({color:0x92948e,roughness:1}),glass:new THREE.MeshStandardMaterial({color:0x6b7d82,roughness:.8}),base:new THREE.MeshStandardMaterial({color:0xb0b0a6,roughness:1})};
-  const audit={lightwells:[],projections:[],openings:[],canopies:[],roofs:[],vents:[],roofDividers:[],facadeEdges:spec.facades,fit,localFootprint:g,importedLocal,sectionAlignmentMovement:Math.max(...g.map((p,i)=>Math.hypot(p[0]-importedLocal[i][0],p[1]-importedLocal[i][1]))),roofEdgeThickness:edgeThickness};
-  function box(x,y,z,w,h,d,m,label){if(!(w>0&&h>0&&d>0))throw Error('Invalid solid '+label);const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),materials[m]);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;mesh.name=label;root.add(mesh);return mesh;}
+  const audit: Audit={lightwells:[],projections:[],openings:[],canopies:[],roofs:[],vents:[],roofDividers:[],facadeEdges:spec.facades,fit,localFootprint:g,importedLocal,sectionAlignmentMovement:Math.max(...g.map((p,i)=>Math.hypot(p[0]-importedLocal[i][0],p[1]-importedLocal[i][1]))),roofEdgeThickness:edgeThickness};
+  function box(x: number,y: number,z: number,w: number,h: number,d: number,m: keyof typeof materials,label: string){if(!(w>0&&h>0&&d>0))throw Error('Invalid solid '+label);const mesh: ModelMesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),materials[m]);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;mesh.name=label;root.add(mesh);return mesh;}
   const area=g.reduce((a,p,i)=>{const q=g[(i+1)%g.length];return a+p[0]*q[1]-q[0]*p[1];},0);
-  function frame(i){const a=g[i],b=g[(i+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=[(b[0]-a[0])/L,(b[1]-a[1])/L],n=area<0?[-u[1],u[0]]:[u[1],-u[0]];
-    return {a,b,L,u,n,solid(x,y,w,h,depth,offset,m,label){const mesh=box(a[0]+u[0]*(x+w/2)+n[0]*offset,y+h/2,a[1]+u[1]*(x+w/2)+n[1]*offset,w,h,depth,m,label);mesh.rotation.y=-Math.atan2(u[1],u[0]);
+  function frame(i: number){const a=g[i],b=g[(i+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=[(b[0]-a[0])/L,(b[1]-a[1])/L],n=area<0?[-u[1],u[0]]:[u[1],-u[0]];
+    return {a,b,L,u,n,solid(x: number,y: number,w: number,h: number,depth: number,offset: number,m: keyof typeof materials,label: string){const mesh=box(a[0]+u[0]*(x+w/2)+n[0]*offset,y+h/2,a[1]+u[1]*(x+w/2)+n[1]*offset,w,h,depth,m,label);mesh.rotation.y=-Math.atan2(u[1],u[0]);
       // Miter the inward edge of every shell strip. Butt-ended boxes placed a
       // coplanar cap over the adjoining facade and produced dashed seams.
       if(label.startsWith('wall-')||(label.startsWith('parapet-')&&!label.startsWith('parapet-rear-'))){
@@ -59,7 +61,7 @@ export function createOffsetSlabStudy(spec){
           const positions=mesh.geometry.attributes.position;for(let k=0;k<positions.count;k++)if(Math.abs(positions.getZ(k))<1e-8)positions.setZ(k,area<0?-offset:offset);
         }
         const prev=g[(i+g.length-1)%g.length],next=g[(i+2)%g.length];
-        const normal=(p,q)=>{const len=Math.hypot(q[0]-p[0],q[1]-p[1]),sign=area<0?-1:1;return [sign*(q[1]-p[1])/len,-sign*(q[0]-p[0])/len];};
+        const normal=(p: Point2,q: Point2)=>{const len=Math.hypot(q[0]-p[0],q[1]-p[1]),sign=area<0?-1:1;return [sign*(q[1]-p[1])/len,-sign*(q[0]-p[0])/len];};
         const pn=normal(prev,a),nn=normal(b,next),pos=mesh.geometry.attributes.position;
         for(let k=0;k<pos.count;k++){const px=pos.getX(k),pz=pos.getZ(k),inset=Math.max(0,(area<0?-pz:pz)-offset);
           if(Math.abs(x)<1e-7&&px<0)pos.setX(k,px-(pn[0]*u[0]+pn[1]*u[1])*inset);
@@ -68,26 +70,26 @@ export function createOffsetSlabStudy(spec){
         if(offset+depth/2>1e-8&&offset-depth/2<0){const flat=mesh.geometry.toNonIndexed();mesh.geometry.dispose();mesh.geometry=flat;mesh.geometry.computeVertexNormals();}
       }
       return mesh;}};}
-  function faceWithOpenings(i,holes,type){
-    const f=frame(i),facade=spec.facades.find(v=>v.edge===i),r=facade&&relief?(facade.type==='loggia'?{...relief,edgeProjection:spec.rearEdgeProjection??relief.edgeProjection}:relief):null,sections=[];
+  function faceWithOpenings(i: number,holes: Opening[],type: 'wall' | 'end'){
+    const f=frame(i),facade=spec.facades.find(v=>v.edge===i),r=facade&&relief?(facade.type==='loggia'?{...relief,edgeProjection:spec.rearEdgeProjection??relief.edgeProjection}:relief):null,sections: {id: string; x: number; w: number; top: number; depth: number; bottom?: number}[]=[];
     const ends=facade?.projectingEnds??['start','end'];
     const stair=holes.find(h=>h.kind==='stair');
     if(r){
       const top=spec.roofDatum+(spec.sideParapetHeight??spec.parapetHeight),head=stair?stair.y+stair.h:null;
       for(const end of ends)sections.push({id:'edge-'+end,x:end==='start'?0:f.L-r.edgeWidth,w:r.edgeWidth,top,depth:r.edgeProjection});
       if(stair)sections.push(
-        {id:'stair-left',x:stair.x-r.jambWidth,w:r.jambWidth,top:head+r.headHeight,depth:r.jambProjection},
-        {id:'stair-right',x:stair.x+stair.w,w:r.jambWidth,top:head+r.headHeight,depth:r.jambProjection},
-        {id:'stair-head',x:stair.x,w:stair.w,bottom:head,top:head+r.headHeight,depth:r.jambProjection});
-      audit.projections.push(...sections.map(p=>({edge:i,...p,bottom:p.bottom??r.baseDatum})));
+        {id:'stair-left',x:stair.x-r.jambWidth,w:r.jambWidth,top:head!+r.headHeight,depth:r.jambProjection},
+        {id:'stair-right',x:stair.x+stair.w,w:r.jambWidth,top:head!+r.headHeight,depth:r.jambProjection},
+        {id:'stair-head',x:stair.x,w:stair.w,bottom:head!,top:head!+r.headHeight,depth:r.jambProjection});
+      audit.projections.push(...sections.map(p=>({edge:i,...p,bottom:p.bottom??r!.baseDatum})));
     }
     const ys=[spec.basement?.wallBase??(r?r.baseDatum:0),spec.roofDatum,...holes.flatMap(h=>[h.y,h.y+h.h]),...sections.flatMap(p=>[p.bottom??(r?r.baseDatum:0),Math.min(p.top,spec.roofDatum)])].sort((a,b)=>a-b).filter((x,i,a)=>!i||Math.abs(x-a[i-1])>1e-8);
     // Split the owning wall at every depth breakpoint. Projecting pieces replace
     // shell strips; no flat front face is left hidden behind an applied patch.
-    function wallSpan(x,y,w,h){
+    function wallSpan(x: number,y: number,w: number,h: number){
       const cuts=[x,x+w,...sections.flatMap(p=>[p.x,p.x+p.w]).filter(v=>v>x+1e-8&&v<x+w-1e-8)].sort((a,b)=>a-b);
       for(let j=1;j<cuts.length;j++){const lo=cuts[j-1],hi=cuts[j];if(hi-lo<1e-8)continue;
-        const p=sections.find(p=>(lo+hi)/2>p.x-1e-8&&(lo+hi)/2<p.x+p.w+1e-8&&y+h/2>=(p.bottom??r.baseDatum)&&y+h/2<p.top),d=p?.depth??0;
+        const p=sections.find(p=>(lo+hi)/2>p.x-1e-8&&(lo+hi)/2<p.x+p.w+1e-8&&y+h/2>=(p.bottom??r!.baseDatum)&&y+h/2<p.top),d=p?.depth??0;
         const returnWall=false; // The adjoining transverse wall owns the return; no extra strip on the balcony face.
         const upperSetback=facade?.type==='loggia'&&!p&&!returnWall?spec.loggiaDepth:0;
         const thickness=returnWall?spec.loggiaDepth+spec.wallThickness:spec.wallThickness+d;
@@ -96,7 +98,7 @@ export function createOffsetSlabStudy(spec){
         // The roof membrane owns this covered top. A coplanar wall cap causes
         // visible crawling seams along the set-back roof edge.
         if(upperSetback>0&&Math.abs(y+h-spec.roofDatum)<1e-7){
-          const geom=wall.geometry,pos=geom.attributes.position,index=geom.index,kept=[];
+          const geom=wall.geometry,pos=geom.attributes.position,index=geom.index!,kept=[];
           for(let k=0;k<index.count;k+=3){const ids=[index.getX(k),index.getX(k+1),index.getX(k+2)];if(!ids.every(v=>Math.abs(pos.getY(v)-h/2)<1e-6))kept.push(...ids);}
           geom.setIndex(kept);geom.clearGroups();
         }
@@ -119,7 +121,7 @@ export function createOffsetSlabStudy(spec){
         for(const x of [wx,wx+ww-q.wellWall])f.solid(x,fy,q.wellWall,q.wellRim-fy,depth,depth/2,'base','lightwell-cheek');
         f.solid(wx+q.wellWall,fy,ww-2*q.wellWall,q.wellRim-fy,q.wellWall,q.wellDepth+q.wellWall/2,'base','lightwell-front');
         f.solid(wx,fy-.10,ww,.10,depth,depth/2,'base','lightwell-floor');
-        const corners=[[wx,0],[wx+ww,0],[wx+ww,depth],[wx,depth]].map(([x,z])=>[f.a[0]+f.u[0]*x+f.n[0]*z,f.a[1]+f.u[1]*x+f.n[1]*z]);
+        const corners: Polygon=[[wx,0],[wx+ww,0],[wx+ww,depth],[wx,depth]].map(([x,z]): Point2=>[f.a[0]+f.u[0]*x+f.n[0]*z,f.a[1]+f.u[1]*x+f.n[1]*z]);
         audit.lightwells.push({edge:i,window:h.id,corners,floor:fy,ground:-.015});
       }
       if(h.kind==='loggia'){
@@ -153,7 +155,7 @@ export function createOffsetSlabStudy(spec){
     }else f.solid(0,spec.roofDatum,f.L,i%2?(spec.sideParapetHeight??spec.parapetHeight):spec.parapetHeight,edgeThickness,-edgeThickness/2,'end','parapet-'+i);
   }
   const used=new Set();
-  for(const facade of spec.facades){const f=frame(facade.edge),holes=[];used.add(facade.edge);
+  for(const facade of spec.facades){const f=frame(facade.edge),holes: Opening[]=[];used.add(facade.edge);
     if(facade.type==='entrance'){
       if(spec.basement)for(const [j,fraction] of spec.basement.columns.entries())holes.push({x:f.L*fraction-spec.basement.width/2,y:spec.basement.sill,w:spec.basement.width,h:spec.basement.height,kind:'basement',floor:'B',column:j+1,id:`S${facade.section}-NE-B-W${j+1}`});
       for(let floor=0;floor<spec.floors;floor++)for(const [column,fraction] of spec.windowColumns.entries()){const width=spec.windowColumnWidths?.[column]??spec.windowWidth;holes.push({x:f.L*fraction-width/2,y:spec.baseHeight+floor*spec.floorPitch+spec.windowSill,w:width,h:spec.windowHeight,kind:'window',floor:floor+1,column:column+1,id:`S${facade.section}-NE-L${floor+1}-W${column+1}`});}
@@ -174,12 +176,12 @@ export function createOffsetSlabStudy(spec){
   {const normal=geo.attributes.normal,keep=[];for(let i=0;i<normal.count;i+=3)if(Math.abs(normal.getY(i))>.5)keep.push(i,i+1,i+2);geo.setIndex(keep);geo.clearGroups();}
   const roof=new THREE.Mesh(geo,materials.roof);roof.name='roof';roof.castShadow=true;roof.receiveShadow=true;root.add(roof);audit.roofs.push({datum:spec.roofDatum,continuousOutline:true});
   root.updateMatrixWorld(true);
-  const parapetPlans=root.children.filter(o=>o.name.startsWith('parapet-')).map(o=>{const p=o.geometry.attributes.position,points=[];let top=-Infinity;for(let i=0;i<p.count;i++){const v=new THREE.Vector3().fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);points.push([v.x,v.z]);top=Math.max(top,v.y);}return {plan:convexHull(points),height:top-spec.roofDatum};});
+  const parapetPlans=root.children.filter(o=>o.name.startsWith('parapet-')).map(o=>{const p=o.geometry.attributes.position,points: Polygon=[];let top=-Infinity;for(let i=0;i<p.count;i++){const v=new THREE.Vector3().fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);points.push([v.x,v.z]);top=Math.max(top,v.y);}return {plan:convexHull(points),height:top-spec.roofDatum};});
   // Dividers follow the full structural footprint even where the main roof is
   // set back from the balcony front; they are not clipped to the roof deck.
   const fullRoofShape=new THREE.Shape(g.map(p=>new THREE.Vector2(p[0],-p[1]))),dividerGeo=new THREE.ShapeGeometry(fullRoofShape);dividerGeo.rotateX(-Math.PI/2);
-  const roofTriangles=[],pos=dividerGeo.attributes.position,idx=dividerGeo.index;
-  for(let i=0;i<(idx?.count??pos.count);i+=3)roofTriangles.push([0,1,2].map(j=>{const k=idx?idx.getX(i+j):i+j;return [pos.getX(k),pos.getZ(k)];}));
+  const roofTriangles: Polygon[]=[],pos=dividerGeo.attributes.position,idx=dividerGeo.index;
+  for(let i=0;i<(idx?.count??pos.count);i+=3)roofTriangles.push([0,1,2].map((j): Point2=>{const k=idx?idx.getX(i+j):i+j;return [pos.getX(k),pos.getZ(k)];}));
   for(const d of spec.roofDividers||[]){
     if(Math.abs(d.width-edgeThickness)>1e-9)throw Error('Divider must match roof edge thickness');
     if(!d.id||![d.fromCorner,d.toCorner].every(i=>Number.isInteger(i)&&i>=0&&i<g.length)||!(d.width>0&&Number.isFinite(d.width))||!(d.height>0&&d.height<=(spec.sideParapetHeight??spec.parapetHeight)))throw Error('Invalid roof divider');
@@ -187,7 +189,7 @@ export function createOffsetSlabStudy(spec){
     if(spec.connectedWallFaces){a[0]-=d.width/2;b[0]=a[0];}
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]);if(length<1e-6)throw Error('Invalid roof divider length');
     const n=[-(b[1]-a[1])/length*d.width/2,(b[0]-a[0])/length*d.width/2],strip=ccw([[a[0]+n[0],a[1]+n[1]],[b[0]+n[0],b[1]+n[1]],[b[0]-n[0],b[1]-n[1]],[a[0]-n[0],a[1]-n[1]]]);
-    const levels=[0,d.height,...parapetPlans.map(p=>p.height).filter(h=>h>1e-7&&h<d.height-1e-7)].sort((a,b)=>a-b).filter((v,i,a)=>!i||v-a[i-1]>1e-7),pieces=[];let topArea=0;
+    const levels=[0,d.height,...parapetPlans.map(p=>p.height).filter(h=>h>1e-7&&h<d.height-1e-7)].sort((a,b)=>a-b).filter((v,i,a)=>!i||v-a[i-1]>1e-7),pieces: Polygon[]=[];let topArea=0;
     for(let layer=1;layer<levels.length;layer++){
       const bottom=levels[layer-1],top=levels[layer];let parts=roofTriangles.map(t=>intersection(strip,t)).filter(p=>p.length);
       // Clip each height layer against the solids present at that height. The
@@ -201,10 +203,10 @@ export function createOffsetSlabStudy(spec){
   }
   dividerGeo.dispose();
   for(const facade of spec.facades.filter(f=>f.type==='entrance')){const f=frame(facade.edge);for(const [fraction,depth] of spec.roofVentLayout){const x=f.L*fraction,w=spec.ventWidth,d=spec.ventDepth;f.solid(x-w/2,spec.roofDatum,w,spec.ventHeight,d,-depth,'end','roof-vent');audit.vents.push({edge:facade.edge,fraction,depth});}}
-  root.userData.audit=audit;root.userData.stage='plain-shape';root.userData.dispose=()=>{root.traverse(o=>o.geometry?.dispose());Object.values(materials).forEach(m=>m.dispose());};return root;
+  root.userData.audit=audit;root.userData.stage='plain-shape';root.userData.dispose=()=>{root.traverse(o=>(o as ModelMesh).geometry?.dispose());Object.values(materials).forEach(m=>m.dispose());};return root;
 }
 
-export function createStudyGroundGeometry(audit){
+export function createStudyGroundGeometry(audit: Pick<Audit,'lightwells'>){
  const shape=new THREE.Shape([new THREE.Vector2(-200,-200),new THREE.Vector2(200,-200),new THREE.Vector2(200,200),new THREE.Vector2(-200,200)]);
  for(const well of audit.lightwells||[])shape.holes.push(new THREE.Path(well.corners.map(p=>new THREE.Vector2(p[0],-p[1]))));
  const geo=new THREE.ShapeGeometry(shape);geo.rotateX(-Math.PI/2);return geo;

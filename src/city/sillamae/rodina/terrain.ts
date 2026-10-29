@@ -1,19 +1,19 @@
 import * as THREE from 'three';
-import {terrainData as data} from './terrain-data.js';
+import {terrainData as data} from './terrain-data.ts';
 
-export function terrainHeight(x,z){
+export function terrainHeight(x: number,z: number){
  const u=Math.max(0,Math.min(data.nx-1.00001,(x-data.x0)/data.step)),v=Math.max(0,Math.min(data.nz-1.00001,(z-data.z0)/data.step)),i=Math.floor(u),j=Math.floor(v),a=u-i,b=v-j,k=j*data.nx+i,h=data.values;
  return h[k]*(1-a)*(1-b)+h[k+1]*a*(1-b)+h[k+data.nx]*(1-a)*b+h[k+data.nx+1]*a*b;
 }
 
-export function groundRange(x0,x1,z0,z1){
+export function groundRange(x0: number,x1: number,z0: number,z1: number): [number,number]{
  const h=[];for(let i=0;i<=4;i++)for(let j=0;j<=4;j++)h.push(terrainHeight(x0+(x1-x0)*i/4,z0+(z1-z0)*j/4));return[Math.min(...h),Math.max(...h)];
 }
 
-export function createTerrain(cutouts=[]){
+export function createTerrain(cutouts: {u: number[]; v: number[]}[]=[]){
  const xs=Array.from({length:data.nx},(_,i)=>data.x0+i*data.step),zs=Array.from({length:data.nz},(_,i)=>data.z0+i*data.step);
  for(const h of cutouts){xs.push(...h.u);zs.push(...h.v);}
- const unique=a=>a.sort((a,b)=>a-b).filter((n,i,a)=>!i||n-a[i-1]>1e-6),x=unique(xs),z=unique(zs),positions=[],indices=[];
+ const unique=(a: number[])=>a.sort((a,b)=>a-b).filter((n,i,a)=>!i||n-a[i-1]>1e-6),x=unique(xs),z=unique(zs),positions=[],indices=[];
  for(const v of z)for(const u of x)positions.push(u,terrainHeight(u,v),v);
  for(let j=0;j<z.length-1;j++)for(let i=0;i<x.length-1;i++){
   const u=(x[i]+x[i+1])/2,v=(z[j]+z[j+1])/2;

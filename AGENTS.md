@@ -11,7 +11,7 @@ Rules for AI coding agents (and people) working in this repository. The code and
 ## Layering
 
 - `src/engine/` knows nothing about Sillamäe or any particular building. Town data and refined buildings enter only through `CityDefinition` and `BuildingOverride` (`src/engine/types.ts`).
-- `src/city/sillamae/` holds town settings and refined building models. `kesk1/model.js` is hand-built for Kesk 1 (hard-coded edges, openings, site works), not a reusable archetype.
+- `src/city/sillamae/` holds town settings and refined building models. `kesk1/model.ts` is hand-built for Kesk 1 (hard-coded edges, openings, site works), not a reusable archetype.
 - `src/app/` is the React UI. The engine is created once outside React's render cycle (`town.ts` is an external store); components only call its API. Do not create the engine inside a component or effect: HMR and re-renders would start extra engines.
 - `pipeline/` is the offline data build in TypeScript run by Node 24 directly (type stripping), hence `.ts` import extensions and `erasableSyntaxOnly`. It runs the same model code as the viewer so ground patches match.
 

@@ -1,3 +1,5 @@
+import type {Point2, Polygon} from '../../../engine/types.ts';
+
 export const design = {
   "id": "213818453",
   "name": "Kesk 5",
@@ -68,11 +70,11 @@ export const design = {
       277.8,
       673.5
     ]
-  ],
+  ] as Polygon,
   "origin": [
     252.46250000000003,
     647.1250000000001
-  ],
+  ] as Point2,
   "floors": 5,
   "roofDatum": 16.5,
   "parapetHeight": 0.3,

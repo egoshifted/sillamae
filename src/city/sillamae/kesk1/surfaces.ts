@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 
-let loaded;
-export function surfaces() {
+interface Surfaces {maps: Record<string, THREE.Texture[]>; ready: Promise<void[]>}
+let loaded: Surfaces | undefined;
+export function surfaces(): Surfaces {
   if (loaded) return loaded;
-  const pending = [], loader = typeof window === 'undefined' ? null : new THREE.TextureLoader();
-  function texture(url, colour, anisotropy) {
+  const pending: Promise<void>[] = [], loader = typeof window === 'undefined' ? null : new THREE.TextureLoader();
+  function texture(url: URL, colour: boolean, anisotropy: number) {
     const canvas = loader ? document.createElement('canvas') : null;
-    if (canvas) { canvas.width = canvas.height = 1; const ctx = canvas.getContext('2d'); ctx.fillStyle = colour ? '#c0c0c0' : '#808080'; ctx.fillRect(0, 0, 1, 1); }
+    if (canvas) { canvas.width = canvas.height = 1; const ctx = canvas.getContext('2d')!; ctx.fillStyle = colour ? '#c0c0c0' : '#808080'; ctx.fillRect(0, 0, 1, 1); }
     const t = canvas ? new THREE.CanvasTexture(canvas) : new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
     if (loader) pending.push(loader.loadAsync(url.href).then(image => { t.image = image.image; t.needsUpdate = true; image.dispose(); }).catch(() => console.warn('Kesk 1 is using a plain surface because a texture could not load: ' + url.pathname)));
     t.wrapS = t.wrapT = THREE.RepeatWrapping;

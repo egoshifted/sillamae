@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {carveGroundPatches, concat} from '../../../engine/survey/carve.ts';
 import type {BuildingOverride, Point2} from '../../../engine/types.ts';
-import {createRodina} from './model.js';
-import {prepareRodinaGround} from './ground.js';
+import {createRodina} from './model.ts';
+import {prepareRodinaGround} from './ground.ts';
 
 const origin: Point2 = [304, 594], angle = .40919415678848364, datum = 14.5;
 const toSource = ([u, v]: Point2): Point2 => [origin[0] + u * Math.cos(angle) - v * Math.sin(angle), origin[1] + u * Math.sin(angle) + v * Math.cos(angle)];

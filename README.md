@@ -6,10 +6,11 @@ Search for an address, drag to move, scroll to zoom, and use the rotation button
 
 ## Develop
 
-Requires Node.js 24 or newer.
+Requires Node.js 24 or newer. Application source, refined buildings, the data pipeline and build configuration use TypeScript.
 
 ```
 npm install
+npm run check    # strict type check of all source and build configuration
 npm run dev      # build data, then a local server with reload
 npm run build    # type check, build data, static site in dist/
 npm run data     # data only

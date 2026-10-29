@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export function rodinaMaterials(){
- const textures=[],materials={},uniforms=[];let seed=1927;
+ const textures: THREE.Texture[]=[],materials: Record<string,THREE.MeshStandardMaterial>={},uniforms: {value: number}[]=[];let seed=1927;
  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  function grain(relief=false){const n=256,data=new Uint8Array(n*n*4);for(let y=0;y<n;y++)for(let x=0;x<n;x++){const noise=random(),i=(y*n+x)*4,v=relief?Math.round(96+noise*64):Math.round(230+noise*25);data.set([v,v,v,255],i);}const t=new THREE.DataTexture(data,n,n);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(2,2);t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.generateMipmaps=true;t.anisotropy=4;if(!relief)t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;textures.push(t);return t;}
  const colour=grain(),relief=grain(true);
@@ -11,7 +11,7 @@ export function rodinaMaterials(){
  float rodinaPatch(vec2 p,vec2 c,vec2 r){vec2 q=(p-c)/r;return exp(-dot(q,q)*2.);}
  float rodinaExposure(vec3 p,float pad){float lo=-2.1+.16*rn(vec2(p.y*6.,0.)),hi=-.18-.12*rn(vec2(p.y*7.,2.));return step(lo-pad,p.x)*step(p.x,hi+pad)*exp(-abs(p.z-17.43)*18.)*step(.16-pad,p.y)*step(p.y,1.12+.2*rn(p.xz*5.)+pad);}
  `;
- function make(name,color,roughness,kind=0,metalness=0,bump=.004){
+ function make(name: string,color: THREE.ColorRepresentation,roughness: number,kind=0,metalness=0,bump=.004){
   const m=new THREE.MeshStandardMaterial({name:'Rodina '+name,color,roughness,metalness,map:colour,bumpMap:relief,bumpScale:bump});
   const state={detail:{value:1},kind:{value:kind}};uniforms.push(state.detail);
   m.onBeforeCompile=s=>{s.uniforms.rodinaDetail=state.detail;s.uniforms.rodinaKind=state.kind;s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vRodinaP;').replace('#include <begin_vertex>','#include <begin_vertex>\nvRodinaP=position;');s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform float rodinaDetail; uniform float rodinaKind;\n'+common).replace('#include <color_fragment>',`#include <color_fragment>
@@ -57,9 +57,9 @@ export function rodinaMaterials(){
  make('iron',0x454b44,.86,6,.15,.002);make('metal',0x8a9391,.72,6,.35,.0015);make('palePipe',0xb0b5ad,.8,2,.15,.0015);
  make('concrete',0x939286,.98,5,0,.012);make('brick',0x95614c,.98,4,0,.008);make('sign',0x263b32,.8,6,.2,.001);
  make('grass',0x65744c,1,0,0,.014);
- let environment=null;
+ let environment: THREE.CubeTexture | null=null;
  {const images=Array.from({length:6},(_,i)=>{const data=new Uint8Array(32*32*4),top=i===3?[119,125,104]:[185,204,213],bottom=i===2?[219,228,230]:[105,121,111];for(let y=0;y<32;y++)for(let x=0;x<32;x++){const k=(y*32+x)*4;for(let c=0;c<3;c++)data[k+c]=Math.round(top[c]+(bottom[c]-top[c])*y/31);data[k+3]=255;}return new THREE.DataTexture(data,32,32);});environment=new THREE.CubeTexture(images);environment.colorSpace=THREE.SRGBColorSpace;environment.needsUpdate=true;textures.push(environment,...images);for(const n of ['glass','paleGlass']){materials[n].envMap=environment;materials[n].envMapIntensity=.65;}}
  for(const n of ['glass','paleGlass','void','sign','roof','roofFold']){materials[n].map=null;materials[n].bumpMap=null;}
- function setTextures(on){uniforms.forEach(u=>u.value=on?1:0);for(const[key,m]of Object.entries(materials)){if(key==='glass'||key==='paleGlass')m.envMap=on?environment:null;else if(!['void','sign','roof','roofFold'].includes(key)){m.map=on?m.userData.maps.map:null;m.bumpMap=on?m.userData.maps.bumpMap:null;m.bumpScale=on?m.userData.maps.bump:0;}m.needsUpdate=true;}}
+ function setTextures(on: boolean){uniforms.forEach(u=>u.value=on?1:0);for(const[key,m]of Object.entries(materials)){if(key==='glass'||key==='paleGlass')m.envMap=on?environment:null;else if(!['void','sign','roof','roofFold'].includes(key)){m.map=on?m.userData.maps.map:null;m.bumpMap=on?m.userData.maps.bumpMap:null;m.bumpScale=on?m.userData.maps.bump:0;}m.needsUpdate=true;}}
  return{materials,textures,setTextures,dispose(){Object.values(materials).forEach(m=>m.dispose());textures.forEach(t=>t.dispose());},textureBytes:Math.ceil(256*256*4*2*4/3+6*32*32*4*4/3)};
 }

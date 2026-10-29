@@ -1,6 +1,8 @@
-import {groundRange,terrainHeight} from './terrain.js';
+import {groundRange,terrainHeight} from './terrain.ts';
+import type * as THREE from 'three';
+import type {Block, Bounds, Face} from './types.ts';
 
-export const accessDesign={
+export const accessDesign: {stairs: {id: string; face: Face; centre: number; risers: number; topWidth: number; baseWidth: number; landing: number; run: number; top: number}[]; well: {id: string; u: number[]; v: number[]; floor: number; thickness: number; windowCentres: number[]; sill: number; head: number; width: number; posts: number; accessRoute: string}; platform: {u: number[]; v: number[]; top: number; thickness: number}; exits: {id: string; face: Face; centre: number}[]}={
  stairs:[
   {id:'NNE-flight',face:'NNE',centre:10.7,risers:5,topWidth:7.8,baseWidth:9.4,landing:1.05,run:.34,top:.7},
   {id:'ESE-flight',face:'ESE',centre:10.85,risers:5,topWidth:7.8,baseWidth:9.4,landing:1.05,run:.36,top:.7},
@@ -15,7 +17,7 @@ export const accessDesign={
  ]
 };
 
-export function facePoint(face,a,d){
+export function facePoint(face: Face,a: number,d: number): [number,number]{
  if(face==='NNE')return[a,d];
  if(face==='ESE')return[21.4-d,a];
  if(face==='WNW')return[d,21.65-a];
@@ -25,12 +27,12 @@ export function facePoint(face,a,d){
  throw Error('Unknown access face '+face);
 }
 
-function rect(face,a0,a1,d0,d1){const p=[facePoint(face,a0,d0),facePoint(face,a1,d1)];return[Math.min(p[0][0],p[1][0]),Math.max(p[0][0],p[1][0]),Math.min(p[0][1],p[1][1]),Math.max(p[0][1],p[1][1])];}
-export function exitLevel(exit){return groundRange(...rect(exit.face,exit.centre-.7,exit.centre+.7,-.5,.34))[1]+.035;}
+function rect(face: Face,a0: number,a1: number,d0: number,d1: number): Bounds{const p=[facePoint(face,a0,d0),facePoint(face,a1,d1)];return[Math.min(p[0][0],p[1][0]),Math.max(p[0][0],p[1][0]),Math.min(p[0][1],p[1][1]),Math.max(p[0][1],p[1][1])];}
+export function exitLevel(exit: {face: Face; centre: number}){return groundRange(...rect(exit.face,exit.centre-.7,exit.centre+.7,-.5,.34))[1]+.035;}
 
-export function addAccess(block,materials){
- const audit={stairs:[],well:null,platform:accessDesign.platform,exits:[]};
- const emit=(name,area,bottom,top,material)=>block(name,area[0],area[1],bottom,top,area[2],area[3],material);
+export function addAccess(block: Block,materials: {wall: THREE.MeshStandardMaterial; step: THREE.MeshStandardMaterial; guard: THREE.MeshStandardMaterial}){
+ const audit: {stairs: Record<string,unknown>[]; well: (typeof accessDesign.well & {retainingTop: number; guardPostPositions: number[]; gradeAtEnd: number[]}) | null; platform: typeof accessDesign.platform; exits: (typeof accessDesign.exits[number] & {area: Bounds; top: number})[]}={stairs:[],well:null,platform:accessDesign.platform,exits:[]};
+ const emit=(name: string,area: Bounds,bottom: number,top: number,material: THREE.MeshStandardMaterial)=>block(name,area[0],area[1],bottom,top,area[2],area[3],material);
  for(const s of accessDesign.stairs){
   const outer=s.landing+(s.risers-1)*s.run,foot=rect(s.face,s.centre-s.baseWidth/2,s.centre+s.baseWidth/2,-outer,-outer+s.run),grade=groundRange(...foot),rise=(s.top-grade[1])/s.risers,treads=[];
   const landing=rect(s.face,s.centre-s.topWidth/2,s.centre+s.topWidth/2,-s.landing,.34);
@@ -56,7 +58,7 @@ export function addAccess(block,materials){
   for(let x=a+.25;x<b-.15;x+=.3)block('well-guard-bar',x-.012,x+.012,top+.12,top+.65,zc-.012,zc+.012,materials.guard);
  }
  const p=accessDesign.platform;
- block('courtyard-service-platform',...p.u,p.top-p.thickness,p.top,...p.v,materials.step);
+ block('courtyard-service-platform',...p.u as [number,number],p.top-p.thickness,p.top,...p.v as [number,number],materials.step);
  for(const x of [p.u[0],p.u[1]]){
   block('platform-front-post',x-.025,x+.025,p.top,p.top+.9,p.v[1]-.025,p.v[1]+.025,materials.guard);
   if(x===p.u[0])block('platform-side-rail',x-.02,x+.02,p.top+.87,p.top+.91,p.v[0],p.v[1],materials.guard);

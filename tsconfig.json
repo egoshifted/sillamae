@@ -8,12 +8,10 @@
     "types": ["node"],
     "strict": true,
     "noEmit": true,
-    "allowJs": true,
-    "checkJs": false,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["src", "pipeline", "vite.config.js"]
+  "include": ["src", "pipeline", "vite.config.ts"]
 }

@@ -1,16 +1,18 @@
 import * as THREE from 'three';
-import {surfaces} from './surfaces.js';
+import {surfaces} from './surfaces.ts';
+import type {Building, GroundTriangle, Point2, Polygon, TerrainGrid, WorldFrame} from '../../../engine/types.ts';
+import type {kesk1Design} from './index.ts';
 
-export function addSteppedApartment(scene, building, terrain, design, frame) {
+export function addSteppedApartment(scene: THREE.Scene, building: Building, terrain: TerrainGrid & {siteGround?: GroundTriangle[]}, design: typeof kesk1Design & {closedConstructionAudit?: boolean; rearAccessDraft?: boolean}, frame: WorldFrame) {
   const [ox,oz]=frame.origin,level=design.foundationLevel;
   const surface=surfaces(),sharedTextures=new Set(Object.values(surface.maps).flat());
-  const root=new THREE.Group();root.position.set(0,level-frame.base,0);scene.add(root);
-  const batches=new Map(),g=building.g,pendingCaps=[];
+  const root=new THREE.Group() as THREE.Group & {children: THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>[]; userData: {groundPatches?: Polygon[]; setTextures(enabled: boolean): void; ready: Promise<void[]>; dispose(): void; [key: string]: unknown}};root.position.set(0,level-frame.base,0);scene.add(root);
+  const batches=new Map<THREE.MeshStandardMaterial,THREE.BufferGeometry[]>(),g=building.g,pendingCaps: {material: THREE.MeshStandardMaterial; points: THREE.Vector3[]}[]=[];
   const closedConstructionAudit=design.closedConstructionAudit===true;
-  const mat=(color,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness,shadowSide:THREE.DoubleSide});
+  const mat=(color: THREE.ColorRepresentation,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness,shadowSide:THREE.DoubleSide});
   const brick=mat('#c18460'),concrete=mat('#95958e'),trim=mat('#dddcd4'),glass=mat('#65818a',.3),dark=mat('#323b3b'),wood=mat('#6c4933'),metal=mat('#575c59'),roof=mat('#464b48'),redWood=mat('#834c38'),green=mat('#4d6938'),flower=mat('#eee9ca');
   const foundation=mat('#aaa99f',1);foundation.userData.foundationRender=true;foundation.vertexColors=true;
-  let foundationStain=null;
+  let foundationStain: ((x: number,y: number,z: number)=>number) | null=null;
   [foundation.map,foundation.bumpMap]=surface.maps['roughcast-v1'];foundation.bumpScale=.065;
   const sillMetal=mat('#818b8d',.45);sillMetal.metalness=.55;sillMetal.userData.sheetMetal=true;
   const paleMetal=mat('#bcc2c0',.5);paleMetal.metalness=.1;paleMetal.userData.sheetMetal=true;
@@ -23,16 +25,16 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   [brick.map,brick.bumpMap]=surface.maps['masonry-v1'];brick.bumpScale=.016;concrete.map=surface.maps['concrete-v1'][0];concrete.bumpMap=concrete.map;concrete.bumpScale=.025;
   const stepConcrete=concrete.clone(),groundConcrete=concrete.clone();groundConcrete.userData.groundSurface=true;
   // Survey layer depth lifts otherwise show through ground-contact surfaces (engine stairs use 1 m).
-  function lift(material){material.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * 1.;');};return material;}
+  function lift(material: THREE.MeshStandardMaterial){material.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * 1.;');};return material;}
   lift(stepConcrete);lift(groundConcrete);
-  function emit(geo,m,matrix){geo=geo.index?geo.toNonIndexed():geo.clone();geo.applyMatrix4(matrix);if(m===foundation){const p=geo.attributes.position,c=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const v=foundationStain?foundationStain(p.getX(i),p.getY(i),p.getZ(i)):1;c.set([v,v,v],i*3);}geo.setAttribute('color',new THREE.BufferAttribute(c,3));}if(m===brick||m===concrete||m===stepConcrete||m===groundConcrete||m===foundation||membraneMaterials.has(m)){const p=geo.attributes.position,n=geo.attributes.normal,uv=geo.attributes.uv,isFelt=membraneMaterials.has(m);for(let i=0;i<p.count;i++){if(m.userData.localUV)continue;const horizontal=Math.abs(n.getY(i))>.5;uv.setXY(i,(horizontal?p.getX(i):Math.abs(n.getX(i))>.5?p.getZ(i):p.getX(i))/(isFelt?16:m===brick?2.2:m===foundation?2:.8),(horizontal?p.getZ(i):p.getY(i))/(isFelt?16:m===brick?.996:m===foundation?2:.8));}}if(!batches.has(m))batches.set(m,[]);batches.get(m).push(geo);}
+  function emit(geo: THREE.BufferGeometry,m: THREE.MeshStandardMaterial,matrix: THREE.Matrix4){geo=geo.index?geo.toNonIndexed():geo.clone();geo.applyMatrix4(matrix);if(m===foundation){const p=geo.attributes.position,c=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const v=foundationStain?foundationStain(p.getX(i),p.getY(i),p.getZ(i)):1;c.set([v,v,v],i*3);}geo.setAttribute('color',new THREE.BufferAttribute(c,3));}if(m===brick||m===concrete||m===stepConcrete||m===groundConcrete||m===foundation||membraneMaterials.has(m)){const p=geo.attributes.position,n=geo.attributes.normal,uv=geo.attributes.uv,isFelt=membraneMaterials.has(m);for(let i=0;i<p.count;i++){if(m.userData.localUV)continue;const horizontal=Math.abs(n.getY(i))>.5;uv.setXY(i,(horizontal?p.getX(i):Math.abs(n.getX(i))>.5?p.getZ(i):p.getX(i))/(isFelt?16:m===brick?2.2:m===foundation?2:.8),(horizontal?p.getZ(i):p.getY(i))/(isFelt?16:m===brick?.996:m===foundation?2:.8));}}if(!batches.has(m))batches.set(m,[]);batches.get(m)!.push(geo);}
   const dummy=new THREE.Object3D();
-  function box(x,y,z,w,h,d,m,angle=0){dummy.position.set(x,y,z);dummy.rotation.set(0,angle,0);dummy.scale.set(1,1,1);dummy.updateMatrix();const stain=m===foundation&&foundationStain;emit(new THREE.BoxGeometry(w,h,d,stain?Math.ceil(w/.3):1,stain?Math.ceil(h/.15):1,stain?Math.ceil(d/.3):1),m,dummy.matrix);}
-  function edge(index){const a=g[index],b=g[(index+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=new THREE.Vector3((b[0]-a[0])/L,0,(b[1]-a[1])/L);let n=new THREE.Vector3(-u.z,0,u.x);const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];if(n.x*(mid[0]-building.c[0])+n.z*(mid[1]-building.c[1])<0)n.negate();
+  function box(x: number,y: number,z: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,angle=0){dummy.position.set(x,y,z);dummy.rotation.set(0,angle,0);dummy.scale.set(1,1,1);dummy.updateMatrix();const stain=m===foundation&&foundationStain;emit(new THREE.BoxGeometry(w,h,d,stain?Math.ceil(w/.3):1,stain?Math.ceil(h/.15):1,stain?Math.ceil(d/.3):1),m,dummy.matrix);}
+  function edge(index: number){const a=g[index],b=g[(index+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=new THREE.Vector3((b[0]-a[0])/L,0,(b[1]-a[1])/L);let n=new THREE.Vector3(-u.z,0,u.x);const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];if(n.x*(mid[0]-building.c[0])+n.z*(mid[1]-building.c[1])<0)n.negate();
     // Recess walls need the polygon winding, rather than the centroid heuristic.
     let area=0;for(let i=0;i<g.length;i++){const p=g[i],q=g[(i+1)%g.length];area+=p[0]*q[1]-q[0]*p[1];}n.set(u.z,0,-u.x).multiplyScalar(Math.sign(area));
-    const angle=Math.atan2(-u.z,u.x),at=(x,y,d=0)=>new THREE.Vector3(a[0]-ox+u.x*x+n.x*d,y,a[1]-oz+u.z*x+n.z*d);
-    const block=(x,y,w,h,d,m,offset=0,roofCovered=false)=>{
+    const angle=Math.atan2(-u.z,u.x),at=(x: number,y: number,d=0)=>new THREE.Vector3(a[0]-ox+u.x*x+n.x*d,y,a[1]-oz+u.z*x+n.z*d);
+    const block=(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0,roofCovered=false)=>{
       // The adjacent balcony pier must finish at the recessed side-wall plane,
       // not project back to the old corner after that wall has stepped inward.
       if(design.sideWallStep&&index===(design.sideWallStep.edge+1)%g.length&&x<design.sideWallStep.depth){const end=x+w;x=design.sideWallStep.depth;w=end-x;if(w<=1e-6)return;}
@@ -41,7 +43,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
       // parts of these caps exposed. Only overlapping portions are removed.
       const atStart=Math.abs(x)<1e-6,atEnd=Math.abs(x+w-L)<1e-6;
       if((m===brick||m===foundation||(m===dark&&index===6))&&offset<0&&Math.abs(offset+d)<1e-6&&(atStart||atEnd)){
-        const geo=new THREE.BoxGeometry(w,h,d),indices=Array.from(geo.index.array);
+        const geo=new THREE.BoxGeometry(w,h,d),indices=Array.from(geo.index!.array);
         // Match buried ends to the adjoining facade plane before removing their
         // caps. A square uncapped end leaves a wedge on non-orthogonal corners.
         const pos=geo.attributes.position;
@@ -59,23 +61,23 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
           for(let j=0;j<12;j+=3)if((atEnd&&j<6)||(atStart&&j>=6))pendingCaps.push({material:m,points:indices.slice(j,j+3).map(k=>new THREE.Vector3().fromBufferAttribute(pos,k).applyMatrix4(dummy.matrix))});
           geo.setIndex(indices.filter((_,j)=>!(atEnd&&j<6)&&!(atStart&&j>=6&&j<12)));
         }
-        if(roofCovered&&!closedConstructionAudit)geo.setIndex(Array.from(geo.index.array).filter(k=>geo.attributes.normal.getY(k)<.5));
+        if(roofCovered&&!closedConstructionAudit)geo.setIndex(Array.from(geo.index!.array).filter(k=>geo.attributes.normal.getY(k)<.5));
         emit(geo,m,dummy.matrix);return;
       }
       const p=at(x+w/2,y+h/2,offset+d/2);
-      if(roofCovered){const geo=new THREE.BoxGeometry(w,h,d);if(!closedConstructionAudit)geo.setIndex(Array.from(geo.index.array).filter(k=>geo.attributes.normal.getY(k)<.5));dummy.position.copy(p);dummy.rotation.set(0,angle,0);dummy.scale.set(1,1,1);dummy.updateMatrix();emit(geo,m,dummy.matrix);}
+      if(roofCovered){const geo=new THREE.BoxGeometry(w,h,d);if(!closedConstructionAudit)geo.setIndex(Array.from(geo.index!.array).filter(k=>geo.attributes.normal.getY(k)<.5));dummy.position.copy(p);dummy.rotation.set(0,angle,0);dummy.scale.set(1,1,1);dummy.updateMatrix();emit(geo,m,dummy.matrix);}
       else box(p.x,p.y,p.z,w,h,d,m,angle);
     };return {L,at,block,angle,n};
   }
-  function beam(a,b,r,m){const direction=b.clone().sub(a);dummy.position.copy(a).add(b).multiplyScalar(.5);dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),direction.clone().normalize());dummy.updateMatrix();emit(new THREE.CylinderGeometry(r,r,direction.length(),6),m,dummy.matrix);}
-  function window(p,x,y,w=1.3,h=1.45,frame=trim,curtains=false,annexHood=false,division=.5){const inset=annexHood?0:.31;
+  function beam(a: THREE.Vector3,b: THREE.Vector3,r: number,m: THREE.MeshStandardMaterial){const direction=b.clone().sub(a);dummy.position.copy(a).add(b).multiplyScalar(.5);dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),direction.clone().normalize());dummy.updateMatrix();emit(new THREE.CylinderGeometry(r,r,direction.length(),6),m,dummy.matrix);}
+  function window(p: Pick<ReturnType<typeof edge>,'block'> & Partial<Pick<ReturnType<typeof edge>,'at'>>,x: number,y: number,w=1.3,h=1.45,frame=trim,curtains=false,annexHood=false,division=.5){const inset=annexHood?0:.31;
     if(!annexHood){
       // Continuous masonry reveals join the outer wall to the inset frame/backing.
       // Without this tunnel, oblique sunlight escapes between two detached planes.
       const reveal=y<1.8?foundation:brick;
       // Only the four tunnel surfaces. Box-shaped reveals added coplanar front
       // strips over the masonry and lintel, which flickered during camera motion.
-      const surface=points=>{let q=points.map(([xx,yy,d])=>p.at(xx,yy,d)),centre=p.at(x+w/2,y+h/2,-.15),normal=q[1].clone().sub(q[0]).cross(q[2].clone().sub(q[0]));if(normal.dot(centre.sub(q[0]))<0)q.reverse();const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute([0,1,2,0,2,3].flatMap(i=>q[i].toArray()),3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(new Float32Array(12),2));geometry.computeVertexNormals();emit(geometry,reveal,new THREE.Matrix4());};
+      const surface=(points: number[][])=>{let q=points.map(([xx,yy,d])=>p.at!(xx,yy,d)),centre=p.at!(x+w/2,y+h/2,-.15),normal=q[1].clone().sub(q[0]).cross(q[2].clone().sub(q[0]));if(normal.dot(centre.sub(q[0]))<0)q.reverse();const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute([0,1,2,0,2,3].flatMap(i=>q[i].toArray()),3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(new Float32Array(12),2));geometry.computeVertexNormals();emit(geometry,reveal,new THREE.Matrix4());};
       for(const xx of [x-.08,x+w+.08])surface([[xx,y-.08,0],[xx,y+h+.08,0],[xx,y+h+.08,-.31],[xx,y-.08,-.31]]);
       for(const yy of [y-.08,y+h+.08])surface([[x-.08,yy,0],[x+w+.08,yy,0],[x+w+.08,yy,-.31],[x-.08,yy,-.31]]);
     }
@@ -86,7 +88,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   // upper 22 cm pierced the roof as five separate brick strips inside the edge.
   for(let i=0;i<g.length;i++){
     const face=edge(i),recessed=design.balconyEdges.includes(i),step=design.sideWallStep?.edge===i?design.sideWallStep:null;
-    const p=step?{...face,block:(x,y,w,h,d,m,offset=0)=>{
+    const p=step?{...face,block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>{
       const split=face.L-step.width,end=x+w;
       if(x<split)face.block(x,y,Math.min(end,split)-x,h,d,m,offset);
       if(end>split)face.block(Math.max(x,split),y,end-Math.max(x,split),h,d,m,offset-step.depth);
@@ -125,13 +127,13 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
       p.block(shoulder,roofLevel-.06,p.L-2*shoulder,.101,setback+.14,concrete,-setback-.14,true);
     }
   }
-  function offsetOutline(points,offsets){
+  function offsetOutline(points: Polygon,offsets: number | number[]): Polygon{
     const sign=Math.sign(points.reduce((s,a,i)=>{const b=points[(i+1)%points.length];return s+a[0]*b[1]-b[0]*a[1];},0));
     const lines=points.map((a,i)=>{const b=points[(i+1)%points.length],dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz),d=Array.isArray(offsets)?offsets[i]:offsets;return {a:[a[0]+sign*dz/L*d,a[1]-sign*dx/L*d],u:[dx/L,dz/L]};});
     return lines.map((b,i)=>{const a=lines[(i+lines.length-1)%lines.length],cross=a.u[0]*b.u[1]-a.u[1]*b.u[0],dx=b.a[0]-a.a[0],dz=b.a[1]-a.a[1],t=(dx*b.u[1]-dz*b.u[0])/cross;return [a.a[0]+a.u[0]*t,a.a[1]+a.u[1]*t];});
   }
-  function ring(outer,inner,y,h,material){const shape=new THREE.Shape(outer.map(p=>new THREE.Vector2(p[0]-ox,-(p[1]-oz))));shape.holes.push(new THREE.Path(inner.map(p=>new THREE.Vector2(p[0]-ox,-(p[1]-oz))).reverse()));const geometry=new THREE.ExtrudeGeometry(shape,{depth:h,bevelEnabled:false,steps:1});geometry.rotateX(-Math.PI/2);geometry.translate(0,y,0);emit(geometry,material,new THREE.Matrix4());}
-  const roofFootprint=[],roofOffsets=[];
+  function ring(outer: Polygon,inner: Polygon,y: number,h: number,material: THREE.MeshStandardMaterial){const shape=new THREE.Shape(outer.map(p=>new THREE.Vector2(p[0]-ox,-(p[1]-oz))));shape.holes.push(new THREE.Path(inner.map(p=>new THREE.Vector2(p[0]-ox,-(p[1]-oz))).reverse()));const geometry=new THREE.ExtrudeGeometry(shape,{depth:h,bevelEnabled:false,steps:1});geometry.rotateX(-Math.PI/2);geometry.translate(0,y,0);emit(geometry,material,new THREE.Matrix4());}
+  const roofFootprint: Polygon=[],roofOffsets: number[]=[];
   for(let i=0;i<g.length;i++){
     const previous=(i+g.length-1)%g.length,step=design.sideWallStep;
     if(step&&i===step.edge){const p=edge(i);roofFootprint.push(g[i]);roofOffsets.push(0);for(const d of [0,-step.depth]){const v=p.at(p.L-step.width,0,d);roofFootprint.push([v.x+ox,v.z+oz]);roofOffsets.push(0);}}
@@ -161,7 +163,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   }
   const shape=new THREE.Shape(roofFootprint.map(p=>new THREE.Vector2(p[0]-ox,-(p[1]-oz))));const cap=new THREE.ShapeGeometry(shape);cap.rotateX(-Math.PI/2);cap.translate(0,roofLevel+.041,0);emit(cap,roof,new THREE.Matrix4());
 
-    const apronGround=(p)=>{
+    const apronGround=(p: THREE.Vector3)=>{
       if(!terrain)return 0;
       let surface=-Infinity;const px=p.x+ox,pz=p.z+oz;
       for(const t of terrain.siteGround??[]){const den=(t[4]-t[7])*(t[0]-t[6])+(t[6]-t[3])*(t[1]-t[7]);if(Math.abs(den)<1e-10)continue;const a=((t[4]-t[7])*(px-t[6])+(t[6]-t[3])*(pz-t[7]))/den,b=((t[7]-t[1])*(px-t[6])+(t[0]-t[6])*(pz-t[7]))/den,c=1-a-b;if(Math.min(a,b,c)>=-1e-6)surface=Math.max(surface,a*t[2]+b*t[5]+c*t[8]);}
@@ -180,9 +182,9 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
       p.block(start,bottom,width,1.8-bottom,step.projection+.13,foundation,-.13);
       root.userData.entranceReturnProjection={edge:step.edge,start,width,projection:step.projection,bottom};
     }
-    function apron(p,x,width,depth,offset,material=concrete,lift=.003){
+    function apron(p: ReturnType<typeof edge>,x: number,width: number,depth: number,offset: number,material=concrete,lift=.003){
       if(material===concrete)material=groundConcrete;
-      const earlier=[...(root.userData.groundPatches??[])];
+      const earlier: Polygon[]=[...(root.userData.groundPatches??[])];
       (root.userData.groundPatches??=[]).push([[x,offset],[x+width,offset],[x+width,offset+depth],[x,offset+depth]].map(([u,d])=>{const q=p.at(u,0,d);return [q.x+ox,q.z+oz];}));
       // Clip each actual ground triangle to the apron rectangle. This preserves
       // every terrain break inside the strip, instead of interpolating its corners.
@@ -191,7 +193,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
       if(triangles?.length){
         for(const t of triangles){
           let poly=[0,3,6].map(i=>{const dx=t[i]-ox-origin.x,dz=t[i+1]-oz-origin.z;return [dx*u.x+dz*u.z,dx*n.x+dz*n.z,t[i+2]-level+lift];});
-          for(const plane of [q=>q[0]-x,q=>x+width-q[0],q=>q[1]-offset,q=>offset+depth-q[1]]){
+          for(const plane of [(q: number[])=>q[0]-x,(q: number[])=>x+width-q[0],(q: number[])=>q[1]-offset,(q: number[])=>offset+depth-q[1]]){
             const clipped=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=plane(a),db=plane(b);if(da>=0)clipped.push(a);if((da>=0)!==(db>=0)){const f=da/(da-db);clipped.push(a.map((v,k)=>v+(b[k]-v)*f));}}poly=clipped;
           }
           if(poly.length<3)continue;
@@ -200,7 +202,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
             const clip=old.map(q=>{const dx=q[0]-ox-origin.x,dz=q[1]-oz-origin.z;return [dx*u.x+dz*u.z,dx*n.x+dz*n.z];});
             const area=clip.reduce((s,a,i)=>{const b=clip[(i+1)%clip.length];return s+a[0]*b[1]-a[1]*b[0];},0),sign=Math.sign(area),outside=[];
             for(const piece of pieces){let inside=piece;
-              for(let e=0;e<clip.length&&inside.length;e++){const a=clip[e],b=clip[(e+1)%clip.length],plane=q=>sign*((b[0]-a[0])*(q[1]-a[1])-(b[1]-a[1])*(q[0]-a[0])),yes=[],no=[];
+              for(let e=0;e<clip.length&&inside.length;e++){const a=clip[e],b=clip[(e+1)%clip.length],plane=(q: number[])=>sign*((b[0]-a[0])*(q[1]-a[1])-(b[1]-a[1])*(q[0]-a[0])),yes=[],no=[];
                 for(let j=0;j<inside.length;j++){const a=inside[j],b=inside[(j+1)%inside.length],da=plane(a),db=plane(b);(da>=0?yes:no).push(a);if((da>=0)!==(db>=0)){const f=da/(da-db),q=a.map((v,k)=>v+(b[k]-v)*f);yes.push(q);no.push(q);}}
                 if(no.length>=3)outside.push(no);inside=yes;
               }
@@ -247,7 +249,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   const shaft=[[-2.7,-2.7],[2.7,-2.7],[2.7,2.7],[-2.7,2.7]].map(([x,z])=>[building.c[0]+x*Math.cos(shaftAngle)-z*Math.sin(shaftAngle),building.c[1]+x*Math.sin(shaftAngle)+z*Math.cos(shaftAngle)]);
   for(let i=0;i<shaft.length;i++){const a=shaft[i],b=shaft[(i+1)%shaft.length],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz),angle=Math.atan2(-dz,dx);
     const rearDoor=design.liftRoofDetails&&i===3,doorX=3.05,doorW=.90,doorY=roofLevel+.041,doorH=2;
-    const panel=(x,y,w,h,d,m,offset=0)=>box(a[0]+dx*(x+w/2)/length+dz/length*offset-ox,y+h/2,a[1]+dz*(x+w/2)/length-dx/length*offset-oz,w,h,d,m,angle);
+    const panel=(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>box(a[0]+dx*(x+w/2)/length+dz/length*offset-ox,y+h/2,a[1]+dz*(x+w/2)/length-dx/length*offset-oz,w,h,d,m,angle);
     if(rearDoor){
       panel(0,27.9,doorX,3.3,.09,trim);panel(doorX+doorW,27.9,length-doorX-doorW,3.3,.09,trim);
       panel(doorX,27.9,doorW,doorY-27.9,.09,trim);panel(doorX,doorY+doorH,doorW,31.2-doorY-doorH,.09,trim);
@@ -263,7 +265,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   const shaftCap=new THREE.ShapeGeometry(new THREE.Shape(shaft.map(p=>new THREE.Vector2(p[0]-ox,-(p[1]-oz)))));shaftCap.rotateX(-Math.PI/2);shaftCap.translate(0,31.2,0);emit(shaftCap,roof,new THREE.Matrix4());
   if(design.liftRoofDetails){
     const x=building.c[0]-.8*Math.cos(shaftAngle)+.2*Math.sin(shaftAngle)-ox,z=building.c[1]-.8*Math.sin(shaftAngle)-.2*Math.cos(shaftAngle)-oz;
-    for(const [y,top,bottom,h,m] of [[31.23,.26,.30,.06,metal],[31.44,.13,.13,.38,dark],[31.66,.07,.27,.12,metal]]){
+    for(const [y,top,bottom,h,m] of [[31.23,.26,.30,.06,metal],[31.44,.13,.13,.38,dark],[31.66,.07,.27,.12,metal]] as const){
       dummy.position.set(x,y,z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();emit(new THREE.CylinderGeometry(top,bottom,h,12),m,dummy.matrix);
     }
     root.userData.liftCowl={x,y:31.72,z};
@@ -274,11 +276,11 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
     const shoulder=design.steppedFacadeEdges?.includes(i)?design.balconyShoulder:0,scale=(L-2*shoulder)/L;
     // Front panels finish inside continuous brick cheeks. Keep the recessed
     // rear wall/doors fixed and shorten slabs, rather than burying those doors.
-    const occupied= y=>balconyEdges.includes(i)&&y>=1.9;
-    const p={...original,block:(x,y,w,h,d,m,offset=0)=>{
+    const occupied= (y: number)=>balconyEdges.includes(i)&&y>=1.9;
+    const p={...original,block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>{
       if(occupied(y)){if(offset>=0)offset-=.30;else if(offset+d>-.05)d=-.05-offset;original.block(shoulder+x*scale,y,w*scale,h,d,m,offset);}
       else original.block(x,y,w,h,d,m,offset);
-    },at:(x,y,d=0)=>original.at(occupied(y)?shoulder+x*scale:x,y,occupied(y)&&d>=0?d-.36:d)};
+    },at:(x: number,y: number,d=0)=>original.at(occupied(y)?shoulder+x*scale:x,y,occupied(y)&&d>=0?d-.36:d)};
     if(shoulder)for(const x of [0,L-shoulder])original.block(x,1.8,shoulder,roofLevel+.041-1.8,1.05,brick,-1.05,true);
     if(balconyEdges.includes(i)){
       // Ribs meet their backing face; they do not overlap its front plane.
@@ -331,11 +333,11 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
       if(i===8)window(p,L*.1,y); // Single column: the two spurious lower windows are removed.
     }
     if([4,8,14,19].includes(i))window(p,i===8?L*.1:i===4?L*.32:i===14?L*.76:L*.65,.35,1.2,.8);
-    if(i===18)window({...p,at:(x,y,d=0)=>p.at(x,y,d-.94),block:(x,y,w,h,d,m,offset=0)=>p.block(x,y,w,h,d,m,offset-.94)},(L-1.25)/2,.35,1.25,.8);
+    if(i===18)window({...p,at:(x: number,y: number,d=0)=>p.at(x,y,d-.94),block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>p.block(x,y,w,h,d,m,offset-.94)},(L-1.25)/2,.35,1.25,.8);
   }
   // September 2023 reference: the entrance fills the bay between both walls.
   // The old 7% margins left grass exposed beside the stair and a short canopy.
-  const entryFace=edge(6),entry={...entryFace,at:(x,y,d)=>entryFace.at(entryFace.L-x,y,d),block:(x,y,w,h,d,m,offset=0)=>entryFace.block(entryFace.L-x-w,y,w,h,d,m,offset)},ew=entry.L,ex=0;
+  const entryFace=edge(6),entry={...entryFace,at:(x: number,y: number,d: number)=>entryFace.at(entryFace.L-x,y,d),block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>entryFace.block(entryFace.L-x-w,y,w,h,d,m,offset)},ew=entry.L,ex=0;
   const stairX=ew*.43,stairW=ew-stairX;
   // Photo proportions are provisional: a single narrower door surrounded by
   // masonry, with roughcast rising one third of its height from the landing.
@@ -362,7 +364,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   for(const x of [-.02,entry.L-.02])entry.block(x,3.69,.04,.38,1.42,canopyMembrane,-.015);
   // Extend entrance solids down into the sampled apron. The old fixed
   // +.02/.05 bottoms left daylight below the landing and stair side faces.
-  const entrySolid=(x,y,w,h,d,m,offset)=>{
+  const entrySolid=(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset: number)=>{
     const bottom=Math.min(y,...[x,x+w].flatMap(xx=>[offset,offset+d].map(dd=>apronGround(entry.at(xx,0,dd))-.03)));
     entry.block(x,bottom,w,y+h-bottom,d,m===concrete?stepConcrete:m,offset);
   };
@@ -407,13 +409,13 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   annex.block(annexEndX,annexRoofY-.07,canopyEnd-annexEndX,.115,.012,roofEdgeMetal,annexDepth+.11);
   annex.block(canopyEnd-.012,annexRoofY-.07,.012,.115,annexDepth+.11,roofEdgeMetal,.01);
   const pipeX=annexStart+(annexEndX-annexStart)*.16,pipeD=annexDepth+.14;
-  const pipeGround=apronGround(annex.at(pipeX,0,pipeD)),pipeAt=(x,y)=>annex.at(x,pipeGround+y,pipeD);
+  const pipeGround=apronGround(annex.at(pipeX,0,pipeD)),pipeAt=(x: number,y: number)=>annex.at(x,pipeGround+y,pipeD);
   const pipePoints=[pipeAt(pipeX,-.04),pipeAt(pipeX,.35),pipeAt(pipeX+.08,.46),pipeAt(pipeX+.20,.46),pipeAt(pipeX+.28,.35),pipeAt(pipeX+.28,.26)];
   emit(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pipePoints),24,.035,8,false),metal,new THREE.Matrix4());
   annex.block(annexStart+.18,annexRoofY,annexEndX-annexStart-.18,parapetTop-annexRoofY,.025,annexMembrane,annexDepth-parapetThickness-.005);
   annex.block(annexStart+.18,annexRoofY,.025,parapetTop-annexRoofY,annexDepth-parapetThickness-.02,annexMembrane,.02);
   annex.block(annexStart+.18,annexRoofY,canopyEnd-annexStart-.18,.22,.025,annexMembrane,.02);
-  const annexEnd={block:(x,y,w,h,d,m,offset=0)=>{const p=annex.at(annexEndX+offset+d/2,y+h/2,x+w/2);box(p.x,p.y,p.z,w,h,d,m,annex.angle+Math.PI/2);}};
+  const annexEnd={block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>{const p=annex.at(annexEndX+offset+d/2,y+h/2,x+w/2);box(p.x,p.y,p.z,w,h,d,m,annex.angle+Math.PI/2);}};
   const aw=1.65,ax=pathOffset+.18;
   window(annexEnd,ax,.35,aw,1.15,wood,false,true);
   for(let j=0;j<=7;j++)annexEnd.block(ax+j*aw/7,.35,.025,1.15,.025,metal,.23);
@@ -456,7 +458,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   rear.block(rx-.1,3.57,rw+.2,.025,1.05,roof,.02);
   if(!design.rearAccessDraft){
   // The new survey site can lie below local zero; retain tread tops while burying their supports.
-  const rearStep=(top,depth,offset)=>{
+  const rearStep=(top: number,depth: number,offset: number)=>{
     let bottom=0;
     for(let i=0;i<=Math.ceil(rear.L/.25);i++)for(const d of [offset,offset+depth])bottom=Math.min(bottom,apronGround(rear.at(rear.L*i/Math.ceil(rear.L/.25),0,d))-.03);
     rear.block(0,bottom,rear.L,top-bottom,depth,stepConcrete,offset);
@@ -471,7 +473,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   for(const y of [gy0,gy1])beam(grille.at(gx0,y,gd),grille.at(gx1,y,gd),.018,trim);
   for(let j=0;j<24;j++){const a=j*Math.PI/48,b=(j+1)*Math.PI/48;beam(grille.at(gx0+.98*Math.cos(a),gy0+.98*Math.sin(a),gd),grille.at(gx0+.98*Math.cos(b),gy0+.98*Math.sin(b),gd),.012,trim);}
   const signWall=edge(1);
-  function plaque(text,x,y,w,h){const c=document.createElement('canvas');c.width=512;c.height=256;const ctx=c.getContext('2d');ctx.fillStyle='#f3f2e8';ctx.fillRect(0,0,512,256);ctx.fillStyle='#263130';ctx.font=`bold ${text===design.number?200:105}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,133);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;const m=mat('#ffffff');m.map=t;m.userData.flushPlaque=true;const right=new THREE.Vector3(signWall.n.z,0,-signWall.n.x),matrix=new THREE.Matrix4().makeBasis(right,new THREE.Vector3(0,1,0),signWall.n);matrix.setPosition(signWall.at(x,y,.0045));emit(new THREE.BoxGeometry(w,h,.003),m,matrix);}
+  function plaque(text: string,x: number,y: number,w: number,h: number){const c=document.createElement('canvas');c.width=512;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle='#f3f2e8';ctx.fillRect(0,0,512,256);ctx.fillStyle='#263130';ctx.font=`bold ${text===design.number?200:105}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,133);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;const m=mat('#ffffff');m.map=t;m.userData.flushPlaque=true;const right=new THREE.Vector3(signWall.n.z,0,-signWall.n.x),matrix=new THREE.Matrix4().makeBasis(right,new THREE.Vector3(0,1,0),signWall.n);matrix.setPosition(signWall.at(x,y,.0045));emit(new THREE.BoxGeometry(w,h,.003),m,matrix);}
   plaque(design.number,signWall.L-.7,4,.42,.4);plaque(design.street,signWall.L-.7,3.62,.85,.25);
   const fp=edge(8),fx=fp.L*.1;fp.block(fx,5.65,1.3,.22,.3,wood,-.12);
   // Position and length are approximate, referenced to the lowest balcony frame.
@@ -479,20 +481,20 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   beam(fp.at(flagX+.045,3.65,.025),fp.at(flagX+.045,3.92,.23),.024,metal);
   for(let j=0;j<12;j++){const p=fp.at(fx+.08+j*.1,5.95+.08*Math.sin(j),.09);dummy.position.copy(p);dummy.rotation.set(0,0,0);dummy.updateMatrix();emit(new THREE.IcosahedronGeometry(.095,0),j%3?flower:green,dummy.matrix);}
   const bp=edge(2),dish=bp.at(bp.L-.25,8.6,.65);beam(bp.at(bp.L-.25,8.3,.12),dish,.035,metal);dummy.position.copy(dish);dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),bp.n.clone().add(new THREE.Vector3(0,.25,0)).normalize());dummy.scale.set(1,1,.22);dummy.updateMatrix();emit(new THREE.SphereGeometry(.42,16,10),trim,dummy.matrix);dummy.scale.set(1,1,1);
-  function bench(p,x,d){for(let j=0;j<5;j++)p.block(x,.45,2,.05,.075,redWood,d+j*.09);for(let j=0;j<6;j++)p.block(x,.57+j*.1,2,.07,.065,redWood,d);for(const xx of [x+.25,x+1.75]){beam(p.at(xx,.05,d+.16),p.at(xx,.48,d+.16),.045,metal);beam(p.at(xx,.43,d+.03),p.at(xx,1.13,d+.03),.035,metal);}}
+  function bench(p: ReturnType<typeof edge>,x: number,d: number){for(let j=0;j<5;j++)p.block(x,.45,2,.05,.075,redWood,d+j*.09);for(let j=0;j<6;j++)p.block(x,.57+j*.1,2,.07,.065,redWood,d);for(const xx of [x+.25,x+1.75]){beam(p.at(xx,.05,d+.16),p.at(xx,.48,d+.16),.045,metal);beam(p.at(xx,.43,d+.03),p.at(xx,1.13,d+.03),.035,metal);}}
   bench(edge(8),edge(8).L*.63,4.35);
   const grassBench=edge(8),bx=-10.5;grassBench.block(bx,.47,2,.08,.4,wood,4.35);grassBench.block(bx,.85,2,.28,.07,redWood,4.35);for(const x of [bx+.25,bx+1.75])grassBench.block(x,0,.12,1.12,.17,concrete,4.45);
   if(terrain){
     const asphalt=lift(mat('#83877e'));asphalt.userData.groundSurface=true;
-    const ground=(x,z)=>{const xx=Math.max(0,Math.min(terrain.width-1.001,(x-terrain.origin[0])/terrain.step)),zz=Math.max(0,Math.min(terrain.height-1.001,(z-terrain.origin[1])/terrain.step)),i=Math.floor(xx),j=Math.floor(zz),u=xx-i,v=zz-j,k=j*terrain.width+i,d=terrain.values;return (d[k]*(1-u)*(1-v)+d[k+1]*u*(1-v)+d[k+terrain.width]*(1-u)*v+d[k+terrain.width+1]*u*v)/10-level+.12;};
-    function quad(points,m){const geo=new THREE.BufferGeometry(),ids=[0,1,2,0,2,3];geo.setAttribute('position',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0]-ox,ground(...points[i]),points[i][1]-oz]),3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0],points[i][1]]),2));geo.computeVertexNormals();emit(geo,m,new THREE.Matrix4());}
+    const ground=(x: number,z: number)=>{const xx=Math.max(0,Math.min(terrain.width-1.001,(x-terrain.origin[0])/terrain.step)),zz=Math.max(0,Math.min(terrain.height-1.001,(z-terrain.origin[1])/terrain.step)),i=Math.floor(xx),j=Math.floor(zz),u=xx-i,v=zz-j,k=j*terrain.width+i,d=terrain.values;return (d[k]*(1-u)*(1-v)+d[k+1]*u*(1-v)+d[k+terrain.width]*(1-u)*v+d[k+terrain.width+1]*u*v)/10-level+.12;};
+    function quad(points: Polygon,m: THREE.MeshStandardMaterial){const geo=new THREE.BufferGeometry(),ids=[0,1,2,0,2,3];geo.setAttribute('position',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0]-ox,ground(...points[i]),points[i][1]-oz]),3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0],points[i][1]]),2));geo.computeVertexNormals();emit(geo,m,new THREE.Matrix4());}
     const road=[[232.3,555.5,5],[228.8,564.4,8.4],[218,591.9,8.4],[221.8,601.3,5]];
     for(let i=0;i<road.length-1;i++){const a=road[i],b=road[i+1],len=Math.hypot(b[0]-a[0],b[1]-a[1]),nx=(b[1]-a[1])/len,nz=-(b[0]-a[0])/len,steps=Math.ceil(len);
-      const point=(t,side)=>[a[0]+(b[0]-a[0])*t+nx*(a[2]+(b[2]-a[2])*t)*side/2,a[1]+(b[1]-a[1])*t+nz*(a[2]+(b[2]-a[2])*t)*side/2];
+      const point=(t: number,side: number): Point2=>[a[0]+(b[0]-a[0])*t+nx*(a[2]+(b[2]-a[2])*t)*side/2,a[1]+(b[1]-a[1])*t+nz*(a[2]+(b[2]-a[2])*t)*side/2];
       for(let j=0;j<steps;j++)quad([point(j/steps,-1),point((j+1)/steps,-1),point((j+1)/steps,1),point(j/steps,1)],asphalt);
     }
     const approach=edge(6),width=approach.L,left=0;
-    const roadPoint=(x,d)=>{const p=approach.at(x,0,d);return [p.x+ox,p.z+oz];};
+    const roadPoint=(x: number,d: number): Point2=>{const p=approach.at(x,0,d);return [p.x+ox,p.z+oz];};
     // Lay continuous concrete into the stair footprint first. Later driveway
     // polygons are clipped against it, rather than stealing a strip at the join.
     // Retain the established concrete apron footprint as stairs widen over it.
@@ -500,12 +502,12 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
     apron(approach,-.45,apronInset+.50,3.3,-.20);
     apron(approach,approach.L-apronInset-.05,apronInset+.50,3.3,-.20);
     apron(approach,left-.03,width+.06,12.3,-.10,asphalt,.003);
-    const walk=edge(8);for(let x=-8;x<walk.L+2;x+=1){const pts=[[x,4.85],[x+1,4.85],[x+1,6.05],[x,6.05]].map(([u,d])=>{const p=walk.at(u,0,d);return[p.x+ox,p.z+oz];});quad(pts,groundConcrete);}
+    const walk=edge(8);for(let x=-8;x<walk.L+2;x+=1){const pts=[[x,4.85],[x+1,4.85],[x+1,6.05],[x,6.05]].map(([u,d])=>{const p=walk.at(u,0,d);return[p.x+ox,p.z+oz] as Point2;});quad(pts,groundConcrete);}
   }
   // Keep exposed portions of structural end faces. Neighbours only hide the
   // intersection, not the whole cap (their terrain-dependent bottoms differ).
   // Subtract coplanar triangles before batching to avoid duplicate skins.
-  const capOccluders=new Map();
+  const capOccluders=new Map<THREE.MeshStandardMaterial,{points: THREE.Vector3[]; normal: THREE.Vector3}[]>();
   for(const material of [brick,foundation,dark]){
     const triangles=[];
     for(const part of batches.get(material)||[]){const p=part.attributes.position;for(let i=0;i<p.count;i+=3){
@@ -515,7 +517,7 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   }
   for(const cap of pendingCaps){
     const normal=cap.points[1].clone().sub(cap.points[0]).cross(cap.points[2].clone().sub(cap.points[0])).normalize();let fragments=[cap.points];
-    for(const other of capOccluders.get(cap.material)){
+    for(const other of capOccluders.get(cap.material)!){
       if(normal.dot(other.normal)<.99999||other.points.some(p=>Math.abs(p.clone().sub(cap.points[0]).dot(normal))>.0001))continue;
       const remaining=[];
       for(const fragment of fragments){let inside=fragment;
@@ -538,17 +540,17 @@ export function addSteppedApartment(scene, building, terrain, design, frame) {
   }
   // Merge by material: façade detail should not add hundreds of draw calls.
   for(const [material,parts] of batches){const merged=new THREE.BufferGeometry();for(const name of ['position','normal','uv',...(material===foundation?['color']:[])]){const size=parts[0].attributes[name].itemSize,total=parts.reduce((n,p)=>n+p.attributes[name].array.length,0),array=new Float32Array(total);let offset=0;for(const p of parts){array.set(p.attributes[name].array,offset);offset+=p.attributes[name].array.length;}merged.setAttribute(name,new THREE.BufferAttribute(array,size));}merged.computeBoundingSphere();const mesh=new THREE.Mesh(merged,material);mesh.castShadow=!material.userData.groundSurface;mesh.receiveShadow=true;root.add(mesh);parts.forEach(p=>p.dispose());}
-  root.userData.setTextures=enabled=>{for(const m of [brick,concrete,stepConcrete,groundConcrete,foundation,...membraneMaterials]){m.userData.texture??=m.map;m.userData.bumpTexture??=m.bumpMap;m.map=enabled?m.userData.texture:null;m.bumpMap=enabled?m.userData.bumpTexture:null;m.needsUpdate=true;}};
+  root.userData.setTextures=(enabled: boolean)=>{for(const m of [brick,concrete,stepConcrete,groundConcrete,foundation,...membraneMaterials]){m.userData.texture??=m.map;m.userData.bumpTexture??=m.bumpMap;m.map=enabled?m.userData.texture:null;m.bumpMap=enabled?m.userData.bumpTexture:null;m.needsUpdate=true;}};
   let disposed=false;
   root.userData.ready=surface.ready;
   root.userData.dispose=()=>{
     if(disposed)return;disposed=true;
-    const ownedTextures=new Set(),ownedMaterials=new Set();
+    const ownedTextures=new Set<THREE.Texture>(),ownedMaterials=new Set<THREE.Material>();
     for(const mesh of root.children){
       mesh.geometry?.dispose();
       for(const material of mesh.material?(Array.isArray(mesh.material)?mesh.material:[mesh.material]):[]){
         ownedMaterials.add(material);
-        for(const value of [...Object.values(material),...Object.values(material.userData)])if(value?.isTexture&&!sharedTextures.has(value))ownedTextures.add(value);
+        for(const value of [...Object.values(material),...Object.values(material.userData)])if((value as THREE.Texture | null)?.isTexture&&!sharedTextures.has(value as THREE.Texture))ownedTextures.add(value as THREE.Texture);
       }
     }
     for(const texture of ownedTextures)texture.dispose();

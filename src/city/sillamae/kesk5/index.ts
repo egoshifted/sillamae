@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import {carveGroundPatches, concat} from '../../../engine/survey/carve.ts';
 import type {BuildingOverride, Point2} from '../../../engine/types.ts';
 import {design, balconySchedule} from './config.ts';
-import {createOffsetSlabStudy} from './offset-slab.js';
-import {createEntranceDetailStudy} from './entrance-detail.js';
-import {batchDetailStudy} from './batch-detail.js';
-import {prepareKesk5Ground} from './ground.js';
-import {preloadSurfaces, surfaces} from './surfaces.js';
+import {createOffsetSlabStudy} from './offset-slab.ts';
+import {createEntranceDetailStudy} from './entrance-detail.ts';
+import {batchDetailStudy} from './batch-detail.ts';
+import {prepareKesk5Ground} from './ground.ts';
+import {preloadSurfaces, surfaces} from './surfaces.ts';
 
 const DATUM = 11.81;
 const plain = createOffsetSlabStudy(design), audit = plain.userData.audit;
