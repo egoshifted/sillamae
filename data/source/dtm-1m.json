@@ -1,0 +1,13 @@
+{
+  "source": "Maa- ja Ruumiamet DTM WCS dtm-1",
+  "crs": "EPSG:3301",
+  "fetched": "2026-10-29",
+  "west": 712799,
+  "south": 6589336,
+  "width": 3483,
+  "height": 1659,
+  "cell": 1,
+  "unit": "cm",
+  "noData": -32768,
+  "rows": "south to north"
+}
