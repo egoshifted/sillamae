@@ -61,6 +61,7 @@ export interface OverrideContext {
   terrain: TerrainGrid;
   frame: WorldFrame;
   ground: GroundTriangle[];
+  changed?(): void;
 }
 
 export interface BuiltOverride {

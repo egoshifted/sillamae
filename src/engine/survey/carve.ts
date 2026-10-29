@@ -28,14 +28,14 @@ export function concat(chunks: Float32Array[]) {
   return out;
 }
 
-export function carveGroundPatches(vertices: Float32Array, patches: Polygon[]) {
+export function carveGroundPatches(vertices: Float32Array, patches: Polygon[], minHeight = -Infinity) {
   if (!patches.length) return vertices;
   const all = patches.flat(), minX = Math.min(...all.map(p => p[0])), maxX = Math.max(...all.map(p => p[0]));
   const minZ = Math.min(...all.map(p => p[1])), maxZ = Math.max(...all.map(p => p[1]));
   const chunks: Float32Array[] = [];
   let local: SurveyVertex[][] = [], run = 0;
   for (let i = 0; i < vertices.length; i += TRIANGLE) {
-    if (vertices[i + 6] !== 0) continue;
+    if (vertices[i + 6] !== 0 || Math.max(vertices[i + 2], vertices[i + 9], vertices[i + 16]) < minHeight) continue;
     const xs = [vertices[i], vertices[i + 7], vertices[i + 14]], zs = [vertices[i + 1], vertices[i + 8], vertices[i + 15]];
     if (Math.max(...xs) < minX || Math.min(...xs) > maxX || Math.max(...zs) < minZ || Math.min(...zs) > maxZ) continue;
     if (i > run) chunks.push(vertices.subarray(run, i));
