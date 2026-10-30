@@ -54,6 +54,10 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 
 ### D05 Elevation and opening schedule
 
+- Reconcile the complete rendered population, not only the clearest sample: expected openings and individual glazed halves versus implemented observed, inferred and deferred layouts, on every floor of every elevation. A handful of detailed units cannot pass the building's window coverage. Flag blank undivided placeholders explicitly when the building's visible window families consistently have bars.
+- When the owner explicitly authorizes best guesses for missing views, fill the authorized population with a deterministic, target-supported family and record each inferred unit separately. Preserve directly observed exceptions; do not invent random replacement histories. This exception belongs to that owner's recorded scope and does not authorize guesses for subsequent buildings.
+
+
 - Give every window/door an ID. Record elevation, floor, horizontal anchor, width, height, sill/head levels, frame material/colour, pane divisions, transoms, curtains, recess and adjacent wall features.
 - Count the actual rows/columns and note omissions. Kesk 1's saved rear schedule distinguishes eight central windows, an aligned foundation window and a separate recessed window beneath the balcony.
 - Check basement openings independently for height, width, alignment and lintel treatment. Never run the upper-floor pattern through the basement automatically.
@@ -64,6 +68,10 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 **Acceptance:** schedule and visible model agree unit by unit, including intentional missing openings and nonuniform floors.
 
 ### D06 Windows reveals lintels and sills
+
+- Trace lintels through the wall between openings and across every section boundary. Establish whether they are isolated blocks or connected horizontal courses; record their ends, joints, thickness and projection on each elevation and floor. Check between-window samples as well as directly above windows, including regions partly hidden by trees. Basement treatment remains independent.
+- Compare lintel brightness against the adjacent masonry in the same reference plane and model lighting, with shadows disabled as well as enabled. Inspect the combined material tint and texture albedo; a reused stair-concrete recipe is not evidence of the correct lintel colour. Keep independent finish settings where the reference differs.
+
 
 - Cut the opening in masonry and provide four correctly transformed reveals. Verify depth at all corners and along all four edges; a ray through the window centre cannot check the perimeter.
 - Keep glass, frame, reveal, lintel and sill in their intended order and plane. Recessed rear basement reveals must move with the frame; leaving them at the old wall transform creates a detached seam.
@@ -125,6 +133,10 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 
 ### D11 Roof structure membrane and folded metal
 
+- Inspect the external roof silhouette from below before an overhead review. Inventory projecting concrete coping, cornice or drip strips separately from the masonry parapet, membrane and metal protection. Record thickness, outward projection, top level, inner edge and all corner/termination relationships. Do not omit a shallow projection because the general roof volume is correct.
+- Replace covered upper wall/top faces when forming a continuous cap; check a single visible top owner, outward normals, open roof interior and continuous corners. Probe just outside the old wall plane so a flush former roof edge fails the projection check. Inspect all returns and underside shadow at close range.
+
+
 - Separate roof deck level, parapet top, coping thickness, drip returns, shelf, raised wall and inner waterproof lining. Never infer one from the apparent height of another.
 - Inspect all concave/convex roof corners from inside, outside, above and below. Verify continuous mitres, hole winding and outward normals; lining must remain inside the parapet and not wrap exterior brick corners.
 - Check the full-height wall projection through the roof edge; a strip ending below coping is not a complete continuation.
@@ -147,6 +159,9 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 **Acceptance:** recognisable reference masonry with believable scale and imperfect detail, stable across elevations and zoom levels.
 
 ### D13 Roughcast concrete glazing and metal
+
+- Judge material relationships, not only isolated swatches: lintel-to-brick, coping-to-parapet, frame-to-glass and sill-to-frame. Match brightness under comparable light and check texture multiplication does not turn pale concrete into a dark stripe. A roof-edge weathered finish must not silently darken lintel courses or steps.
+
 
 - Distinguish foundation/annex roughcast, smooth lintel concrete, stair concrete, masonry and sheet metal. Do not assign one generic grey material to all of them.
 - Roughcast should show the observed coarse irregular aggregate and broad uneven/wavy trowel relief. Check that it does not become smooth plastic, noisy glitter or oversized rock. Preserve the intended foundation brightness in sun and shade.
@@ -194,6 +209,8 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 **Acceptance:** correct feature, exact façade/floor relationship and plausible mounting; all observed distinctive items individually accounted for.
 
 ### D17 Plaques signs and text
+
+- Preserve local texture coordinates on lettering and labels when applying world-scale UVs to surrounding building surfaces. Inspect actual readable text, not only a correctly placed blank backing.
 
 - Match which wall/corner owns each plaque, order of number/street signs, orientation, text, proportions and spacing. Kesk 1's first placement was beside the wrong window; correct text alone was insufficient.
 - Verify text faces outward, remains readable and is not mirrored. Compare frontal and both oblique views.
