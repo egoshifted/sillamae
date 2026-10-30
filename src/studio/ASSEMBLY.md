@@ -16,6 +16,10 @@ Start with [NEW-BUILDING.md](NEW-BUILDING.md). `project.ts` selects the town and
 
 The starter massing utility accepts a footprint, datum and height. It deliberately supplies no guessed windows, balconies or roof style. Extend the active building’s generator from reference evidence. Existing implementations are described in [EXAMPLES.md](EXAMPLES.md) only as optional code references.
 
+## Reusable assets and components
+
+Follow [REUSE.md](REUSE.md) before creating textures, details, fittings, fixtures or components. Inspect existing candidates, prefer supported exact/near matches and report reuse, differences, new assets and owner choices in every refinement review. Keep canonical asset references rather than duplicate files; parameterise target-specific settings without inheriting another building's architecture. The guide lists current source locations, future extraction destinations, shared-resource ownership and consumer-preservation requirements. A source-file reuse is distinct from shared runtime allocations; record actual resource effects and uncertainty.
+
 ## Add or refine a building
 
 Keep source in a city building directory; define stable identity, measured footprint, floor numbering, datum, entrances and reference-derived schedules. Start a plain study, then expose a `BuildingOverride` and register it with the city. Add a study adapter only when a plain/compact representation needs placement beyond the common assembled path. Test source-to-prepared ground parity after changing the footprint, grading, entrances or patches.

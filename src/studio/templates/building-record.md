@@ -25,6 +25,21 @@ Keep this completed file outside the repository.
 
 Record windows, basement, balconies, entrances, roof, materials, attachments and contacts separately. Label authorized sister-building transfers and approximations; do not treat them as direct evidence.
 
+## Reuse inventory and owner choices
+
+Follow the repository's `src/studio/REUSE.md`. Keep this completed inventory and comparison evidence locally, and include a concise **Reuse and new assets** summary in every refinement review. Search existing assets and rendered parts before creating new ones; record search coverage and why candidates were rejected. At the plain stage, distinguish applied utilities/parts from future candidates not yet applied.
+
+- Repository locations, source buildings and asset/component families searched:
+- Exact, near-identical, unsuitable and uncertain candidates; no-match search coverage:
+- Shared resource ownership/cache and per-building settings; affected consumers checked:
+- Measured resource effects and conditions (source/transfer bytes, cold/warm loading, runtime allocations/draws where relevant); estimates and unmeasured effects:
+
+| Target feature / location | Source building, canonical path, symbol/ID and version/hash | Match and target-reference comparison | Reused / parameterised variant / new / deferred; settings and visible differences | Resource effect | Owner choice / exact decision, date, version and scope |
+| --- | --- | --- | --- | --- | --- |
+| | | | | | |
+
+For near matches present retain / adjust / new-asset choices and keep an undecided approximation provisional. Explain why a new asset is necessary when no candidate is suitable. Reuse does not transfer another building's measurements, layouts or approval. Mirror the summary in `reuseReview` in the visual-review JSON; its contents are collaborator-reviewed, not automatically validated by `studio:finalize`.
+
 ## Correction record
 
 - Reported defect and original image:

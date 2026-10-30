@@ -20,6 +20,14 @@ Apply this workflow to every subsequent building and to corrections of previousl
 - Prefer the clearest relevant reference; reconcile differences in date, renovations, perspective and occlusion. Do not mix incompatible historical states silently. Keep winter, snow and evening illumination out of a summer model unless requested.
 - If Street View and web searches cannot provide adequate references, or access is unavailable, ask the user whether they have reference photos of the specific missing elevation or detail. Record the gap and continue supported work; keep dependent geometry provisional. Do not invent a hidden elevation to finish the checklist.
 
+### Reuse matching assets and parts
+
+Before authoring or duplicating a texture, material, detail, fitting, fixture or component, follow [REUSE.md](REUSE.md). Inspect existing repository assets and rendered parts against this building's references; classify exact matches, near-identical candidates, unsuitable candidates and uncertainty. Prefer supported reuse by canonical reference or parameterised factory. This applies across buildings without transferring unsupported layouts, dimensions, appearance or approvals.
+
+Every refinement review must include **Reuse and new assets**: source paths/versions, target-reference comparisons, what was reused or adapted, visible differences, genuinely new assets and their justification, resource effects with measured/estimated/unmeasured labels, and owner choices. Present near-identical alternatives so the owner can retain the match, request an adjustment or choose a new asset. Keep undecided approximations provisional and save exact decisions outside the repository. Plain-shape reviews report applied utilities/parts and future candidates without adding finishes early.
+
+Keep one canonical asset, safe texture/geometry lifetimes and independent per-building material settings where needed. Sharing source files is not proof of shared GPU resources or faster loading. Avoid duplicate files and unnecessary heavy-model imports; preserve all existing consumers when extracting or changing shared assets. See REUSE.md for storage, compatibility, ownership and preservation checks.
+
 ## 3. Establish dimensions and proportions
 
 - Use surveyed footprints or other measured data where available. Verify that adjoining parts belong to the same building.

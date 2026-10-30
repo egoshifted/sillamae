@@ -1,6 +1,13 @@
 {
   "reviewer": "",
   "inspectedAt": "",
+  "reuseReview": {
+    "status": "pending",
+    "searchCoverage": [],
+    "items": [],
+    "resourceFindings": "",
+    "ownerDecisions": []
+  },
   "intentionalDifferences": [],
   "gates": {
     "reference": {

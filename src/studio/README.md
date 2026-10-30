@@ -4,6 +4,10 @@ A reusable local workspace for progressively building and refining any atlas bui
 
 Copy the [collaborator prompt](COLLABORATOR-PROMPT.md) to start an agent on any building. Reference study requires both available Street View and web searches for photographs; ask the user for specific missing photos when these sources leave gaps.
 
+## Reuse before creating new assets
+
+Follow [the reuse guide](REUSE.md) before authoring textures, details, fittings, fixtures or other components. Search existing assets and rendered parts for exact and near-identical matches; prefer supported reuse and report sources, adaptations, visible differences, resource effects and owner choices in every refinement review. Near matches remain explicit choices for the owner, not silent substitutions. The local record and review templates include this inventory. Preserve target-specific dimensions and layouts, shared-resource lifetimes and existing consumers.
+
 ## Start
 
 Requires Node 24+ and the repository's installed dependencies:
@@ -23,10 +27,11 @@ Every catalogue building has original-survey and provisional-massing views. New 
 
 | Location | Responsibility |
 | --- | --- |
-| `src/city/sillamae/<building>/` | The only production model, design, textures and site adaptation for that address. |
+| `src/city/sillamae/<building>/` | Production model, design, building-specific assets and site adaptation for that address; reference canonical shared assets instead of copying them. |
 | `src/studio/project.ts`, `studies.ts`, `types.ts` | Select the city, discover per-building stages and apply a common study lifecycle. Building-specific stages live beside their model. |
 | `src/studio/viewer.ts` | Shared controls, camera, lighting and lifecycle for every building. |
-| `src/studio/assembly/` | Small model-authoring utilities used by studies and production models. No UI, evidence or town assumptions. |
+| `src/studio/assembly/` | Shared model-authoring utilities and extracted city-independent components used by studies and production models. No UI, evidence or town assumptions. |
+| `src/city/sillamae/shared/` (when needed) | Town-specific shared assets/loaders or component variants extracted under the reuse guide; existing canonical assets may remain in building folders. |
 | `src/studio/tools/` | Portable TypeScript versions of the local verification, model snapshot and capture workflows. |
 | `src/engine/` | Town-independent runtime and survey handling; never import studio UI/tools here. |
 | Local folder outside the checkout | Photos, URLs, feature schedules, approvals, backups, comparisons, captures, logs and reports. |

@@ -228,6 +228,11 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 
 ### D20 Runtime resources and independent surroundings
 
+- Before creating assets, search existing textures, materials, details, fittings, fixtures and components under [REUSE.md](REUSE.md). Inspect candidate assets and rendered parts against target references; record search coverage, source paths/versions, exact/near-match classification and unsuitable or uncertain candidates.
+- Prefer canonical assets and parameterised components when supported. Keep target layouts/dimensions independent, list every visible difference and variant setting, and justify genuinely new assets. Do not copy files or whole models merely to reuse a small part.
+- Include **Reuse and new assets** in every user-facing refinement review, including plain-stage candidates not yet applied. Report retained/applied reuse, new assets, comparison evidence and resource effects; explicitly offer the owner the choice to retain, adjust or replace near matches and record their decisions locally.
+- Verify claimed resource savings rather than assuming them: distinguish duplicate source/transfer bytes, shared versus separate texture/geometry allocations, cold/warm loading and draw calls where measured. Mark estimates and unmeasured effects; compare affected consumers when shared assets change.
+
 - Verify the correct building loads by stable ID, survives selection/search/review controls, changes full/compact representation without dropping the existing model prematurely, unloads offscreen and reloads correctly.
 - Check material/texture ownership: toggling or disposing one building must not change another building's appearance or dispose a shared texture still in use.
 - Check current texture inputs, fallback behavior, original resolution/mips and source hashes. A GPU texture estimate is not total browser memory; compression is not a mobile performance test.
@@ -236,4 +241,4 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 - Keep platform, paths, street steps, railings, bank and vegetation independently owned where intended. Verify they remain in the atlas when the building unloads or changes detail, not only in an isolated draft.
 - Preserve separate rear access, platform, paths and vegetation against their current source and local accepted records. Historical dimensions do not override later instructions. Surroundings work requires its own scope.
 
-**Acceptance:** correct lifetimes and transitions, documented measured costs and limits, and no lost surroundings or shared-resource regression.
+**Acceptance:** a complete reuse inventory and user-facing reuse/new-asset summary, explicit owner choices for near matches, correct lifetimes and transitions, documented measured costs and limits, and no lost surroundings or shared-resource regression. Undecided visual approximations remain provisional.
