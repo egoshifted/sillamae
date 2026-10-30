@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createBrickTexture as brickTexture,acquirePaleMasonry} from '../shared/masonry.ts';
 import {createOffsetSlabStudy} from './offset-slab.ts';
 import {splitWallAtHeight} from './split-wall.ts';
 import {applyWindowLintels} from './lintel-surfaces.ts';
@@ -11,27 +12,14 @@ export function createEntranceDetailStudy(spec: Design, balconySchedule?: Balcon
  // stair jambs. Preserve the approved plain source, supersede only its
  // narrower door allocation in the detailed model.
  spec={...spec,doorWidth:spec.stairWidth};
- const root=createOffsetSlabStudy(spec), audit=root.userData.audit;
+ const root=createOffsetSlabStudy(spec), audit=root.userData.audit, pale=acquirePaleMasonry();
  audit.detailDoorWidth={width:spec.doorWidth,basis:'Inner red-jamb faces; Anton 28 October 2026',inferred:true};
  // Illustrative brick bond with a provisional metre-scale module.
- function brickTexture(red: boolean,relief=false){
-  const w=512,h=512,data=new Uint8Array(w*h*4),hash=(a: number,b: number)=>{let v=Math.imul(a+7919,b+3719);v=Math.imul(v^(v>>>13),1274126177);return (v>>>0)/4294967296;};
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-   const row=Math.floor(y*12/h),pitch=row%2?32:64,shift=(row%4>=2?pitch/2:0),col=Math.floor((x+shift)/pitch),r=hash(row,col),xx=(x+shift)%pitch,yy=y-row*h/12;
-   const rough=hash(x,y),edge=1.1+(hash(Math.floor(x/3),row)-.5)*1.4,joint=yy<edge||yy>h/12-1.4-(r*.9)||xx<1.2+(hash(col,Math.floor(y/3))-.5)*1.1;
-   const chip=!joint&&(yy<3||yy>h/12-3||xx<3)&&rough>.77,proud=(joint||chip)&&hash(Math.floor(x/5),Math.floor(y/3))>.77;
-   const grain=(rough-.5)*16,variation=(r-.5)*20;
-   const v=relief?(proud?204:joint||chip?85:157+variation+grain):(proud?177:joint||chip?125:207+variation+grain);
-   const rgb=relief?[v,v,v]:red?[v*.82,v*.53,v*.42]:[v,v+1,v-5],i=(y*w+x)*4;data.set([...rgb.map(v=>Math.max(0,Math.min(255,Math.round(v)))),255],i);
-  }
-  const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;if(!relief)t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;t.anisotropy=8;
-  if(red)t.userData.sharedSurface={key:'masonry-v1',index:relief?1:0};return t;
- }
  function panelTexture(){const w=256,h=128,data=new Uint8Array(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const rib=y<112&&(x%16<2),c=rib?142:164,i=(y*w+x)*4;data.set([c,c+2,c+1,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=THREE.RepeatWrapping;t.wrapT=THREE.ClampToEdgeWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  function roofTexture(){const w=256,h=256,data=new Uint8Array(w*h*4);let seed=1459;for(let y=0;y<h;y++)for(let x=0;x<w;x++){seed=(seed*1664525+1013904223)>>>0;const grain=((seed>>>24)/255-.5)*12,c=Math.round(131+grain),i=(y*w+x)*4;data.set([c,c+1,c,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  function roughcast(relief=false){const w=256,h=256,data=new Uint8Array(w*h*4);let seed=733;for(let y=0;y<h;y++)for(let x=0;x<w;x++){seed=(seed*1664525+1013904223)>>>0;const grain=((seed>>>24)/255-.5)*24,wave=5*Math.sin(y*.09+Math.sin(x*.04)),v=Math.max(0,Math.min(255,Math.round((relief?143:182)+grain+wave))),i=(y*w+x)*4;data.set([v,v,v-2,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;if(!relief)t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  function canopyTexture(){const w=256,h=64,data=new Uint8Array(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const v=x%16<3?60:76,i=(y*w+x)*4;data.set([v,v+4,v+3,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
- const textures: THREE.Texture[]=[brickTexture(false),brickTexture(true),panelTexture(),roofTexture(),brickTexture(false,true),brickTexture(true,true),roughcast(),roughcast(true),canopyTexture()];
+ const textures: THREE.Texture[]=[pale.maps[0],brickTexture(true),panelTexture(),roofTexture(),pale.maps[1],brickTexture(true,true),roughcast(),roughcast(true),canopyTexture()];
  if(sharedMasonry){textures[1].dispose();textures[5].dispose();textures[1]=sharedMasonry[0];textures[5]=sharedMasonry[1];for(const [i,index] of [[1,0],[5,1]])textures[i].userData.sharedSurface={key:'masonry-v1',index};}
  textures[3].userData.sharedSurface={key:'felt-colour-v1',index:0};
  const neutral=new THREE.DataTexture(new Uint8Array([128,128,128,255]),1,1);neutral.wrapS=neutral.wrapT=THREE.RepeatWrapping;neutral.needsUpdate=true;neutral.userData.sharedSurface={key:'felt-relief-v1',index:0};textures.push(neutral);
@@ -213,5 +201,5 @@ export function createEntranceDetailStudy(spec: Design, balconySchedule?: Balcon
   dish.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),r.n.clone().multiplyScalar(-.8).add(new THREE.Vector3(0,.6,0)).normalize());
   audit.roofFixtures.push({id:'S'+section+'-roof-dish',kind:'dish',section,fraction,depth,diameter:.54,confidence:'Two conspicuous pale aerial dish forms interpreted; positions/orientation inferred'});
  }
- const dispose=root.userData.dispose;root.userData.dispose=()=>{dispose();Object.values(mats).forEach(m=>m.dispose());textures.forEach(t=>{if(!sharedMasonry?.includes(t)&&!sharedRoof?.includes(t))t.dispose();});};root.userData.detailScope='Provisional entrance-side material and framing study';return root;
+ const dispose=root.userData.dispose;root.userData.dispose=()=>{dispose();Object.values(mats).forEach(m=>m.dispose());textures.forEach(t=>{if(!pale.maps.includes(t as THREE.DataTexture)&&!sharedMasonry?.includes(t)&&!sharedRoof?.includes(t))t.dispose();});pale.release();};root.userData.detailScope='Provisional entrance-side material and framing study';return root;
 }
