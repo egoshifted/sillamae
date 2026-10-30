@@ -4,6 +4,7 @@ import {batchDetailStudy} from '../../../studio/assembly/batch.ts';
 import type {OverrideContext} from '../../../engine/types.ts';
 import type {StudyModel} from '../../../studio/types.ts';
 import {design, sourceFootprint, openingSchedule, type Opening} from './design.ts';
+import {openingHalves} from './windows.ts';
 
 export function createEnvelope(context: OverrideContext): StudyModel {
   return createMassingStudy(context, {footprint: sourceFootprint, height: 17.46, datum: 14.11});
@@ -28,15 +29,15 @@ export function landHeights(ground: number[][], x: number, z: number) {
 }
 
 function outline(o: Opening): [number,number][] {
-  const a = o.x-o.width/2, b = o.x+o.width/2;
+  const a = o.x-o.width/2, b = o.x+o.width/2, middle=o.split??o.x;
   if (o.kind !== 'pair') return [[a,o.sill],[b,o.sill],[b,o.head],[a,o.head]];
   return o.tall === 'left'
-    ? [[a,o.sill],[o.x,o.sill],[o.x,o.shortSill!],[b,o.shortSill!],[b,o.head],[a,o.head]]
-    : [[a,o.shortSill!],[o.x,o.shortSill!],[o.x,o.sill],[b,o.sill],[b,o.head],[a,o.head]];
+    ? [[a,o.sill],[middle,o.sill],[middle,o.shortSill!],[b,o.shortSill!],[b,o.head],[a,o.head]]
+    : [[a,o.shortSill!],[middle,o.shortSill!],[middle,o.sill],[b,o.sill],[b,o.head],[a,o.head]];
 }
 
-export function createBuilding(context: OverrideContext): StudyModel {
-  const root = new THREE.Group(), schedule = openingSchedule(), materials = {
+export function createBuilding(context: OverrideContext, schedule: Opening[] = openingSchedule()): StudyModel {
+  const root = new THREE.Group(), materials = {
     wall: new THREE.MeshStandardMaterial({color:'#c7c8c1',roughness:1}),
     foundation: new THREE.MeshStandardMaterial({color:'#989b94',roughness:1}),
     roof: new THREE.MeshStandardMaterial({color:'#969b98',roughness:1}),
@@ -84,9 +85,7 @@ export function createBuilding(context: OverrideContext): StudyModel {
     wall(elevation,bottom,design.parapetTop,materials.wall);
     const sign=elevation==='WNW'?-1:1, exterior=sign*design.width/2, glassZ=exterior-sign*.23;
     for (const o of schedule.filter(o=>o.elevation===elevation)) {
-      const halves=o.kind==='pair'
-        ? [{a:o.x-o.width/2,b:o.x,low:o.tall==='left'?o.sill:o.shortSill!},{a:o.x,b:o.x+o.width/2,low:o.tall==='right'?o.sill:o.shortSill!}]
-        : [{a:o.x-o.width/2,b:o.x+o.width/2,low:o.sill}];
+      const halves=openingHalves(o);
       for (const p of halves) {
         const height=o.head-p.low, width=p.b-p.a, x=(p.a+p.b)/2, y=(p.low+o.head)/2, f=.055;
         box(x,y,glassZ,width,height,.018,o.kind==='door'?materials.door:materials.glass,o.id+'-infill');

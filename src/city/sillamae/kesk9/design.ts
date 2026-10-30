@@ -35,6 +35,7 @@ export interface Opening {
   head: number;
   tall?: 'left' | 'right';
   shortSill?: number;
+  split?: number;
   provisional: boolean;
 }
 
