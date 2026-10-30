@@ -4,7 +4,8 @@ import type {BuildingOverride, Point2} from '../../../engine/types.ts';
 import {createRodina} from './model.ts';
 import {prepareRodinaGround} from './ground.ts';
 
-const origin: Point2 = [304, 594], angle = .40919415678848364, datum = 14.5;
+export const rodinaPlacement = {origin: [304, 594] as Point2, angle: .40919415678848364, datum: 14.5};
+const {origin, angle, datum} = rodinaPlacement;
 const toSource = ([u, v]: Point2): Point2 => [origin[0] + u * Math.cos(angle) - v * Math.sin(angle), origin[1] + u * Math.sin(angle) + v * Math.cos(angle)];
 const footprint: Point2[] = [[0,0],[21.4,0],[21.4,21.65],[17.8,21.65],[17.8,45.47],[3.95,45.47],[3.95,21.65],[0,21.65],[0,17.43],[-23.92,17.43],[-23.92,3.93],[0,3.93]];
 

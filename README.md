@@ -31,12 +31,13 @@ Buildings are grouped into blocks: areas enclosed by streets and the edge of the
 Code layout:
 
 - `src/engine/`: the renderer. It knows nothing about a particular town.
-- `src/city/sillamae/`: town settings and refined building models (Kesk 1 and Kesk 5).
+- `src/city/sillamae/`: town settings and refined building models (Kesk 1, Kesk 5 and Rodina).
+- `src/studio/`: a reusable studio for progressively refining any atlas building, with draft scaffolding, studies and local verification tools. See the [studio guide](src/studio/README.md) for the reference-led refinement process and `npm run studio`.
 - `src/app/`: the on-screen controls, in React. The engine is created once outside React's render cycle; components use its API.
 
 The build uses relative URLs, so `dist/` works under a repository subdirectory. It needs a modern browser supporting WebGL and DecompressionStream.
 
-Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository.
+Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository. Each collaborator keeps their own local records; studio tools require an external output directory.
 
 ## Publish with GitHub Pages
 

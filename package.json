@@ -8,7 +8,14 @@
     "check": "tsc -p .",
     "build": "tsc -p . && node pipeline/build.ts && vite build",
     "preview": "vite preview",
-    "dtm": "node pipeline/fetch-dtm.ts"
+    "dtm": "node pipeline/fetch-dtm.ts",
+    "studio": "node pipeline/build.ts && vite --host 127.0.0.1 --port 5174 --strictPort --open /src/studio/",
+    "studio:check": "node src/studio/tools/verify.ts",
+    "studio:snapshot": "node src/studio/tools/snapshot.ts",
+    "studio:capture": "node src/studio/tools/capture.ts",
+    "studio:evidence": "node src/studio/tools/evidence.ts",
+    "studio:finalize": "node src/studio/tools/finalize.ts",
+    "studio:new": "node src/studio/tools/new.ts"
   },
   "type": "module",
   "dependencies": {
@@ -24,6 +31,7 @@
     "@types/three": "0.180.0",
     "@vitejs/plugin-react": "6.1.2",
     "geotiff": "3.0.5",
+    "playwright": "1.62.1",
     "typescript": "7.0.2",
     "vite": "8.3.5"
   },

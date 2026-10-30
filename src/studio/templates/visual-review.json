@@ -1,0 +1,43 @@
+{
+  "reviewer": "",
+  "inspectedAt": "",
+  "intentionalDifferences": [],
+  "gates": {
+    "reference": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    },
+    "close": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    },
+    "distance": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    },
+    "lighting": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    },
+    "motion": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    },
+    "global": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    },
+    "runtime": {
+      "status": "pending",
+      "finding": "",
+      "images": []
+    }
+  },
+  "knownFailures": []
+}

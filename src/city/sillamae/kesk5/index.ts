@@ -4,11 +4,11 @@ import type {BuildingOverride, Point2} from '../../../engine/types.ts';
 import {design, balconySchedule} from './config.ts';
 import {createOffsetSlabStudy} from './offset-slab.ts';
 import {createEntranceDetailStudy} from './entrance-detail.ts';
-import {batchDetailStudy} from './batch-detail.ts';
+import {batchDetailStudy} from '../../../studio/assembly/batch.ts';
 import {prepareKesk5Ground} from './ground.ts';
 import {preloadSurfaces, surfaces} from './surfaces.ts';
 
-const DATUM = 11.81;
+export const kesk5Datum = 11.81;
 const plain = createOffsetSlabStudy(design), audit = plain.userData.audit;
 plain.userData.dispose();
 
@@ -46,7 +46,7 @@ export const kesk5: BuildingOverride = {
     root.userData.dispose = () => { dispose(); stepMaterials.forEach(m => m.dispose()); };
     batchDetailStudy(root);
     root.name = 'kesk5';
-    root.position.set(design.origin[0] - frame.origin[0], DATUM - frame.base, design.origin[1] - frame.origin[1]);
+    root.position.set(design.origin[0] - frame.origin[0], kesk5Datum - frame.base, design.origin[1] - frame.origin[1]);
     root.rotation.y = -audit.fit.angle;
     scene.add(root);
     const materials = new Set<THREE.MeshStandardMaterial>();

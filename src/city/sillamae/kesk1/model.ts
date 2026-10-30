@@ -23,11 +23,11 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   const felt=surface.maps['felt-colour-v1'][0],feltHeight=surface.maps['felt-relief-v1'][0];roof.color.set('#7f827e');roof.roughness=1;roof.metalness=0;roof.map=felt;roof.bumpMap=feltHeight;roof.bumpScale=.028;roof.userData.roofMembrane=true;
   const canopyMembrane=roof.clone();canopyMembrane.map=surface.maps['canopy-felt-v1'][0];canopyMembrane.bumpScale=.003;canopyMembrane.userData.localUV=true;membraneMaterials.add(canopyMembrane);
   [brick.map,brick.bumpMap]=surface.maps['masonry-v1'];brick.bumpScale=.016;concrete.map=surface.maps['concrete-v1'][0];concrete.bumpMap=concrete.map;concrete.bumpScale=.025;
-  const stepConcrete=concrete.clone(),groundConcrete=concrete.clone();groundConcrete.userData.groundSurface=true;
-  // Survey layer depth lifts otherwise show through ground-contact surfaces (engine stairs use 1 m).
-  function lift(material: THREE.MeshStandardMaterial){material.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * 1.;');};return material;}
-  lift(stepConcrete);lift(groundConcrete);
-  function emit(geo: THREE.BufferGeometry,m: THREE.MeshStandardMaterial,matrix: THREE.Matrix4){geo=geo.index?geo.toNonIndexed():geo.clone();geo.applyMatrix4(matrix);if(m===foundation){const p=geo.attributes.position,c=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const v=foundationStain?foundationStain(p.getX(i),p.getY(i),p.getZ(i)):1;c.set([v,v,v],i*3);}geo.setAttribute('color',new THREE.BufferAttribute(c,3));}if(m===brick||m===concrete||m===stepConcrete||m===groundConcrete||m===foundation||membraneMaterials.has(m)){const p=geo.attributes.position,n=geo.attributes.normal,uv=geo.attributes.uv,isFelt=membraneMaterials.has(m);for(let i=0;i<p.count;i++){if(m.userData.localUV)continue;const horizontal=Math.abs(n.getY(i))>.5;uv.setXY(i,(horizontal?p.getX(i):Math.abs(n.getX(i))>.5?p.getZ(i):p.getX(i))/(isFelt?16:m===brick?2.2:m===foundation?2:.8),(horizontal?p.getZ(i):p.getY(i))/(isFelt?16:m===brick?.996:m===foundation?2:.8));}}if(!batches.has(m))batches.set(m,[]);batches.get(m)!.push(geo);}
+  const stepConcrete=concrete.clone(),groundConcrete=concrete.clone(),apronConcrete=concrete.clone();groundConcrete.userData.groundSurface=apronConcrete.userData.groundSurface=true;
+  // Site survey vertices keep layer 0; a 1 m apron bias draws it through the foundation.
+  function lift(material: THREE.MeshStandardMaterial,bias=1){material.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * '+(bias===1?'1.':bias)+';');};material.customProgramCacheKey=()=>'kesk1-ground-lift-'+bias;return material;}
+  lift(stepConcrete);lift(groundConcrete);lift(apronConcrete,.01);
+  function emit(geo: THREE.BufferGeometry,m: THREE.MeshStandardMaterial,matrix: THREE.Matrix4){geo=geo.index?geo.toNonIndexed():geo.clone();geo.applyMatrix4(matrix);if(m===foundation){const p=geo.attributes.position,c=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const v=foundationStain?foundationStain(p.getX(i),p.getY(i),p.getZ(i)):1;c.set([v,v,v],i*3);}geo.setAttribute('color',new THREE.BufferAttribute(c,3));}if(m===brick||m===concrete||m===stepConcrete||m===groundConcrete||m===apronConcrete||m===foundation||membraneMaterials.has(m)){const p=geo.attributes.position,n=geo.attributes.normal,uv=geo.attributes.uv,isFelt=membraneMaterials.has(m);for(let i=0;i<p.count;i++){if(m.userData.localUV)continue;const horizontal=Math.abs(n.getY(i))>.5;uv.setXY(i,(horizontal?p.getX(i):Math.abs(n.getX(i))>.5?p.getZ(i):p.getX(i))/(isFelt?16:m===brick?2.2:m===foundation?2:.8),(horizontal?p.getZ(i):p.getY(i))/(isFelt?16:m===brick?.996:m===foundation?2:.8));}}if(!batches.has(m))batches.set(m,[]);batches.get(m)!.push(geo);}
   const dummy=new THREE.Object3D();
   function box(x: number,y: number,z: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,angle=0){dummy.position.set(x,y,z);dummy.rotation.set(0,angle,0);dummy.scale.set(1,1,1);dummy.updateMatrix();const stain=m===foundation&&foundationStain;emit(new THREE.BoxGeometry(w,h,d,stain?Math.ceil(w/.3):1,stain?Math.ceil(h/.15):1,stain?Math.ceil(d/.3):1),m,dummy.matrix);}
   function edge(index: number){const a=g[index],b=g[(index+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=new THREE.Vector3((b[0]-a[0])/L,0,(b[1]-a[1])/L);let n=new THREE.Vector3(-u.z,0,u.x);const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];if(n.x*(mid[0]-building.c[0])+n.z*(mid[1]-building.c[1])<0)n.negate();
@@ -183,7 +183,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
       root.userData.entranceReturnProjection={edge:step.edge,start,width,projection:step.projection,bottom};
     }
     function apron(p: ReturnType<typeof edge>,x: number,width: number,depth: number,offset: number,material=concrete,lift=.003){
-      if(material===concrete)material=groundConcrete;
+      if(material===concrete)material=apronConcrete;
       const earlier: Polygon[]=[...(root.userData.groundPatches??[])];
       (root.userData.groundPatches??=[]).push([[x,offset],[x+width,offset],[x+width,offset+depth],[x,offset+depth]].map(([u,d])=>{const q=p.at(u,0,d);return [q.x+ox,q.z+oz];}));
       // Clip each actual ground triangle to the apron rectangle. This preserves
@@ -485,7 +485,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   bench(edge(8),edge(8).L*.63,4.35);
   const grassBench=edge(8),bx=-10.5;grassBench.block(bx,.47,2,.08,.4,wood,4.35);grassBench.block(bx,.85,2,.28,.07,redWood,4.35);for(const x of [bx+.25,bx+1.75])grassBench.block(x,0,.12,1.12,.17,concrete,4.45);
   if(terrain){
-    const asphalt=lift(mat('#83877e'));asphalt.userData.groundSurface=true;
+    const asphalt=lift(mat('#83877e'));asphalt.userData.groundSurface=true;const approachAsphalt=lift(asphalt.clone(),.01);
     const ground=(x: number,z: number)=>{const xx=Math.max(0,Math.min(terrain.width-1.001,(x-terrain.origin[0])/terrain.step)),zz=Math.max(0,Math.min(terrain.height-1.001,(z-terrain.origin[1])/terrain.step)),i=Math.floor(xx),j=Math.floor(zz),u=xx-i,v=zz-j,k=j*terrain.width+i,d=terrain.values;return (d[k]*(1-u)*(1-v)+d[k+1]*u*(1-v)+d[k+terrain.width]*(1-u)*v+d[k+terrain.width+1]*u*v)/10-level+.12;};
     function quad(points: Polygon,m: THREE.MeshStandardMaterial){const geo=new THREE.BufferGeometry(),ids=[0,1,2,0,2,3];geo.setAttribute('position',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0]-ox,ground(...points[i]),points[i][1]-oz]),3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0],points[i][1]]),2));geo.computeVertexNormals();emit(geo,m,new THREE.Matrix4());}
     const road=[[232.3,555.5,5],[228.8,564.4,8.4],[218,591.9,8.4],[221.8,601.3,5]];
@@ -501,7 +501,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
     const apronInset=approach.L*.07;
     apron(approach,-.45,apronInset+.50,3.3,-.20);
     apron(approach,approach.L-apronInset-.05,apronInset+.50,3.3,-.20);
-    apron(approach,left-.03,width+.06,12.3,-.10,asphalt,.003);
+    apron(approach,left-.03,width+.06,12.3,-.10,approachAsphalt,.003);
     const walk=edge(8);for(let x=-8;x<walk.L+2;x+=1){const pts=[[x,4.85],[x+1,4.85],[x+1,6.05],[x,6.05]].map(([u,d])=>{const p=walk.at(u,0,d);return[p.x+ox,p.z+oz] as Point2;});quad(pts,groundConcrete);}
   }
   // Keep exposed portions of structural end faces. Neighbours only hide the
@@ -540,7 +540,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   }
   // Merge by material: façade detail should not add hundreds of draw calls.
   for(const [material,parts] of batches){const merged=new THREE.BufferGeometry();for(const name of ['position','normal','uv',...(material===foundation?['color']:[])]){const size=parts[0].attributes[name].itemSize,total=parts.reduce((n,p)=>n+p.attributes[name].array.length,0),array=new Float32Array(total);let offset=0;for(const p of parts){array.set(p.attributes[name].array,offset);offset+=p.attributes[name].array.length;}merged.setAttribute(name,new THREE.BufferAttribute(array,size));}merged.computeBoundingSphere();const mesh=new THREE.Mesh(merged,material);mesh.castShadow=!material.userData.groundSurface;mesh.receiveShadow=true;root.add(mesh);parts.forEach(p=>p.dispose());}
-  root.userData.setTextures=(enabled: boolean)=>{for(const m of [brick,concrete,stepConcrete,groundConcrete,foundation,...membraneMaterials]){m.userData.texture??=m.map;m.userData.bumpTexture??=m.bumpMap;m.map=enabled?m.userData.texture:null;m.bumpMap=enabled?m.userData.bumpTexture:null;m.needsUpdate=true;}};
+  root.userData.setTextures=(enabled: boolean)=>{for(const m of [brick,concrete,stepConcrete,groundConcrete,apronConcrete,foundation,...membraneMaterials]){m.userData.texture??=m.map;m.userData.bumpTexture??=m.bumpMap;m.map=enabled?m.userData.texture:null;m.bumpMap=enabled?m.userData.bumpTexture:null;m.needsUpdate=true;}};
   let disposed=false;
   root.userData.ready=surface.ready;
   root.userData.dispose=()=>{

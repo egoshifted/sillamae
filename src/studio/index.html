@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas building studio</title><link rel="icon" href="data:,"></head>
+<body>
+<header><strong>Building studio</strong><span>Reference → plain shape → detail → atlas verification</span><a href="/">Open atlas</a><a href="./README.md">Workflow</a></header>
+<nav aria-label="Study controls">
+  <label>Find <input id="search" type="search" placeholder="Address or building ID"></label><label>Building <select id="building"></select></label>
+  <label>Assembly <select id="mode"></select></label>
+  <button id="home">Reset view</button><button id="rotate">Rotate 45°</button><button id="plan">Plan</button>
+  <label>Distance <select id="distance"><option value="1">Close</option><option value="2">Medium</option><option value="4">Far</option></select></label>
+  <label>Light <select id="light"><option value="midday">Midday</option><option value="morning">Morning</option><option value="late">Late afternoon</option></select></label>
+  <label><input id="shadows" type="checkbox" checked>Shadows</label><label><input id="textures" type="checkbox" checked>Textures</label>
+  <label><input id="plain" type="checkbox">Plain materials</label><label><input id="ground" type="checkbox" checked>Ground</label>
+  <button id="reload">Rebuild</button><button id="save">Save view URL</button><button id="capture">Download PNG</button>
+</nav>
+<main aria-label="Building study"><p id="error" role="alert"></p></main>
+<footer><output id="status">Loading…</output><span>Drag to orbit · right-drag to pan · scroll to zoom. Study ground is diagnostic; verify contacts and shadows in the atlas.</span></footer>
+<script type="module" src="./viewer.ts"></script>
+</body></html>
