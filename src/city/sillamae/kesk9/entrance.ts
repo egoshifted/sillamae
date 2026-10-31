@@ -5,8 +5,7 @@ import {canopy} from './model.ts';
 export type LeafFinish='brown'|'red';
 export interface EntranceSpec {door:string; stairwell:number; flats:string; leaf:LeafFinish; inferredLabel?:boolean; access?:boolean; lamp?:boolean; rail?:boolean; mailbox?:boolean}
 
-// Street View June/September 2023. Stairwells count from the NNE end, against the SSW→NNE section order.
-// Fittings are listed only where seen; hidden ones are left out rather than copied from another entrance.
+// Stairwells count from the NNE end, against the SSW→NNE section order. Fittings are listed only where seen.
 export const entrances:readonly EntranceSpec[]=[
   {door:'WNW-S1-door',stairwell:5,flats:'81–100',leaf:'red',inferredLabel:true,rail:true},
   {door:'WNW-S2-door',stairwell:4,flats:'61–80',leaf:'brown',inferredLabel:true},
@@ -61,13 +60,11 @@ export function addEntranceFittings(root:THREE.Group,o:Opening,e:EntranceSpec,m:
   box(o.x+.075,1.60,.1905,.016,.025,.021,m.hardware,prefix+'-handle-neck');
   box(o.x+.115,1.60,.180,.09,.018,.018,m.hardware,prefix+'-handle-lever');
   if(e.access)box(o.x-.075,1.87,.211,.085,.20,.020,m.access,prefix+'-access-unit');
-  // Mailbox on the NNE (viewer's left) leaf; size and height scaled from the 41–60 lever and plaque.
   if(e.mailbox)box(o.x+.30,1.91,.181,.19,.24,.08,m.mailbox,prefix+'-mailbox');
   if(e.lamp){const light=new THREE.CylinderGeometry(.045,.045,.024,12);light.translate(o.x,2.608,exterior-.42);add(light,m.lamp,prefix+'-canopy-light');}
   box(o.x-.43,2.36,.2195,.22,.14,.003,m.lamp,prefix+'-plaque-backing');
   const face=new THREE.PlaneGeometry(.22,.14);face.rotateY(Math.PI);face.translate(o.x-.43,2.36,exterior+.217);
   add(face,m.plaques[e.door],prefix+'-plaque-text');
-  // Folded sheet over the canopy's front and end edges, standing just off the slab. Dimensions are estimates.
   const t=.004, drop=.07, lap=.05, gap=.012, front=exterior-canopy.depth, top=canopy.centreY+canopy.thickness/2, half=canopy.width/2+gap+t;
   const sheet=(x:number,y:number,z:number,w:number,h:number,d:number,name:string)=>{const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);add(g,m.flashing,prefix+'-flashing-'+name);};
   sheet(o.x,top-drop/2+t,front-gap-t/2,2*half,drop,t,'front');
@@ -77,7 +74,6 @@ export function addEntranceFittings(root:THREE.Group,o:Opening,e:EntranceSpec,m:
     sheet(o.x+side*(half-(lap+gap+t)/2),top+t/2,(front+lap+exterior)/2,lap+gap+t,t,exterior-front-lap,side<0?'ssw-top':'nne-top');
   }
   if(e.rail) {
-    // Short pipe rail beside the NNE jamb: grey post from the landing, yellow top bent back into the wall.
     const s=o.x+o.width/2+.18+.07, z=exterior-.12, r=.021, landing=.65, bend=1.20, top=1.35;
     const post=new THREE.CylinderGeometry(r,r,bend-landing,10);post.translate(s,(landing+bend)/2,z);add(post,m.railPost,prefix+'-rail-post');
     const upper=new THREE.CylinderGeometry(r,r,top-bend,10);upper.translate(s,(bend+top)/2,z);add(upper,m.railBend,prefix+'-rail-upper');

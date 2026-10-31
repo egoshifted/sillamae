@@ -78,7 +78,6 @@ test('every glazed half above the basement has actual bars with observed versus 
   m.dispose();
 });
 
-// Owner correction and Street View Sept 2023: basement windows are single panes in a white frame.
 test('basement windows are undivided: glazing across the whole width, no mullion, frame kept',()=>{
   const m=model(),basement=correctedOpeningSchedule().filter(o=>o.kind==='basement');assert.equal(basement.length,20);
   for(const o of basement){

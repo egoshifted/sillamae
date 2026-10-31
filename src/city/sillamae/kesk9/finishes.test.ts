@@ -37,14 +37,13 @@ test('finish partition preserves the complete approved shell surface and contact
   const before=createBuilding(context(),correctedOpeningSchedule(),2),after=createFinishes(context());local(before.root);local(after.root);
   assert.ok(Math.abs(area(after.root)-area(before.root))<.03,'Partition loses a shell surface outside the separately tested joinery');
   for(const side of [-1,1])for(const x of [-32.76,-32.4,-31,-26,-13,0,13,26,31,32.4,32.76])for(const y of [-.1,.2,1.31,5.2,9.7,13.1,16.69,16.72]) {
-    // Sills and the apron are added over the shell and tested separately; y=5.2 lies exactly on the ESE L2 sill level.
+    // y=5.2 lies exactly on the ESE L2 sill level; sills and the apron are fittings tested separately.
     const a=hit(before.root,x,y,side)[0],b=hit(after.root,x,y,side).find(h=>{const m=(h.object as Mesh).material;return !m.name.includes('sill metal')&&!m.userData.groundSurface;});
     assert.equal(!!b,!!a,`Changed closure ${x}/${y}/${side}`);if(a&&b)assert.ok(Math.abs(a.distance-b.distance)<1e-4);
   }
   before.dispose();after.dispose();
 });
 
-// Street View Sept 2023 and owner instruction: no concrete lintel above basement openings; roughcast runs to the brick.
 test('reference concrete lintels own a single flush surface on both elevations; basement openings have none',()=>{
   const model=createFinishes(context());local(model.root);
   for(const side of [-1,1])for(const x of [-4.5,4.5])for(const y of [1.14,1.18,1.25]) {
@@ -63,7 +62,6 @@ test('reference concrete lintels own a single flush surface on both elevations; 
   model.dispose();
 });
 
-// Owner note with Street View Sept 2023: metal covers the whole reveal floor up to the frame; basement openings have none.
 test('metal sills cover the whole reveal floor from the wall face to the frame; basement openings have no sill',()=>{
   const m=createFinishes(context());local(m.root);const W=11.692812823626577;
   const down=(x:number,y:number,z:number)=>new THREE.Raycaster(new THREE.Vector3(x,y+.3,z),new THREE.Vector3(0,-1,0),0,.4).intersectObject(m.root,true)[0];
@@ -110,7 +108,6 @@ test('disposing a finish stage releases each model-owned material exactly once',
   finally {THREE.Material.prototype.dispose=dispose;}
 });
 
-// Street View 2023: every WNW entrance has a dark double door between orange brick jambs; S2 and S4 are brown, S1, S3 and S5 red-brown.
 const doorX=[-26.2114860318907,-13.10574301594535,0,13.10574301594535,26.2114860318907];
 const leafColour=['red-brown','brown','red-brown','brown','red-brown'];
 type Entrance={door:string;flats:string;stairwell:number;rail?:boolean;mailbox?:boolean;access?:boolean;lamp?:boolean;fittings:{name:string;bounds:number[][]}[]};
@@ -123,7 +120,6 @@ test('all five entrances receive their observed dark door and orange brick jambs
     for(const dx of [-.865,.865]){const hits=hit(model.root,x+dx,1.9,-1),front=hits.filter(h=>Math.abs(h.distance-(8-11.692812823626577/2))<1e-4);assert.equal(front.length,1);assert.ok((front[0].object as Mesh).material.name.includes('brick jambs'));}
     assert.notEqual((hit(model.root,x,1.4,-1)[0].object as Mesh).material.color.getHexString(),'868d89','Generic unresolved door remains');
   });
-  // Masonry just outside each jamb must stay masonry.
   for(const x of doorX)for(const dx of [-1.0,1.0])assert.ok((hit(model.root,x+dx,1.9,-1)[0].object as Mesh).material.name.includes('masonry'));
   model.dispose();
 });
@@ -173,7 +169,6 @@ test('concrete coping projects outside all wall edges, retains the roof void and
   const interior=new THREE.Raycaster(new THREE.Vector3(0,18,0),new THREE.Vector3(0,-1,0),0,2).intersectObject(m.root,true)[0];assert.ok(Math.abs(interior.point.y-16.71)<1e-4);
   m.dispose();
 });
-// Owner-supplied Street View, Sept 2023: a folded metal sheet caps the canopy's front and end edges; entrances have a landing and one step.
 test('every canopy has metal flashing on its front, both ends and top edge, standing off the slab',()=>{
   const m=createFinishes(context());local(m.root);const exterior=-11.692812823626577/2,front=exterior-1.2,top=2.74;
   for(const x of doorX){
@@ -196,7 +191,6 @@ test('each entrance has a landing and one step, two rises from the ground, with 
   m.dispose();
 });
 
-// Owner photo and Street View Sept 2023: a thin concrete apron runs round the base, a few centimetres proud of the grass.
 test('the apron is a thin slab round all four walls, above the ground, closed at its outer edge and stopping at the steps',()=>{
   const m=createFinishes(context());local(m.root);const L=65.52871507972675/2,W=11.692812823626577/2,ground=14.3-14.11;
   const down=(x:number,z:number)=>new THREE.Raycaster(new THREE.Vector3(x,2,z),new THREE.Vector3(0,-1,0),0,3).intersectObject(m.root,true)[0];
@@ -204,11 +198,9 @@ test('the apron is a thin slab round all four walls, above the ground, closed at
   for(const [x,z] of [[-20,-W-.1],[-20,-W-.5],[20,W-(-.3)],[0,W+.5],[-L-.3,0],[L+.3,2],[L+.5,-W-.5],[-L-.5,W+.5]]){
     const h=down(x,z);assert.ok(isApron(h),`No apron at ${x}/${z}`);assert.ok(h.point.y>ground+.015&&h.point.y<ground+.045,'Apron must sit a few centimetres above the ground');
   }
-  // Falls away from the wall.
-  assert.ok(down(-20,-W-.02).point.y>down(-20,-W-.53).point.y);
+  assert.ok(down(-20,-W-.02).point.y>down(-20,-W-.53).point.y,'Apron must fall away from the wall');
   for(const x of doorX)assert.ok(!isApron(down(x,-W-.3)),'Apron must stop at the entrance steps');
   assert.ok(!isApron(down(-20,-W-.7)),'Apron is 0.55 m wide');
-  // The outer edge runs down below the ground so the cut-out ground meets it without a gap.
   for(const [x,y,z,dir] of [[-20,ground-.05,-W-2,[0,0,1]],[0,ground-.05,W+2,[0,0,-1]],[-L-2,ground-.05,0,[1,0,0]],[L+2,ground-.05,0,[-1,0,0]],[L+2,ground-.05,-W-.3,[-1,0,0]]] as const){
     const h=new THREE.Raycaster(new THREE.Vector3(x,y,z),new THREE.Vector3(...dir),0,2).intersectObject(m.root,true)[0];assert.ok(isApron(h),`Open apron edge towards ${dir}`);
   }

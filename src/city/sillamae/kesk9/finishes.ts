@@ -54,7 +54,7 @@ export function createFinishes(context: OverrideContext): StudyModel {
   [materials.masonry.map,materials.masonry.bumpMap]=pale.maps; materials.masonry.bumpScale=.024;
   [materials.plinth.map,materials.plinth.bumpMap]=shared.maps['roughcast-v1']; materials.plinth.bumpScale=.035;
   materials.concrete.map=materials.band.map=materials.apron.map=shared.maps['concrete-v1'][0];
-  // Ground, not building: excluded from picking tags and block tints like other ground surfaces.
+  // Keeps the apron out of building picking and block tints.
   materials.apron.userData.groundSurface=true;
   materials.roof.map=shared.maps['felt-colour-v1'][0]; materials.roof.bumpMap=shared.maps['felt-relief-v1'][0]; materials.roof.bumpScale=.018;
   materials.sill.metalness=.55;
@@ -82,7 +82,6 @@ export function createFinishes(context: OverrideContext): StudyModel {
     const n=poly[0].n, side=Math.sign(n[2]),exterior=-design.width/2;
     const patches:{planes:((v:Vertex)=>number)[];material:THREE.MeshStandardMaterial}[]=[];
     if(Math.abs(n[2])>.99&&poly.every(v=>Math.abs(v.p[2]-side*design.width/2)<1e-4)) {
-      // Basement openings have no lintel: Street View shows the roughcast plinth running up to the brick.
       for(const l of lintels.filter(l=>l.side===side))patches.push({planes:[v=>v.p[0]-l.x0,v=>l.x1-v.p[0],v=>v.p[1]-l.y0,v=>l.y1-v.p[1]],material:materials.band});
       if(side<0)for(const door of doors)for(const [a,b] of [[door.x-door.width/2-.18,door.x-door.width/2],[door.x+door.width/2,door.x+door.width/2+.18]])patches.push({planes:[v=>v.p[0]-a,v=>b-v.p[0],v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
     }
@@ -135,13 +134,12 @@ export function createFinishes(context: OverrideContext): StudyModel {
     add(g,mat,'finish-region');
   }
   const sills:{id:string;from:number;to:number;level:number;side:number}[]=[];
-  // Street View Sept 2023: basement openings have no metal sill.
   for(const o of schedule.filter(o=>o.kind!=='door'&&o.kind!=='basement')) {
     const side=o.elevation==='WNW'?-1:1;
     const spans=openingHalves(o).map(p=>[p.a,p.b,p.low]);
     for(const [from,to,level] of spans) {
-      // Plate over the whole reveal floor from the frame face (0.175 m in) plus the front drip, as on Kesk 1.
-      // The top must stay above the reveal floor all the way out; a sloped top below it left only the nose visible.
+      // `out` is metres from the wall face; the frame face is 0.175 m in. The top must stay above the reveal
+      // floor all the way out, or the masonry hides everything but the nose.
       const profile=new THREE.Shape([[-.175,.022],[.07,-.002],[.07,-.05],[.068,-.05],[.068,-.006],[0,-.006],[0,0],[-.175,0]].map(([out,y])=>new THREE.Vector2(out,y)));
       const g=new THREE.ExtrudeGeometry(profile,{depth:to-from,bevelEnabled:false});
       const p=g.getAttribute('position'), n=g.getAttribute('normal');

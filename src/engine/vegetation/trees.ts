@@ -2,21 +2,19 @@ import * as THREE from 'three';
 import type {Tree, WorldFrame} from '../types.ts';
 
 const CONIFER = 'Okaspuu';
-// Crowns are built in units of the crown radius for a few height/radius ratios, so instances scale almost uniformly
-// and the leaf cards keep their shape. Each class is one instanced mesh per chunk.
+// Height/radius classes. Crowns are built in crown radii so instances scale almost uniformly; a non-uniform
+// scale would shear the leaf cards. Each class costs one draw per chunk.
 const ASPECTS = [[2.6, 3.4, 4.6], [3.6, 5.4]];
-// Cards per crown and card size (in crown radii) for the three detail levels.
+// Far, medium, near; sizes in crown radii.
 const CARDS = [[22, 65, 150], [24, 70, 170]], CARD_SIZE = [[1.2, .85, .62], [1.25, .9, .62]];
-// Spring greens read from the May 2023 Maa-amet obliques. The survey has no species, so the yellow-green share
-// (willow/birch-like) is spread by a fixed rule rather than placed where those species actually stand.
+// The survey has no species, so the yellow-green share is spread by rule, not where willows actually stand.
 const BROADLEAF = ['#7f9e48', '#8aa94f', '#749440', '#91ad55', '#7b9a4b'], YELLOW = '#b4c25a';
 const CONIFERS = ['#56744b', '#5f7c52', '#4f6c47'];
 
-// Stable per-tree random values from its position, so a tree keeps its look across reloads and detail levels.
+// Seeded by position so a tree keeps its look across reloads and detail levels.
 const hash = (x: number, z: number, k: number) => { const s = Math.sin(x * 12.9898 + z * 78.233 + k * 37.719) * 43758.5453; return s - Math.floor(s); };
 
-// Left half of the atlas: a broadleaf leaf cluster; right half: a spruce needle spray. Both have open, ragged
-// edges so overlapping cards give a broken silhouette and gaps that show the limbs behind.
+// Left half broadleaf, right half spruce; crownGeometry picks the half by u offset.
 function foliageTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -35,7 +33,6 @@ function foliageTexture() {
     paint.ellipse(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 4 + random() * 4, 2 + random() * 2.5, random() * 6.28, 0, Math.PI * 2);
     paint.fill();
   }
-  // Spruce spray: a drooping fan of branchlets, dense at the core and ragged at the tips, seen from above.
   paint.lineCap = 'round';
   for (let s = 0; s < 13; s++) {
     const a = (s - 6) * .2, length = 80 + random() * 36;
@@ -52,8 +49,7 @@ function foliageTexture() {
   return texture;
 }
 
-// One crown of alpha-cut leaf cards. Normals point out of the crown volume instead of along each card, so the crown
-// is lit as one soft mass; vertex colours darken the underside and the inside.
+// Normals point out of the crown volume rather than along each card; per-card normals light a crown as noise.
 function crownGeometry(conifer: boolean, aspect: number, level: number) {
   let seed = 1009 + Math.round(aspect * 100) + (conifer ? 61 : 0) + level * 7;
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
@@ -65,11 +61,10 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
     const a = rand() * 6.283, depth = .55 + .45 * Math.sqrt(rand());
     let height: number;
     if (conifer) {
-      // Spruce: cards on the cone surface in drooping tiers.
       height = .06 + .9 * Math.pow(rand(), .8);
       const radius = (1 - height) * depth;
       c.set(Math.cos(a) * radius, height * aspect, Math.sin(a) * radius);
-      // Branches spread out and droop, so from the atlas's raised camera the cards lie closer to flat than upright.
+      // Nearer flat than upright: the atlas camera looks down on spruce branches.
       n.set(Math.cos(a) * .8, 1, Math.sin(a) * .8).normalize();
       t.set(-Math.sin(a), 0, Math.cos(a));
       // The spray's base is at the top of the texture; point it at the trunk so the tips droop outwards.
@@ -105,8 +100,7 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
   return geo;
 }
 
-// Two cut-off thresholds: mipmapping averages the leaf alpha down at a distance, so the coarse level, seen small,
-// needs a lower threshold or its crowns dissolve into specks.
+// Mipmapping averages leaf alpha down, so the far level needs a lower cut-off or its crowns dissolve into specks.
 function foliageMaterials() {
   const map = foliageTexture();
   const leaf = (alphaTest: number) => {
@@ -125,7 +119,6 @@ function foliageMaterials() {
 function treeColour(t: Tree, conifer: boolean, colour: THREE.Color) {
   const [x, z] = t.p, pick = hash(x, z, 2);
   if (conifer) colour.set(CONIFERS[Math.floor(pick * CONIFERS.length)]);
-  // Large spreading crowns are the likeliest willows, so they take the yellow-green more often.
   else if (hash(x, z, 5) < (t.r >= 4.5 ? .24 : .1)) colour.set(YELLOW);
   else colour.set(BROADLEAF[Math.floor(pick * BROADLEAF.length)]);
   return colour.multiplyScalar(.9 + .2 * hash(x, z, 6));
@@ -184,7 +177,7 @@ export function addTrees(parent: THREE.Object3D, trees: Tree[], frame: WorldFram
       dummy.scale.set(.1 + r * .03, h * (conifer ? .9 : .6), .1 + r * .03);
       dummy.updateMatrix();
       trunks.setMatrixAt(ti++, dummy.matrix);
-      // Limbs fan out into the crown and show through the gaps between leaf cards.
+      // Spruce cards start near the ground; limbs would pierce them.
       if (conifer) continue;
       for (let j = 0; j < 5; j++) {
         const a = j * 1.2566 + hash(t.p[0], t.p[1], 8) * 6.28, rise = .3 + .06 * j;

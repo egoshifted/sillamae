@@ -52,7 +52,6 @@ export const stairFrames:Record<string,PaneFrame>={
 
 export function paneFrame(o:Opening,low:number):PaneFrame|undefined {
   if(o.kind==='door')return undefined;
-  // Owner correction 2026-10-31: basement windows are single undivided panes (seen on WNW, Street View Sept 2023).
   if(o.kind==='basement')return {finish:'pale',bars:[],inferred:o.elevation==='ESE'};
   const tall=Math.abs(low-o.sill)<1e-6;
   const observed=o.kind==='pair'?pairFrames[o.id]?.[tall?'tall':'short']:stairFrames[o.id];

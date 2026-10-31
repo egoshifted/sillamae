@@ -38,7 +38,7 @@ function outline(o: Opening): [number,number][] {
 
 export const canopy = {width: 2.65, thickness: .12, depth: 1.2, centreY: 2.68};
 
-// The approved plain shell has three rises; Street View shows a landing and one step (two rises).
+// Three rises keeps the approved plain-shell study unchanged; the finished model uses two.
 export function createBuilding(context: OverrideContext, schedule: Opening[] = openingSchedule(), rises = 3): StudyModel {
   // Names are the roles finishes.ts reassigns; batching keeps materials but not mesh names.
   const root = new THREE.Group(), materials = {
