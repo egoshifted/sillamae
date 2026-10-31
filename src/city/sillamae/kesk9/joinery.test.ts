@@ -67,13 +67,25 @@ test('shared step boundary keeps each differently finished frame return on its o
   assert.ok(hit);assert.equal((hit.object as THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>).material.color.getHexString(),'665a4d');m.dispose();
 });
 
-test('every glazed half on both elevations has actual bars with observed versus inferred provenance',()=>{
-  const m=model(),rows=m.root.userData.finishes.paneDivisions;assert.equal(rows.length,245);assert.equal(rows.filter((r:{inferred:boolean})=>r.inferred).length,187);
-  for(const o of correctedOpeningSchedule().filter(o=>o.kind!=='door'))for(const p of openingHalves(o)){
+test('every glazed half above the basement has actual bars with observed versus inferred provenance',()=>{
+  const m=model(),rows=m.root.userData.finishes.paneDivisions;assert.equal(rows.length,245);assert.equal(rows.filter((r:{inferred:boolean})=>r.inferred).length,177);
+  for(const o of correctedOpeningSchedule().filter(o=>o.kind!=='basement'))for(const p of openingHalves(o)){
     if(o.kind==='door')continue;
     const half=o.kind==='pair'?(Math.abs(p.low-o.sill)<1e-6?'tall':'short'):o.kind,style=paneFrame(o,p.low)!;
     assert.ok(style.bars.length);const material=probe(m.root,o.id,half,style.bars[0]);assert.ok(material.name.includes('frames'),o.id+'/'+half);
     const row=rows.find((r:{id:string;half:string})=>r.id===o.id&&r.half===half);assert.equal(row.inferred,!!style.inferred);
   }
+  m.dispose();
+});
+
+// Owner correction and Street View Sept 2023: basement windows are single panes in a white frame.
+test('basement windows are undivided: glazing across the whole width, no mullion, frame kept',()=>{
+  const m=model(),basement=correctedOpeningSchedule().filter(o=>o.kind==='basement');assert.equal(basement.length,20);
+  for(const o of basement){
+    for(const f of [.25,.4,.5,.6,.75])assert.ok(probe(m.root,o.id,'basement',f).name.includes('glazing'),`${o.id} has a bar at ${f}`);
+    assert.ok(probe(m.root,o.id,'basement',.5,true).name.includes('frames'),`${o.id} lost its head frame`);
+    const row=m.root.userData.finishes.paneDivisions.find((r:{id:string})=>r.id===o.id);assert.deepEqual(row.positions,[]);assert.equal(row.inferred,o.elevation==='ESE');
+  }
+  assert.ok(!(m.root.children as THREE.Mesh[]).some(c=>/-B-S\d-[AB]-observed-mullion/.test(c.name)));
   m.dispose();
 });

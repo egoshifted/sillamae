@@ -5,7 +5,7 @@ import {createBuilding} from './model.ts';
 import {createFinishes} from './finishes.ts';
 import {surfaces} from '../kesk1/surfaces.ts';
 import {sourceFootprint} from './design.ts';
-import {correctedOpeningSchedule} from './windows.ts';
+import {correctedOpeningSchedule,openingHalves} from './windows.ts';
 import type {OverrideContext} from '../../../engine/types.ts';
 type Mesh=THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>;
 
@@ -37,15 +37,21 @@ test('finish partition preserves the complete approved shell surface and contact
   const before=createBuilding(context(),correctedOpeningSchedule(),2),after=createFinishes(context());local(before.root);local(after.root);
   assert.ok(Math.abs(area(after.root)-area(before.root))<.03,'Partition loses a shell surface outside the separately tested joinery');
   for(const side of [-1,1])for(const x of [-32.76,-32.4,-31,-26,-13,0,13,26,31,32.4,32.76])for(const y of [-.1,.2,1.31,5.2,9.7,13.1,16.69,16.72]) {
-    const a=hit(before.root,x,y,side)[0],b=hit(after.root,x,y,side)[0];
+    // Sills are fittings added over the shell (tested separately); y=5.2 lies exactly on the ESE L2 sill level.
+    const a=hit(before.root,x,y,side)[0],b=hit(after.root,x,y,side).find(h=>!(h.object as Mesh).material.name.includes('sill metal'));
     assert.equal(!!b,!!a,`Changed closure ${x}/${y}/${side}`);if(a&&b)assert.ok(Math.abs(a.distance-b.distance)<1e-4);
   }
   before.dispose();after.dispose();
 });
 
-test('reference concrete lintels own a single flush surface on both elevations including basement',()=>{
+// Street View Sept 2023 and owner instruction: no concrete lintel above basement openings; roughcast runs to the brick.
+test('reference concrete lintels own a single flush surface on both elevations; basement openings have none',()=>{
   const model=createFinishes(context());local(model.root);
-  for(const side of [-1,1])for(const [x,y] of [[-3.85,3.86],[0,3.86],[-4.5,1.14]]) {
+  for(const side of [-1,1])for(const x of [-4.5,4.5])for(const y of [1.14,1.18,1.25]) {
+    const front=hit(model.root,x,y,side).filter(h=>Math.abs(h.distance-(8-11.692812823626577/2))<1e-4);
+    assert.equal(front.length,1);assert.ok((front[0].object as Mesh).material.name.includes('roughcast'),`Basement head ${x}/${y}/${side} is not roughcast`);
+  }
+  for(const side of [-1,1])for(const [x,y] of [[-3.85,3.86],[0,3.86]]) {
     const hits=hit(model.root,x,y,side),front=hits.filter(h=>Math.abs(h.distance-(8-11.692812823626577/2))<1e-4);
     assert.equal(front.length,1,'Concrete must replace masonry without a second coplanar front');
     assert.ok((front[0].object as Mesh).material.name.includes('concrete'));
@@ -55,6 +61,23 @@ test('reference concrete lintels own a single flush surface on both elevations i
     const h=hit(model.root,x,y,side)[0];assert.ok((h.object as Mesh).material.name.includes(y<1.3?'roughcast':'masonry'));
   }
   model.dispose();
+});
+
+// Owner note with Street View Sept 2023: metal covers the whole reveal floor up to the frame; basement openings have none.
+test('metal sills cover the whole reveal floor from the wall face to the frame; basement openings have no sill',()=>{
+  const m=createFinishes(context());local(m.root);const W=11.692812823626577;
+  const down=(x:number,y:number,z:number)=>new THREE.Raycaster(new THREE.Vector3(x,y+.3,z),new THREE.Vector3(0,-1,0),0,.4).intersectObject(m.root,true)[0];
+  for(const o of correctedOpeningSchedule().filter(o=>o.kind!=='door'))for(const p of openingHalves(o)){
+    const side=o.elevation==='WNW'?-1:1,x=(p.a+p.b)/2;
+    for(const out of [-.16,-.10,-.03,.03]){
+      const h=down(x,p.low,side*(W/2+out)),name=h?(h.object as Mesh).material.name:'';
+      if(o.kind==='basement')assert.ok(!name.includes('sill metal'),`${o.id} must not have a metal sill`);
+      else{assert.ok(name.includes('sill metal'),`${o.id} reveal at ${out} shows ${name}`);assert.ok(h.point.y>p.low&&h.point.y<p.low+.025);}
+    }
+  }
+  assert.ok(!(m.root.children as Mesh[]).some(c=>/-B-S\d-[AB]-sill/.test(c.name)));
+  assert.ok(m.root.userData.finishes.sills.every((s:{id:string})=>!s.id.includes('-B-')));
+  m.dispose();
 });
 
 test('folded sills meet recessed frames and preserve open glass above both stepped levels',()=>{
@@ -136,7 +159,7 @@ test('every occupied row has one continuous pale lintel band across both complet
     const hits=hit(m.root,x,y,side),front=hits.filter(h=>Math.abs(h.distance-(8-11.692812823626577/2))<1e-4);
     assert.equal(front.length,1);const mat=(front[0].object as Mesh).material;assert.ok(mat.name.includes('continuous concrete'));assert.equal(mat.color.getHexString(),'f4f4eb');
   }
-  assert.equal(m.root.userData.finishes.lintels.length,10);assert.equal(m.root.userData.finishes.basementLintels.length,20);m.dispose();
+  assert.equal(m.root.userData.finishes.lintels.length,10);assert.equal(m.root.userData.finishes.basementLintels,undefined);m.dispose();
 });
 test('concrete coping projects outside all wall edges, retains the roof void and has one top owner',()=>{
   const m=createFinishes(context());local(m.root);const L=65.52871507972675,W=11.692812823626577;

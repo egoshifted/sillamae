@@ -72,14 +72,14 @@ export function createFinishes(context: OverrideContext): StudyModel {
     }
   }
   const lintels=[-1,1].flatMap(side=>Array.from({length:design.floors},(_,floor)=>({side,x0:-design.length/2,x1:design.length/2,y0:openingRows.firstHead+floor*openingRows.pitch,y1:openingRows.firstHead+floor*openingRows.pitch+.18})));
-  const basementLintels=schedule.filter(o=>o.kind==='basement').map(o=>({side:o.elevation==='WNW'?-1:1,x0:o.x-o.width/2-.10,x1:o.x+o.width/2+.10,y0:o.head,y1:o.head+.09}));
   function region(poly: Vertex[], material: THREE.MeshStandardMaterial) {
     if(poly.length<3)return;
     let parts=[poly];
     const n=poly[0].n, side=Math.sign(n[2]),exterior=-design.width/2;
     const patches:{planes:((v:Vertex)=>number)[];material:THREE.MeshStandardMaterial}[]=[];
     if(Math.abs(n[2])>.99&&poly.every(v=>Math.abs(v.p[2]-side*design.width/2)<1e-4)) {
-      for(const l of [...lintels,...basementLintels].filter(l=>l.side===side))patches.push({planes:[v=>v.p[0]-l.x0,v=>l.x1-v.p[0],v=>v.p[1]-l.y0,v=>l.y1-v.p[1]],material:materials.band});
+      // Basement openings have no lintel: Street View shows the roughcast plinth running up to the brick.
+      for(const l of lintels.filter(l=>l.side===side))patches.push({planes:[v=>v.p[0]-l.x0,v=>l.x1-v.p[0],v=>v.p[1]-l.y0,v=>l.y1-v.p[1]],material:materials.band});
       if(side<0)for(const door of doors)for(const [a,b] of [[door.x-door.width/2-.18,door.x-door.width/2],[door.x+door.width/2,door.x+door.width/2+.18]])patches.push({planes:[v=>v.p[0]-a,v=>b-v.p[0],v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
     }
     for(const door of doors)if(Math.abs(n[0])>.99&&poly.every(v=>Math.abs(Math.abs(v.p[0]-door.x)-door.width/2)<1e-4&&v.p[2]>=exterior-1e-4&&v.p[2]<=exterior+design.wall+1e-4))patches.push({planes:[v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
@@ -131,11 +131,14 @@ export function createFinishes(context: OverrideContext): StudyModel {
     add(g,mat,'finish-region');
   }
   const sills:{id:string;from:number;to:number;level:number;side:number}[]=[];
-  for(const o of schedule.filter(o=>o.kind!=='door')) {
-    const side=o.elevation==='WNW'?-1:1, a=o.x-o.width/2, b=o.x+o.width/2;
+  // Street View Sept 2023: basement openings have no metal sill.
+  for(const o of schedule.filter(o=>o.kind!=='door'&&o.kind!=='basement')) {
+    const side=o.elevation==='WNW'?-1:1;
     const spans=openingHalves(o).map(p=>[p.a,p.b,p.low]);
     for(const [from,to,level] of spans) {
-      const profile=new THREE.Shape([[ -.25,0],[.07,-.018],[.07,-.05],[.068,-.05],[.068,-.020],[-.25,-.002]].map(([out,y])=>new THREE.Vector2(out,y)));
+      // Plate over the whole reveal floor from the frame face (0.175 m in) plus the front drip, as on Kesk 1.
+      // The top must stay above the reveal floor all the way out; a sloped top below it left only the nose visible.
+      const profile=new THREE.Shape([[-.175,.022],[.07,-.002],[.07,-.05],[.068,-.05],[.068,-.006],[0,-.006],[0,0],[-.175,0]].map(([out,y])=>new THREE.Vector2(out,y)));
       const g=new THREE.ExtrudeGeometry(profile,{depth:to-from,bevelEnabled:false});
       const p=g.getAttribute('position'), n=g.getAttribute('normal');
       // Opposite along directions keep the extrusion transform right-handed.
@@ -167,7 +170,7 @@ export function createFinishes(context: OverrideContext): StudyModel {
     mesh.geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));
   }
   batchDetailStudy(root);
-  root.name='kesk9-provisional-finishes';root.userData.finishes={provisional:true,lintels,basementLintels,coping:{...coping,top:design.parapetTop,bottom:design.parapetTop-coping.height},sills,paneDivisions,entrances:entranceRecords,masonryModule:[2.2,.996],source:'Selected Kesk 5 pale procedural masonry; other canonical Kesk 1/Kesk 5 textures. Physical scale and other finishes provisional',unresolved:['Unseen windows use owner-authorized inferred pane layouts; exact replacement histories unresolved','Entrance labels for stairwells 4 and 5 and the stairwell number on 21–40 are inferred; fittings hidden in the 2023 imagery are omitted','Exact sill/lintel dimensions; entrance fitting and handrail dimensions estimated from imagery','Roof housing detail and exact coping profile dimensions','Weathering and historic state']};
+  root.name='kesk9-provisional-finishes';root.userData.finishes={provisional:true,lintels,coping:{...coping,top:design.parapetTop,bottom:design.parapetTop-coping.height},sills,paneDivisions,entrances:entranceRecords,masonryModule:[2.2,.996],source:'Selected Kesk 5 pale procedural masonry; other canonical Kesk 1/Kesk 5 textures. Physical scale and other finishes provisional',unresolved:['Unseen windows use owner-authorized inferred pane layouts; exact replacement histories unresolved','Entrance labels for stairwells 4 and 5 and the stairwell number on 21–40 are inferred; fittings hidden in the 2023 imagery are omitted','Exact sill/lintel dimensions; entrance fitting and handrail dimensions estimated from imagery','Roof housing detail and exact coping profile dimensions','Weathering and historic state']};
   const maps=[...Object.values(materials),...Object.values(plaques)].map(m=>({m,map:m.map,bumpMap:m.bumpMap}));
   let disposed=false;
   return {root,ready:shared.ready,setTextures(on){if(disposed)return;for(const {m,map,bumpMap} of maps){m.map=on?map:null;m.bumpMap=on?bumpMap:null;m.needsUpdate=true;}},dispose(){if(disposed)return;disposed=true;plain.dispose();Object.values(materials).forEach(m=>m.dispose());Object.values(plaques).forEach(m=>m.dispose());plaqueTextures.forEach(t=>t?.dispose());pale.release();}};
