@@ -10,6 +10,7 @@ import {encodeBucket} from './encode.ts';
 import {georeference, type OsmExtract} from './geo.ts';
 import {buildNav} from './nav.ts';
 import {buildStairs} from './stairs.ts';
+import {moveTreesOffRoads} from './trees.ts';
 import {buildZones} from './zones.ts';
 import type {SurveyManifest, WorldData} from '../src/engine/data.ts';
 
@@ -27,6 +28,7 @@ const vertices = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4
 const osm: OsmExtract = JSON.parse(fs.readFileSync(path.join(SOURCE, 'osm.json'), 'utf8'));
 const georef = georeference(osm, data, sillamae), geo = georef.geo;
 const heightAt = loadDtm(geo.toGrid);
+const treeReport = moveTreesOffRoads(vertices, data);
 const {buckets, siteGround, settled, draped} = prepareSurvey(vertices, data, sillamae, heightAt);
 const {stairs, report: stairReport} = buildStairs(osm, data, sillamae, georef, heightAt);
 const {nav, report} = buildNav(osm, data, sillamae, georef);
@@ -61,5 +63,6 @@ const mb = (n: number) => (n / 1048576).toFixed(1) + ' MB';
 console.log(`georeference RMS ${geo.rms.toFixed(2)} m; ${report}`);
 console.log(zoneReport);
 console.log(stairReport);
+console.log(treeReport);
 console.log(`ground on the 1 m terrain model: ${draped!.before} -> ${draped!.after} triangles; ${settled} buildings lowered onto it`);
 console.log(`${buckets.length} buckets in ${tiles.size} tiles, ${mb(bytes)} gzip; world.json ${mb(fs.statSync(path.join(OUT, 'world.json')).size)}; ${((performance.now() - started) / 1000).toFixed(1)} s`);

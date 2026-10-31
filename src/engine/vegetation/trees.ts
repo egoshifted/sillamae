@@ -54,6 +54,9 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
   let seed = 1009 + Math.round(aspect * 100) + (conifer ? 61 : 0) + level * 7;
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const count = CARDS[+conifer][level], size = CARD_SIZE[+conifer][level], half = conifer ? .5 : 0;
+  // Card centres stay inside the crown so the painted foliage edge, not the centres, meets the surveyed radius;
+  // the leaves fill only about four fifths of a card's half-width.
+  const reach = 1 - size * .4;
   const centre = new THREE.Vector3(0, aspect * (conifer ? .5 : .62), 0), radiusY = aspect * (conifer ? .46 : .38);
   const positions: number[] = [], normals: number[] = [], uvs: number[] = [], colours: number[] = [];
   const c = new THREE.Vector3(), n = new THREE.Vector3(), t = new THREE.Vector3(), b = new THREE.Vector3(), volume = new THREE.Vector3(), q = new THREE.Quaternion();
@@ -62,7 +65,7 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
     let height: number;
     if (conifer) {
       height = .06 + .9 * Math.pow(rand(), .8);
-      const radius = (1 - height) * depth;
+      const radius = (1 - height) * depth * reach;
       c.set(Math.cos(a) * radius, height * aspect, Math.sin(a) * radius);
       // Nearer flat than upright: the atlas camera looks down on spruce branches.
       n.set(Math.cos(a) * .8, 1, Math.sin(a) * .8).normalize();
@@ -72,7 +75,7 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
       volume.set(Math.cos(a), .6, Math.sin(a)).normalize();
     } else {
       const y = rand() * 2 - 1, r = Math.sqrt(1 - y * y);
-      c.set(Math.cos(a) * r * depth, centre.y + y * radiusY * depth * (y < 0 ? .8 : 1), Math.sin(a) * r * depth);
+      c.set(Math.cos(a) * r * depth * reach, centre.y + y * radiusY * depth * (y < 0 ? .8 : 1), Math.sin(a) * r * depth * reach);
       height = (y + 1) / 2;
       n.set(Math.cos(a) * r + rand() - .5, y + rand() - .5, Math.sin(a) * r + rand() - .5).normalize();
       t.set(rand() - .5, rand() - .5, rand() - .5).cross(n).normalize();
