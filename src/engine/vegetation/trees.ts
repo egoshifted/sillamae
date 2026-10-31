@@ -54,8 +54,7 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
   let seed = 1009 + Math.round(aspect * 100) + (conifer ? 61 : 0) + level * 7;
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const count = CARDS[+conifer][level], size = CARD_SIZE[+conifer][level], half = conifer ? .5 : 0;
-  // Card centres stay inside the crown so the painted foliage edge, not the centres, meets the surveyed radius;
-  // the leaves fill only about four fifths of a card's half-width.
+  // Painted leaves fill about four fifths of a card's half-width.
   const reach = 1 - size * .4;
   const centre = new THREE.Vector3(0, aspect * (conifer ? .5 : .62), 0), radiusY = aspect * (conifer ? .46 : .38);
   const positions: number[] = [], normals: number[] = [], uvs: number[] = [], colours: number[] = [];

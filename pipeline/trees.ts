@@ -5,7 +5,6 @@ const ROAD = [.57, .60, .58], FOOTWAY = [.81, .82, .75];
 const CELL = 10, CLEAR = .6, MAX_SHIFT = 5, STEP = .25; // metres
 
 // Tree points are crown centres, so roadside crowns that lean over the road put the trunk on the carriageway.
-// Move each such tree to the nearest point clear of road; the crown keeps its surveyed size.
 export function moveTreesOffRoads(vertices: Float32Array, scene: SceneData) {
   const grid = new Map<string, number[]>(), v = vertices;
   for (let i = 0; i < v.length; i += TRIANGLE) {
