@@ -37,13 +37,14 @@ function outline(o: Opening): [number,number][] {
 }
 
 export function createBuilding(context: OverrideContext, schedule: Opening[] = openingSchedule()): StudyModel {
+  // Names are the roles finishes.ts reassigns; batching keeps materials but not mesh names.
   const root = new THREE.Group(), materials = {
-    wall: new THREE.MeshStandardMaterial({color:'#c7c8c1',roughness:1}),
-    foundation: new THREE.MeshStandardMaterial({color:'#989b94',roughness:1}),
-    roof: new THREE.MeshStandardMaterial({color:'#969b98',roughness:1}),
-    frame: new THREE.MeshStandardMaterial({color:'#d4d6d0',roughness:1}),
-    glass: new THREE.MeshStandardMaterial({color:'#71838a',roughness:.75}),
-    door: new THREE.MeshStandardMaterial({color:'#868d89',roughness:1}),
+    wall: new THREE.MeshStandardMaterial({name:'wall',color:'#c7c8c1',roughness:1}),
+    foundation: new THREE.MeshStandardMaterial({name:'foundation',color:'#989b94',roughness:1}),
+    roof: new THREE.MeshStandardMaterial({name:'roof',color:'#969b98',roughness:1}),
+    frame: new THREE.MeshStandardMaterial({name:'frame',color:'#d4d6d0',roughness:1}),
+    glass: new THREE.MeshStandardMaterial({name:'glass',color:'#71838a',roughness:.75}),
+    door: new THREE.MeshStandardMaterial({name:'door',color:'#868d89',roughness:1}),
   };
   const contacts: {s:number;t:number;heights:number[]}[] = [];
   for (const t of [-design.width/2,design.width/2]) for (let i=0;i<=20;i++) {

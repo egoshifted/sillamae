@@ -6,6 +6,7 @@
     "osm": "node pipeline/fetch-osm.ts",
     "dev": "node pipeline/build.ts && vite",
     "check": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\"",
     "build": "tsc -p . && node pipeline/build.ts && vite build",
     "preview": "vite preview",
     "dtm": "node pipeline/fetch-dtm.ts",

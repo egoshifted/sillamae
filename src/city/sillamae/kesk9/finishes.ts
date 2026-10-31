@@ -97,15 +97,16 @@ export function createFinishes(context: OverrideContext): StudyModel {
     region(clip(poly,v=>v.p[1]-design.foundationTop),materials.masonry);
   }
   for(const mesh of [...root.children] as Mesh[]) {
-    const p=mesh.geometry.getAttribute('position'), n=mesh.geometry.getAttribute('normal'), colour=mesh.material.color.getHexString();
+    const p=mesh.geometry.getAttribute('position'), n=mesh.geometry.getAttribute('normal'), role=mesh.material.name;
+    if(!['wall','foundation','roof','frame','glass','door'].includes(role))throw Error('Kesk 9 plain shell has an unassigned material: '+role);
     for(let i=0;i<p.count;i+=3) {
       const poly=[0,1,2].map(j=>({p:[p.getX(i+j),p.getY(i+j),p.getZ(i+j)],n:[n.getX(i+j),n.getY(i+j),n.getZ(i+j)]}));
-      if(colour==='c7c8c1')wall(clip(poly,v=>design.parapetTop-coping.height-v.p[1]));
+      if(role==='wall')wall(clip(poly,v=>design.parapetTop-coping.height-v.p[1]));
       else {
         const y=poly.reduce((sum,v)=>sum+v.p[1],0)/3,selected=poly.every(v=>Math.abs(v.p[0]-door.x)<=door.width/2+.001&&v.p[1]>=door.sill-.001&&v.p[1]<=door.head+.001&&v.p[2]<-design.width/2+.4);
-        const mat=colour==='989b94'?(y<=design.foundationTop&&poly.some(v=>Math.abs(v.p[0])>design.length/2-.4)?materials.plinth:materials.concrete)
-          :colour==='969b98'?(y>design.roofDeck+.01?materials.housing:materials.roof)
-          :colour==='d4d6d0'?(selected?entry.trim:frameAt(poly)):colour==='71838a'?materials.glass:selected?entry.leaf:materials.door;
+        const mat=role==='foundation'?(y<=design.foundationTop&&poly.some(v=>Math.abs(v.p[0])>design.length/2-.4)?materials.plinth:materials.concrete)
+          :role==='roof'?(y>design.roofDeck+.01?materials.housing:materials.roof)
+          :role==='frame'?(selected?entry.trim:frameAt(poly)):role==='glass'?materials.glass:selected?entry.leaf:materials.door;
         emit(poly,mat);
       }
     }
