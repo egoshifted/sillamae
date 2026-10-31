@@ -12,7 +12,7 @@ export const design = {
   foundationTop: 1.3,
   roofDeck: 16.71,
   parapetTop: 16.96,
-  floorPitch: 3.2,
+  floorPitch: 3.2, // approved plain-shell rows only; production uses openingRows in windows.ts
   floors: 5,
   sections: 5,
   provenance: {

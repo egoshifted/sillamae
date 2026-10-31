@@ -19,6 +19,7 @@ test('atlas fitting updates only the target working footprint and exposes all fi
 });
 test('atlas creates the full corrected model immediately while shared texture readiness does not block its first frame',async()=>{
   let changes=0;const c=context(()=>changes++),built=refined.build(c);assert.equal(built.ready,undefined);assert.equal(c.scene.children.length,1);assert.equal(built.root.name,'kesk9');
+  assert.equal(built.groundPatches.length,9,'The apron must cut its survey ground');assert.equal(built.groundPatchMinHeight,design.datum-5);
   assert.equal(built.root.userData.finishes.paneDivisions.length,245);assert.equal(built.root.userData.finishes.lintels.length,10);
   const materials=(built.root.children as THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>[]).map(m=>m.material),maps=materials.map(m=>m.map);
   built.setTextures(false);await built.root.userData.ready;assert.equal(changes,1);assert.ok(materials.every(m=>m.map===null));built.setTextures(true);assert.deepEqual(materials.map(m=>m.map),maps);

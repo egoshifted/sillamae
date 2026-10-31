@@ -14,7 +14,8 @@ export const refined:BuildingOverride={
     root.name='kesk9';context.scene.add(root);
     root.userData.dispose=()=>{if(disposed)return;disposed=true;model.dispose();};
     root.userData.ready=Promise.resolve(model.ready).then(()=>{if(!disposed)context.changed?.();});
-    return {root,groundPatches:[],setTextures:on=>model.setTextures?.(on)};
+    // The apron replaces the survey ground under it; the sea plane far below is left alone.
+    return {root,groundPatches:root.userData.groundPatches??[],groundPatchMinHeight:design.datum-5,setTextures:on=>model.setTextures?.(on)};
   },
   entrances:()=>openingSchedule().filter(o=>o.kind==='door').map(o=>sourcePosition(o.x,-design.width/2-1.35)),
   view:{offset:[-90,55,-45],span:85},
