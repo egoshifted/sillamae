@@ -34,7 +34,7 @@ function hit(root:THREE.Object3D,along:number,height:number,side:number) {
 function local(root:THREE.Object3D) {root.position.set(0,0,0);root.rotation.set(0,0,0);root.updateMatrixWorld(true);}
 
 test('finish partition preserves the complete approved shell surface and contacts',()=>{
-  const before=createBuilding(context(),correctedOpeningSchedule()),after=createFinishes(context());local(before.root);local(after.root);
+  const before=createBuilding(context(),correctedOpeningSchedule(),2),after=createFinishes(context());local(before.root);local(after.root);
   assert.ok(Math.abs(area(after.root)-area(before.root))<.03,'Partition loses a shell surface outside the separately tested joinery');
   for(const side of [-1,1])for(const x of [-32.76,-32.4,-31,-26,-13,0,13,26,31,32.4,32.76])for(const y of [-.1,.2,1.31,5.2,9.7,13.1,16.69,16.72]) {
     const a=hit(before.root,x,y,side)[0],b=hit(after.root,x,y,side)[0];
@@ -83,27 +83,50 @@ test('two finish instances share canonical textures safely through toggles, disp
 test('disposing a finish stage releases each model-owned material exactly once',()=>{
   const dispose=THREE.Material.prototype.dispose,counts=new Map<THREE.Material,number>();
   THREE.Material.prototype.dispose=function(){counts.set(this,(counts.get(this)??0)+1);dispose.call(this);};
-  try {const model=createFinishes(context());model.dispose();model.dispose();assert.equal(counts.size,26);for(const count of counts.values())assert.equal(count,1);}
+  try {const model=createFinishes(context());model.dispose();model.dispose();assert.equal(counts.size,35);for(const count of counts.values())assert.equal(count,1);}
   finally {THREE.Material.prototype.dispose=dispose;}
 });
 
-test('only the reference-mapped 21–40 entrance receives the dark door and orange jamb finish',()=>{
+// Street View 2023: every WNW entrance has a dark double door between orange brick jambs; S2 and S4 are brown, S1, S3 and S5 red-brown.
+const doorX=[-26.2114860318907,-13.10574301594535,0,13.10574301594535,26.2114860318907];
+const leafColour=['red-brown','brown','red-brown','brown','red-brown'];
+type Entrance={door:string;flats:string;stairwell:number;rail?:boolean;mailbox?:boolean;access?:boolean;lamp?:boolean;fittings:{name:string;bounds:number[][]}[]};
+const records=(m:{root:THREE.Object3D})=>m.root.userData.finishes.entrances as Entrance[];
+
+test('all five entrances receive their observed dark door and orange brick jambs; the generic door is gone',()=>{
   const model=createFinishes(context());local(model.root);
-  const x=13.10574301594535;
-  for(const dx of [-.5,.5])assert.ok((hit(model.root,x+dx,1.4,-1)[0].object as Mesh).material.name.includes('dark door'));
-  for(const dx of [-.865,.865]){const hits=hit(model.root,x+dx,1.9,-1),front=hits.filter(h=>Math.abs(h.distance-(8-11.692812823626577/2))<1e-4);assert.equal(front.length,1);assert.ok((front[0].object as Mesh).material.name.includes('brick jambs'));}
-  for(const other of [-26.2114860318907,-13.10574301594535,0,26.2114860318907])assert.equal((hit(model.root,other,1.4,-1)[0].object as Mesh).material.color.getHexString(),'868d89');
+  doorX.forEach((x,i)=>{
+    for(const dx of [-.5,.5]){const name=(hit(model.root,x+dx,1.4,-1)[0].object as Mesh).material.name;assert.ok(name.endsWith('dark door, '+leafColour[i]),`S${i+1}: ${name}`);}
+    for(const dx of [-.865,.865]){const hits=hit(model.root,x+dx,1.9,-1),front=hits.filter(h=>Math.abs(h.distance-(8-11.692812823626577/2))<1e-4);assert.equal(front.length,1);assert.ok((front[0].object as Mesh).material.name.includes('brick jambs'));}
+    assert.notEqual((hit(model.root,x,1.4,-1)[0].object as Mesh).material.color.getHexString(),'868d89','Generic unresolved door remains');
+  });
+  // Masonry just outside each jamb must stay masonry.
+  for(const x of doorX)for(const dx of [-1.0,1.0])assert.ok((hit(model.root,x+dx,1.9,-1)[0].object as Mesh).material.name.includes('masonry'));
   model.dispose();
 });
 
-test('selected entrance fittings meet the recessed door and canopy instead of floating at the wall plane',()=>{
-  const model=createFinishes(context());local(model.root);const x=13.10574301594535,exterior=-11.692812823626577/2;
-  assert.ok((hit(model.root,x+.115,1.60,-1)[0].object as Mesh).material.name.includes('lever'));
-  assert.ok((hit(model.root,x-.075,1.87,-1)[0].object as Mesh).material.name.includes('access unit'));
-  const features=model.root.userData.finishes.entrance.fittings as {name:string;bounds:number[][]}[];
-  for(const name of ['21-40-handle-backplate','21-40-access-unit']){const f=features.find(f=>f.name===name)!;assert.ok(Math.abs(f.bounds[1][2]-(exterior+.221))<1e-5);}
-  const lamp=features.find(f=>f.name==='21-40-canopy-light')!;assert.ok(Math.abs(lamp.bounds[1][1]-2.62)<1e-5);
-  assert.ok(lamp.bounds[0][2]>=exterior-1.2&&lamp.bounds[1][2]<=exterior);
+test('entrance fittings follow the per-entrance observations and meet the recessed door and canopy',()=>{
+  const model=createFinishes(context());local(model.root);const exterior=-11.692812823626577/2,entrances=records(model);
+  assert.deepEqual(entrances.map(e=>[e.door,e.stairwell,e.flats]),[['WNW-S1-door',5,'81–100'],['WNW-S2-door',4,'61–80'],['WNW-S3-door',3,'41–60'],['WNW-S4-door',2,'21–40'],['WNW-S5-door',1,'1–20']]);
+  assert.deepEqual(entrances.filter(e=>e.rail).map(e=>e.door),['WNW-S1-door','WNW-S3-door','WNW-S4-door']);
+  assert.deepEqual(entrances.filter(e=>e.mailbox).map(e=>e.door),['WNW-S3-door']);
+  assert.deepEqual(entrances.filter(e=>e.access).map(e=>e.door),['WNW-S3-door','WNW-S4-door']);
+  assert.deepEqual(entrances.filter(e=>e.lamp).map(e=>e.door),['WNW-S4-door','WNW-S5-door']);
+  entrances.forEach((e,i)=>{
+    const x=doorX[i],p=e.flats.replace('–','-'),find=(n:string)=>e.fittings.find(f=>f.name===p+'-'+n);
+    assert.ok((hit(model.root,x+.115,1.60,-1)[0].object as Mesh).material.name.includes('lever'));
+    assert.ok(Math.abs(find('handle-backplate')!.bounds[1][2]-(exterior+.221))<1e-5);
+    assert.equal(!!find('access-unit'),!!e.access);assert.equal(!!find('mailbox'),!!e.mailbox);assert.equal(!!find('canopy-light'),!!e.lamp);assert.equal(!!find('rail-post'),!!e.rail);
+    if(e.access){assert.ok((hit(model.root,x-.075,1.87,-1)[0].object as Mesh).material.name.includes('access unit'));assert.ok(Math.abs(find('access-unit')!.bounds[1][2]-(exterior+.221))<1e-5);}
+    if(e.mailbox){const box=find('mailbox')!;assert.ok(Math.abs(box.bounds[1][2]-(exterior+.221))<1e-5,'Mailbox must sit on the leaf');assert.ok((hit(model.root,x+.30,1.91,-1)[0].object as Mesh).material.name.includes('mailbox'));}
+    if(e.lamp){const lamp=find('canopy-light')!;assert.ok(Math.abs(lamp.bounds[1][1]-2.62)<1e-5);assert.ok(lamp.bounds[0][2]>=exterior-1.2&&lamp.bounds[1][2]<=exterior);}
+    if(e.rail){
+      const post=find('rail-post')!,arm=find('rail-arm')!;
+      assert.ok(Math.abs(post.bounds[0][1]-.65)<1e-5,'Rail post must stand on the landing');
+      assert.ok(Math.abs(arm.bounds[1][2]-exterior)<1e-5,'Rail arm must reach the wall');
+      assert.ok(post.bounds[0][0]>x+1.55/2+.18,'Rail must stand beside the NNE jamb, not on it');
+    }
+  });
   model.dispose();
 });
 
@@ -127,9 +150,38 @@ test('concrete coping projects outside all wall edges, retains the roof void and
   const interior=new THREE.Raycaster(new THREE.Vector3(0,18,0),new THREE.Vector3(0,-1,0),0,2).intersectObject(m.root,true)[0];assert.ok(Math.abs(interior.point.y-16.71)<1e-4);
   m.dispose();
 });
-test('entrance plaque faces outward, contacts its leaf and releases its own map through texture toggles',()=>{
-  const m=createFinishes(context());local(m.root);const x=13.10574301594535,material=(hit(m.root,x-.43,2.36,-1)[0].object as Mesh).material;
-  assert.ok(material.name.includes('entrance plaque'));for(const mesh of meshes(m.root).filter(mesh=>mesh.material===material)){const uv=mesh.geometry.getAttribute('uv');assert.ok(Array.from(uv.array).every(v=>v>=0&&v<=1),'Plaque requires local image coordinates');}const texture=material.map!;let disposed=0;texture.addEventListener('dispose',()=>disposed++);
-  const f=m.root.userData.finishes.entrance.fittings.find((f:{name:string})=>f.name==='21-40-plaque-backing');assert.ok(Math.abs(f.bounds[1][2]-(-11.692812823626577/2+.221))<1e-5);
-  m.setTextures!(false);assert.equal(material.map,null);m.setTextures!(true);assert.equal(material.map,texture);m.setTextures!(false);m.dispose();m.dispose();assert.equal(disposed,1);
+// Owner-supplied Street View, Sept 2023: a folded metal sheet caps the canopy's front and end edges; entrances have a landing and one step.
+test('every canopy has metal flashing on its front, both ends and top edge, standing off the slab',()=>{
+  const m=createFinishes(context());local(m.root);const exterior=-11.692812823626577/2,front=exterior-1.2,top=2.74;
+  for(const x of doorX){
+    const face=hit(m.root,x,top-.03,-1)[0];assert.ok((face.object as Mesh).material.name.includes('flashing'));assert.ok(Math.abs(face.point.z-(front-.016))<1e-4,'Flashing must stand 12 mm off the slab front');
+    for(const side of [-1,1]){const end=new THREE.Raycaster(new THREE.Vector3(x+side*3,top-.03,exterior-.6),new THREE.Vector3(-side,0,0),0,2).intersectObject(m.root,true)[0];assert.ok((end.object as Mesh).material.name.includes('flashing'),'Missing end flashing');}
+    const cap=new THREE.Raycaster(new THREE.Vector3(x,4,front+.02),new THREE.Vector3(0,-1,0),0,2).intersectObject(m.root,true)[0];assert.ok((cap.object as Mesh).material.name.includes('flashing'));assert.ok(Math.abs(cap.point.y-(top+.004))<1e-5);
+    const inner=new THREE.Raycaster(new THREE.Vector3(x,4,front+.4),new THREE.Vector3(0,-1,0),0,2).intersectObject(m.root,true)[0];assert.ok(!(inner.object as Mesh).material.name.includes('flashing'),'Flashing must not cover the whole canopy');
+  }
+  m.dispose();
+});
+
+test('each entrance has a landing and one step, two rises from the ground, with the landing unchanged',()=>{
+  const m=createFinishes(context());local(m.root);const exterior=-11.692812823626577/2;
+  const tread=(x:number,z:number)=>new THREE.Raycaster(new THREE.Vector3(x,2,z),new THREE.Vector3(0,-1,0),0,3).intersectObject(m.root,true)[0].point.y;
+  for(const x of doorX){
+    assert.ok(Math.abs(tread(x,exterior-.2)-.65)<1e-5,'Landing level must stay at the door sill');
+    assert.ok(Math.abs(tread(x,exterior-.7)-.65)<1e-5,'Second tread must belong to the landing');
+    const step=tread(x,exterior-1.05);assert.ok(step>.19+.05&&step<.6,'One intermediate step between ground and landing');
+  }
+  m.dispose();
+});
+
+test('each entrance plaque faces outward, contacts its leaf and releases its own map through texture toggles',()=>{
+  const m=createFinishes(context());local(m.root);const entrances=records(m),textures:THREE.Texture[]=[];let disposed=0;
+  entrances.forEach((e,i)=>{
+    const material=(hit(m.root,doorX[i]-.43,2.36,-1)[0].object as Mesh).material;
+    assert.ok(material.name.endsWith('entrance plaque '+e.flats),material.name);
+    for(const mesh of meshes(m.root).filter(mesh=>mesh.material===material)){const uv=mesh.geometry.getAttribute('uv');assert.ok(Array.from(uv.array).every(v=>v>=0&&v<=1),'Plaque requires local image coordinates');}
+    const texture=material.map!;assert.ok(!textures.includes(texture),'Each plaque needs its own text');textures.push(texture);texture.addEventListener('dispose',()=>disposed++);
+    const f=e.fittings.find(f=>f.name===e.flats.replace('–','-')+'-plaque-backing')!;assert.ok(Math.abs(f.bounds[1][2]-(-11.692812823626577/2+.221))<1e-5);
+  });
+  const plaques=entrances.map((_,i)=>(hit(m.root,doorX[i]-.43,2.36,-1)[0].object as Mesh).material);
+  m.setTextures!(false);assert.ok(plaques.every(p=>p.map===null));m.setTextures!(true);assert.deepEqual(plaques.map(p=>p.map),textures);m.setTextures!(false);m.dispose();m.dispose();assert.equal(disposed,5);
 });

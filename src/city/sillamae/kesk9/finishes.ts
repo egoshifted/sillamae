@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import {createBuilding} from './model.ts';
-import {design} from './design.ts';
+import {design,type Opening} from './design.ts';
 import {correctedOpeningSchedule,openingHalves,openingRows} from './windows.ts';
 import {paneFrame} from './joinery.ts';
 import {surfaces} from '../kesk1/surfaces.ts';
 import {acquirePaleMasonry} from '../shared/masonry.ts';
-import {detailedEntrance,entranceMaterials,addEntranceFittings} from './entrance.ts';
+import {entrances,entranceMaterials,addEntranceFittings,leafMaterial} from './entrance.ts';
 import {batchDetailStudy} from '../../../studio/assembly/batch.ts';
 import type {OverrideContext} from '../../../engine/types.ts';
 import type {StudyModel} from '../../../studio/types.ts';
@@ -28,10 +28,11 @@ function clip(poly: Vertex[], distance: (v: Vertex) => number, inside = true): V
 }
 
 export function createFinishes(context: OverrideContext): StudyModel {
-  const schedule=correctedOpeningSchedule(), plain=createBuilding(context,schedule), root=plain.root as THREE.Group, shared=surfaces(), pale=acquirePaleMasonry();
+  const schedule=correctedOpeningSchedule(), plain=createBuilding(context,schedule,2), root=plain.root as THREE.Group, shared=surfaces(), pale=acquirePaleMasonry();
   const material=(name: string, color: string, roughness=1) => new THREE.MeshStandardMaterial({name,color,roughness});
-  const door=schedule.find(o=>o.id===detailedEntrance)!, entry=entranceMaterials(shared.maps['masonry-v1']);
-  const plaqueTexture=entry.plaque.map;
+  const doors=schedule.filter(o=>o.kind==='door'), {plaques,...entry}=entranceMaterials(shared.maps['masonry-v1']);
+  const plaqueTextures=Object.values(plaques).map(p=>p.map);
+  const spec=(o:Opening)=>{const e=entrances.find(e=>e.door===o.id);if(!e)throw Error('Kesk 9 door has no entrance record: '+o.id);return e;};
   const materials={
     ...entry,
     masonry:material('Kesk 9 · selected Kesk 5 pale masonry','#ffffff'),
@@ -79,9 +80,9 @@ export function createFinishes(context: OverrideContext): StudyModel {
     const patches:{planes:((v:Vertex)=>number)[];material:THREE.MeshStandardMaterial}[]=[];
     if(Math.abs(n[2])>.99&&poly.every(v=>Math.abs(v.p[2]-side*design.width/2)<1e-4)) {
       for(const l of [...lintels,...basementLintels].filter(l=>l.side===side))patches.push({planes:[v=>v.p[0]-l.x0,v=>l.x1-v.p[0],v=>v.p[1]-l.y0,v=>l.y1-v.p[1]],material:materials.band});
-      if(side<0)for(const [a,b] of [[door.x-door.width/2-.18,door.x-door.width/2],[door.x+door.width/2,door.x+door.width/2+.18]])patches.push({planes:[v=>v.p[0]-a,v=>b-v.p[0],v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
+      if(side<0)for(const door of doors)for(const [a,b] of [[door.x-door.width/2-.18,door.x-door.width/2],[door.x+door.width/2,door.x+door.width/2+.18]])patches.push({planes:[v=>v.p[0]-a,v=>b-v.p[0],v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
     }
-    if(Math.abs(n[0])>.99&&poly.every(v=>Math.abs(Math.abs(v.p[0]-door.x)-door.width/2)<1e-4&&v.p[2]>=exterior-1e-4&&v.p[2]<=exterior+design.wall+1e-4))patches.push({planes:[v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
+    for(const door of doors)if(Math.abs(n[0])>.99&&poly.every(v=>Math.abs(Math.abs(v.p[0]-door.x)-door.width/2)<1e-4&&v.p[2]>=exterior-1e-4&&v.p[2]<=exterior+design.wall+1e-4))patches.push({planes:[v=>v.p[1]-door.sill,v=>door.head-v.p[1]],material:entry.jamb});
     for(const patch of patches)parts=parts.flatMap(part=>{
       let inner=part;for(const plane of patch.planes)inner=clip(inner,plane);
       if(inner.length<3)return [part];
@@ -103,10 +104,10 @@ export function createFinishes(context: OverrideContext): StudyModel {
       const poly=[0,1,2].map(j=>({p:[p.getX(i+j),p.getY(i+j),p.getZ(i+j)],n:[n.getX(i+j),n.getY(i+j),n.getZ(i+j)]}));
       if(role==='wall')wall(clip(poly,v=>design.parapetTop-coping.height-v.p[1]));
       else {
-        const y=poly.reduce((sum,v)=>sum+v.p[1],0)/3,selected=poly.every(v=>Math.abs(v.p[0]-door.x)<=door.width/2+.001&&v.p[1]>=door.sill-.001&&v.p[1]<=door.head+.001&&v.p[2]<-design.width/2+.4);
+        const y=poly.reduce((sum,v)=>sum+v.p[1],0)/3,owner=doors.find(door=>poly.every(v=>Math.abs(v.p[0]-door.x)<=door.width/2+.001&&v.p[1]>=door.sill-.001&&v.p[1]<=door.head+.001&&v.p[2]<-design.width/2+.4));
         const mat=role==='foundation'?(y<=design.foundationTop&&poly.some(v=>Math.abs(v.p[0])>design.length/2-.4)?materials.plinth:materials.concrete)
           :role==='roof'?(y>design.roofDeck+.01?materials.housing:materials.roof)
-          :role==='frame'?(selected?entry.trim:frameAt(poly)):role==='glass'?materials.glass:selected?entry.leaf:materials.door;
+          :role==='frame'?(owner?entry.trim:frameAt(poly)):role==='glass'?materials.glass:owner?leafMaterial(spec(owner),entry):materials.door;
         emit(poly,mat);
       }
     }
@@ -152,9 +153,9 @@ export function createFinishes(context: OverrideContext): StudyModel {
       paneDivisions.push({id:o.id,half:o.kind==='pair'?(Math.abs(p.low-o.sill)<1e-6?'tall':'short'):o.kind,finish:style.finish,inferred:!!style.inferred,fractions:style.bars,positions});
     }
   }
-  const fittings=addEntranceFittings(root,door,entry);
+  const entranceRecords=doors.map(o=>{const e=spec(o);return {...e,fittings:addEntranceFittings(root,o,e,{...entry,plaques})};});
   for(const mesh of root.children as Mesh[]) {
-    if(mesh.material===entry.plaque)continue;
+    if(mesh.material.userData.plaque)continue;
     const p=mesh.geometry.getAttribute('position'),n=mesh.geometry.getAttribute('normal'),uv=new Float32Array(p.count*2), mat=mesh.material;
     const sx=mat===materials.masonry||mat===entry.jamb?2.2:mat===materials.roof?16:mat===materials.plinth?2:.8;
     const sy=mat===materials.masonry||mat===entry.jamb?.996:sx;
@@ -166,8 +167,8 @@ export function createFinishes(context: OverrideContext): StudyModel {
     mesh.geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));
   }
   batchDetailStudy(root);
-  root.name='kesk9-provisional-finishes';root.userData.finishes={provisional:true,lintels,basementLintels,coping:{...coping,top:design.parapetTop,bottom:design.parapetTop-coping.height},sills,paneDivisions,entrance:{id:door.id,fittings},masonryModule:[2.2,.996],source:'Selected Kesk 5 pale procedural masonry; other canonical Kesk 1/Kesk 5 textures. Physical scale and other finishes provisional',unresolved:['Unseen windows use owner-authorized inferred pane layouts; exact replacement histories unresolved','Other entrance finishes and hardware; detailed entrance mapping inferred','Exact sill/lintel dimensions','Roof housing detail and exact coping profile dimensions','Weathering and historic state']};
-  const maps=Object.values(materials).map(m=>({m,map:m.map,bumpMap:m.bumpMap}));
+  root.name='kesk9-provisional-finishes';root.userData.finishes={provisional:true,lintels,basementLintels,coping:{...coping,top:design.parapetTop,bottom:design.parapetTop-coping.height},sills,paneDivisions,entrances:entranceRecords,masonryModule:[2.2,.996],source:'Selected Kesk 5 pale procedural masonry; other canonical Kesk 1/Kesk 5 textures. Physical scale and other finishes provisional',unresolved:['Unseen windows use owner-authorized inferred pane layouts; exact replacement histories unresolved','Entrance labels for stairwells 4 and 5 and the stairwell number on 21–40 are inferred; fittings hidden in the 2023 imagery are omitted','Exact sill/lintel dimensions; entrance fitting and handrail dimensions estimated from imagery','Roof housing detail and exact coping profile dimensions','Weathering and historic state']};
+  const maps=[...Object.values(materials),...Object.values(plaques)].map(m=>({m,map:m.map,bumpMap:m.bumpMap}));
   let disposed=false;
-  return {root,ready:shared.ready,setTextures(on){if(disposed)return;for(const {m,map,bumpMap} of maps){m.map=on?map:null;m.bumpMap=on?bumpMap:null;m.needsUpdate=true;}},dispose(){if(disposed)return;disposed=true;plain.dispose();Object.values(materials).forEach(m=>m.dispose());plaqueTexture?.dispose();pale.release();}};
+  return {root,ready:shared.ready,setTextures(on){if(disposed)return;for(const {m,map,bumpMap} of maps){m.map=on?map:null;m.bumpMap=on?bumpMap:null;m.needsUpdate=true;}},dispose(){if(disposed)return;disposed=true;plain.dispose();Object.values(materials).forEach(m=>m.dispose());Object.values(plaques).forEach(m=>m.dispose());plaqueTextures.forEach(t=>t?.dispose());pale.release();}};
 }

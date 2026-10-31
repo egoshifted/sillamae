@@ -36,7 +36,10 @@ function outline(o: Opening): [number,number][] {
     : [[a,o.shortSill!],[middle,o.shortSill!],[middle,o.sill],[b,o.sill],[b,o.head],[a,o.head]];
 }
 
-export function createBuilding(context: OverrideContext, schedule: Opening[] = openingSchedule()): StudyModel {
+export const canopy = {width: 2.65, thickness: .12, depth: 1.2, centreY: 2.68};
+
+// The approved plain shell has three rises; Street View shows a landing and one step (two rises).
+export function createBuilding(context: OverrideContext, schedule: Opening[] = openingSchedule(), rises = 3): StudyModel {
   // Names are the roles finishes.ts reassigns; batching keeps materials but not mesh names.
   const root = new THREE.Group(), materials = {
     wall: new THREE.MeshStandardMaterial({name:'wall',color:'#c7c8c1',roughness:1}),
@@ -108,11 +111,11 @@ export function createBuilding(context: OverrideContext, schedule: Opening[] = o
     const s=design.length*((section+.5)/5-.5);
     for (const [ds,t] of [[-1.25,-2.7],[1.25,-2.7],[0,2.7]]) box(s+ds,design.roofDeck+.42,t,.85,.84,2.3,materials.roof,'provisional-roof-vent');
     const z=-design.width/2;
-    box(s,2.68,z-.6,2.65,.12,1.2,materials.roof,'entrance-canopy');
+    box(s,canopy.centreY,z-canopy.depth/2,canopy.width,canopy.thickness,canopy.depth,materials.roof,'entrance-canopy');
     const samples=[-.95,0,.95].flatMap(ds=>[.3,1.2].flatMap(dt=>{const [x,zs]=sourcePosition(s+ds,z-dt);return landHeights(context.ground,x,zs);}));
     const ground=samples.length?Math.max(...samples)-design.datum:0, base=samples.length?Math.min(...samples)-design.datum-.15:bottom, top=.65;
     for (let step=0;step<3;step++) {
-      const high=ground+(top-ground)*(step+1)/3;
+      const high=ground+(top-ground)*Math.min(step+1,rises)/rises;
       box(s,(base+high)/2,z-(1.05-step*.35),2.1,high-base,.35,materials.foundation,'entrance-step');
     }
     box(s,(base+top)/2,z-.175,2.1,top-base,.35,materials.foundation,'entrance-landing');
