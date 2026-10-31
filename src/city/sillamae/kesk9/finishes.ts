@@ -7,6 +7,7 @@ import {surfaces} from '../kesk1/surfaces.ts';
 import {acquirePaleMasonry} from '../shared/masonry.ts';
 import {entrances,entranceMaterials,addEntranceFittings,leafMaterial} from './entrance.ts';
 import {batchDetailStudy} from '../../../studio/assembly/batch.ts';
+import {createApron} from './apron.ts';
 import type {OverrideContext} from '../../../engine/types.ts';
 import type {StudyModel} from '../../../studio/types.ts';
 
@@ -48,10 +49,13 @@ export function createFinishes(context: OverrideContext): StudyModel {
     glass:material('Kesk 9 · provisional glazing','#45565c',.42),
     door:material('Kesk 9 · unresolved entrance finishes','#868d89'),
     sill:material('Kesk 9 · provisional sill metal','#818b8d',.45),
+    apron:material('Kesk 9 · apron concrete','#a4a59d'),
   };
   [materials.masonry.map,materials.masonry.bumpMap]=pale.maps; materials.masonry.bumpScale=.024;
   [materials.plinth.map,materials.plinth.bumpMap]=shared.maps['roughcast-v1']; materials.plinth.bumpScale=.035;
-  materials.concrete.map=materials.band.map=shared.maps['concrete-v1'][0];
+  materials.concrete.map=materials.band.map=materials.apron.map=shared.maps['concrete-v1'][0];
+  // Ground, not building: excluded from picking tags and block tints like other ground surfaces.
+  materials.apron.userData.groundSurface=true;
   materials.roof.map=shared.maps['felt-colour-v1'][0]; materials.roof.bumpMap=shared.maps['felt-relief-v1'][0]; materials.roof.bumpScale=.018;
   materials.sill.metalness=.55;
   for(const m of [materials.frame,materials.aged,materials.red,materials.brown,entry.trim])m.userData.joinery=true;
@@ -157,6 +161,7 @@ export function createFinishes(context: OverrideContext): StudyModel {
     }
   }
   const entranceRecords=doors.map(o=>{const e=spec(o);return {...e,fittings:addEntranceFittings(root,o,e,{...entry,plaques})};});
+  const site=createApron(context,doors.map(o=>o.x),materials.apron);root.add(site.mesh);
   for(const mesh of root.children as Mesh[]) {
     if(mesh.material.userData.plaque)continue;
     const p=mesh.geometry.getAttribute('position'),n=mesh.geometry.getAttribute('normal'),uv=new Float32Array(p.count*2), mat=mesh.material;
@@ -170,7 +175,7 @@ export function createFinishes(context: OverrideContext): StudyModel {
     mesh.geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));
   }
   batchDetailStudy(root);
-  root.name='kesk9-provisional-finishes';root.userData.finishes={provisional:true,lintels,coping:{...coping,top:design.parapetTop,bottom:design.parapetTop-coping.height},sills,paneDivisions,entrances:entranceRecords,masonryModule:[2.2,.996],source:'Selected Kesk 5 pale procedural masonry; other canonical Kesk 1/Kesk 5 textures. Physical scale and other finishes provisional',unresolved:['Unseen windows use owner-authorized inferred pane layouts; exact replacement histories unresolved','Entrance labels for stairwells 4 and 5 and the stairwell number on 21–40 are inferred; fittings hidden in the 2023 imagery are omitted','Exact sill/lintel dimensions; entrance fitting and handrail dimensions estimated from imagery','Roof housing detail and exact coping profile dimensions','Weathering and historic state']};
+  root.name='kesk9-provisional-finishes';root.userData.groundPatches=site.patches;root.userData.finishes={provisional:true,lintels,coping:{...coping,top:design.parapetTop,bottom:design.parapetTop-coping.height},sills,paneDivisions,entrances:entranceRecords,masonryModule:[2.2,.996],source:'Selected Kesk 5 pale procedural masonry; other canonical Kesk 1/Kesk 5 textures. Physical scale and other finishes provisional',unresolved:['Unseen windows use owner-authorized inferred pane layouts; exact replacement histories unresolved','Entrance labels for stairwells 4 and 5 and the stairwell number on 21–40 are inferred; fittings hidden in the 2023 imagery are omitted','Exact sill/lintel dimensions; entrance fitting and handrail dimensions estimated from imagery','Roof housing detail and exact coping profile dimensions','Weathering and historic state']};
   const maps=[...Object.values(materials),...Object.values(plaques)].map(m=>({m,map:m.map,bumpMap:m.bumpMap}));
   let disposed=false;
   return {root,ready:shared.ready,setTextures(on){if(disposed)return;for(const {m,map,bumpMap} of maps){m.map=on?map:null;m.bumpMap=on?bumpMap:null;m.needsUpdate=true;}},dispose(){if(disposed)return;disposed=true;plain.dispose();Object.values(materials).forEach(m=>m.dispose());Object.values(plaques).forEach(m=>m.dispose());plaqueTextures.forEach(t=>t?.dispose());pale.release();}};

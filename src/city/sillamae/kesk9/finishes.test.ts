@@ -16,7 +16,7 @@ function meshes(root:THREE.Object3D) {return root.children as THREE.Mesh<THREE.B
 function area(root:THREE.Object3D) {
   let total=0;
   for(const m of meshes(root)) {
-    if(m.material.name.includes('sill metal')||m.material.userData.detailAddition||m.material.userData.joinery||m.material.color.getHexString()==='d4d6d0')continue;
+    if(m.material.name.includes('sill metal')||m.material.userData.groundSurface||m.material.userData.detailAddition||m.material.userData.joinery||m.material.color.getHexString()==='d4d6d0')continue;
     const p=m.geometry.getAttribute('position'),a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
     for(let i=0;i<p.count;i+=3){
       let poly=[0,1,2].map(j=>new THREE.Vector3().fromBufferAttribute(p,i+j));
@@ -37,8 +37,8 @@ test('finish partition preserves the complete approved shell surface and contact
   const before=createBuilding(context(),correctedOpeningSchedule(),2),after=createFinishes(context());local(before.root);local(after.root);
   assert.ok(Math.abs(area(after.root)-area(before.root))<.03,'Partition loses a shell surface outside the separately tested joinery');
   for(const side of [-1,1])for(const x of [-32.76,-32.4,-31,-26,-13,0,13,26,31,32.4,32.76])for(const y of [-.1,.2,1.31,5.2,9.7,13.1,16.69,16.72]) {
-    // Sills are fittings added over the shell (tested separately); y=5.2 lies exactly on the ESE L2 sill level.
-    const a=hit(before.root,x,y,side)[0],b=hit(after.root,x,y,side).find(h=>!(h.object as Mesh).material.name.includes('sill metal'));
+    // Sills and the apron are added over the shell and tested separately; y=5.2 lies exactly on the ESE L2 sill level.
+    const a=hit(before.root,x,y,side)[0],b=hit(after.root,x,y,side).find(h=>{const m=(h.object as Mesh).material;return !m.name.includes('sill metal')&&!m.userData.groundSurface;});
     assert.equal(!!b,!!a,`Changed closure ${x}/${y}/${side}`);if(a&&b)assert.ok(Math.abs(a.distance-b.distance)<1e-4);
   }
   before.dispose();after.dispose();
@@ -106,7 +106,7 @@ test('two finish instances share canonical textures safely through toggles, disp
 test('disposing a finish stage releases each model-owned material exactly once',()=>{
   const dispose=THREE.Material.prototype.dispose,counts=new Map<THREE.Material,number>();
   THREE.Material.prototype.dispose=function(){counts.set(this,(counts.get(this)??0)+1);dispose.call(this);};
-  try {const model=createFinishes(context());model.dispose();model.dispose();assert.equal(counts.size,35);for(const count of counts.values())assert.equal(count,1);}
+  try {const model=createFinishes(context());model.dispose();model.dispose();assert.equal(counts.size,36);for(const count of counts.values())assert.equal(count,1);}
   finally {THREE.Material.prototype.dispose=dispose;}
 });
 
@@ -193,6 +193,27 @@ test('each entrance has a landing and one step, two rises from the ground, with 
     assert.ok(Math.abs(tread(x,exterior-.7)-.65)<1e-5,'Second tread must belong to the landing');
     const step=tread(x,exterior-1.05);assert.ok(step>.19+.05&&step<.6,'One intermediate step between ground and landing');
   }
+  m.dispose();
+});
+
+// Owner photo and Street View Sept 2023: a thin concrete apron runs round the base, a few centimetres proud of the grass.
+test('the apron is a thin slab round all four walls, above the ground, closed at its outer edge and stopping at the steps',()=>{
+  const m=createFinishes(context());local(m.root);const L=65.52871507972675/2,W=11.692812823626577/2,ground=14.3-14.11;
+  const down=(x:number,z:number)=>new THREE.Raycaster(new THREE.Vector3(x,2,z),new THREE.Vector3(0,-1,0),0,3).intersectObject(m.root,true)[0];
+  const isApron=(h?:THREE.Intersection)=>!!h&&(h.object as Mesh).material.name.includes('apron');
+  for(const [x,z] of [[-20,-W-.1],[-20,-W-.5],[20,W-(-.3)],[0,W+.5],[-L-.3,0],[L+.3,2],[L+.5,-W-.5],[-L-.5,W+.5]]){
+    const h=down(x,z);assert.ok(isApron(h),`No apron at ${x}/${z}`);assert.ok(h.point.y>ground+.015&&h.point.y<ground+.045,'Apron must sit a few centimetres above the ground');
+  }
+  // Falls away from the wall.
+  assert.ok(down(-20,-W-.02).point.y>down(-20,-W-.53).point.y);
+  for(const x of doorX)assert.ok(!isApron(down(x,-W-.3)),'Apron must stop at the entrance steps');
+  assert.ok(!isApron(down(-20,-W-.7)),'Apron is 0.55 m wide');
+  // The outer edge runs down below the ground so the cut-out ground meets it without a gap.
+  for(const [x,y,z,dir] of [[-20,ground-.05,-W-2,[0,0,1]],[0,ground-.05,W+2,[0,0,-1]],[-L-2,ground-.05,0,[1,0,0]],[L+2,ground-.05,0,[-1,0,0]],[L+2,ground-.05,-W-.3,[-1,0,0]]] as const){
+    const h=new THREE.Raycaster(new THREE.Vector3(x,y,z),new THREE.Vector3(...dir),0,2).intersectObject(m.root,true)[0];assert.ok(isApron(h),`Open apron edge towards ${dir}`);
+  }
+  const patches=m.root.userData.groundPatches as number[][][];assert.equal(patches.length,9);
+  assert.ok(patches.every(p=>p.length===4&&p.flat().every(Number.isFinite)));
   m.dispose();
 });
 
