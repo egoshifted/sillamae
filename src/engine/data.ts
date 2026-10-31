@@ -19,9 +19,20 @@ export interface Stair {
   steps: number;
 }
 
+// Points in the local frame (x, height, z). Surface rings: outer first, then holes; outer
+// counter-clockwise in (x, z), holes clockwise, so the surface is always left of travel.
+export type LocalPoint = [number, number, number];
+export interface Streets {
+  carriageways: LocalPoint[][][];
+  markings: LocalPoint[][][];
+  // Carriageway edges that get a kerb, carriageway on the left; heights at road level.
+  kerbs: LocalPoint[][];
+}
+
 export interface WorldData extends SceneData {
   zones: Zone[];
   stairs: Stair[];
+  streets: Streets;
   siteGround: Record<string, GroundTriangle[]>;
   // Source x/z to EPSG:3301 easting/northing: [a, b, c, d, e, f] maps (x, z)
   // to (a x + b z + c, d x + e z + f). Fitted to OSM outlines; rms in metres.

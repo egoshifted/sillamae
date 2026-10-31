@@ -8,7 +8,8 @@ const SITE_MARGIN = 15;
 
 // Overrides are built here only to learn their ground patches; the viewer
 // builds them again from the recorded site ground.
-export function prepareSurvey(vertices: Float32Array, data: SceneData, city: CityDefinition, heightAt?: HeightAt) {
+// Ground recoloured in `recoloured` areas is cut into small pieces, which must still classify by colour.
+export function prepareSurvey(vertices: Float32Array, data: SceneData, city: CityDefinition, heightAt?: HeightAt, recoloured: Site[] = []) {
   const frame: WorldFrame = {origin: city.frame.origin, base: data.base};
   const building = (id: string) => {
     const b = data.buildings.find(b => b.id === id);
@@ -29,7 +30,7 @@ export function prepareSurvey(vertices: Float32Array, data: SceneData, city: Cit
     sites.push(site);
     skip.add(b.pick);
   }
-  const buckets = [...bucketSurvey(vertices, frame, skip, sites).values()];
+  const buckets = [...bucketSurvey(vertices, frame, skip, [...sites, ...recoloured]).values()];
   const draped = heightAt ? drapeGround(buckets, heightAt, sites) : null;
   return {buckets, siteGround, settled, draped};
 }
