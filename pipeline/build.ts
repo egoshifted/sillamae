@@ -12,7 +12,7 @@ import {buildNav} from './nav.ts';
 import {buildStairs} from './stairs.ts';
 import {buildStreets} from './streets.ts';
 import {correctedAreas, correctRoads, type RoadCorrections} from './roads.ts';
-import {moveTreesOffRoads} from './trees.ts';
+import {moveTreesOffRoads, moveTreesOffStreets} from './trees.ts';
 import {buildZones} from './zones.ts';
 import type {SurveyManifest, WorldData} from '../src/engine/data.ts';
 
@@ -33,7 +33,8 @@ const osm: OsmExtract = JSON.parse(fs.readFileSync(path.join(SOURCE, 'osm.json')
 const georef = georeference(osm, data, sillamae), geo = georef.geo;
 const heightAt = loadDtm(geo.toGrid);
 const treeReport = moveTreesOffRoads(recoloured, data);
-const {vertices, streets, report: streetReport} = buildStreets(recoloured, corrections, data, sillamae, heightAt);
+const {vertices, streets, blocked, report: streetReport} = buildStreets(recoloured, corrections, data, sillamae, heightAt);
+const streetTreeReport = moveTreesOffStreets(data, blocked);
 const {buckets, siteGround, settled, draped} = prepareSurvey(vertices, data, sillamae, heightAt, correctedAreas(corrections));
 const {stairs, report: stairReport} = buildStairs(osm, data, sillamae, georef, heightAt);
 const {nav, report} = buildNav(osm, data, sillamae, georef);
@@ -71,5 +72,6 @@ console.log(stairReport);
 console.log(roadReport);
 console.log(streetReport);
 console.log(treeReport);
+console.log(streetTreeReport);
 console.log(`ground on the 1 m terrain model: ${draped!.before} -> ${draped!.after} triangles; ${settled} buildings lowered onto it`);
 console.log(`${buckets.length} buckets in ${tiles.size} tiles, ${mb(bytes)} gzip; world.json ${mb(fs.statSync(path.join(OUT, 'world.json')).size)}; ${((performance.now() - started) / 1000).toFixed(1)} s`);

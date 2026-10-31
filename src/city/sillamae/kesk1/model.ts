@@ -426,11 +426,8 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   annex.block(annexEndX,1.85,canopyEnd-annexEndX,.16,annexDepth+.08,concrete,.02);
   annex.block(annexEndX,annexRoofY,canopyEnd-annexEndX,.045,annexDepth+.08,annexMembrane,.02);
   beam(annex.at(canopyEnd-.08,-1,annexDepth-.05),annex.at(canopyEnd-.08,1.85,annexDepth-.05),.035,redWood);
-  const pathStart=(g[2][0]-g[19][0])*Math.cos(annex.angle)-(g[2][1]-g[19][1])*Math.sin(annex.angle),pathEnd=27.5,slab=.4;
-  for(let x=pathStart;x<pathEnd;x+=slab)for(let col=0;col<6;col++){
-    const w=Math.min(slab-.024,pathEnd-x);
-    annex.block(x,.025,w,.045,slab-.024,stepConcrete,pathOffset+col*slab);
-  }
+  // The tiled path beyond the stairs, its bins and the benches are surroundings, left to the street layer.
+  const pathStart=(g[2][0]-g[19][0])*Math.cos(annex.angle)-(g[2][1]-g[19][1])*Math.sin(annex.angle);
   const stairEnd=pathStart-1.75;
   // Continuous floor under the stairs prevents open gaps exposing the water plane.
   annex.block(4.29,-1.14,annex.L-4.29,.14,annexDepth+.04,stepConcrete,-.02);
@@ -441,17 +438,6 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   annex.block(annex.L,-1.14,pathStart-annex.L,1.14,.12,stepConcrete,pathOffset-.12);
   for(let x=annexEndX+.1;x<=pathStart;x+=2)beam(annex.at(x,0,annexDepth),annex.at(x,.95,annexDepth),.025,redWood);
   beam(annex.at(annexEndX+.1,.95,annexDepth),annex.at(pathStart,.95,annexDepth),.025,redWood);
-  for(let j=0;j<3;j++){
-    const x=pathStart+.7+j*.95,d=pathOffset+1.58;
-    annex.block(x,.13,.62,.94,.67,dark,d);
-    annex.block(x-.035,1.07,.69,.07,.74,metal,d-.035);
-    annex.block(x+.04,1.14,.54,.035,.55,dark,d+.04);
-    for(const xx of [x+.06,x+.56]){
-      beam(annex.at(xx,.14,d+.56),annex.at(xx,.14,d+.69),.105,tire);
-      beam(annex.at(xx,.9,d+.7),annex.at(xx,1.05,d+.7),.024,metal);
-    }
-    beam(annex.at(x+.06,1.05,d+.7),annex.at(x+.56,1.05,d+.7),.024,metal);
-  }
   const rear=edge(16),rx=.12,rw=rear.L-.24;
   rear.block(rx,.85,rw,2.5,.06,dark,.02);rear.block(rx+.16,.9,rw-.32,2.3,.07,wood,.1);
   rear.block(rx-.1,3.4,rw+.2,.17,1.05,concrete,.02);
@@ -481,28 +467,17 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   beam(fp.at(flagX+.045,3.65,.025),fp.at(flagX+.045,3.92,.23),.024,metal);
   for(let j=0;j<12;j++){const p=fp.at(fx+.08+j*.1,5.95+.08*Math.sin(j),.09);dummy.position.copy(p);dummy.rotation.set(0,0,0);dummy.updateMatrix();emit(new THREE.IcosahedronGeometry(.095,0),j%3?flower:green,dummy.matrix);}
   const bp=edge(2),dish=bp.at(bp.L-.25,8.6,.65);beam(bp.at(bp.L-.25,8.3,.12),dish,.035,metal);dummy.position.copy(dish);dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),bp.n.clone().add(new THREE.Vector3(0,.25,0)).normalize());dummy.scale.set(1,1,.22);dummy.updateMatrix();emit(new THREE.SphereGeometry(.42,16,10),trim,dummy.matrix);dummy.scale.set(1,1,1);
-  function bench(p: ReturnType<typeof edge>,x: number,d: number){for(let j=0;j<5;j++)p.block(x,.45,2,.05,.075,redWood,d+j*.09);for(let j=0;j<6;j++)p.block(x,.57+j*.1,2,.07,.065,redWood,d);for(const xx of [x+.25,x+1.75]){beam(p.at(xx,.05,d+.16),p.at(xx,.48,d+.16),.045,metal);beam(p.at(xx,.43,d+.03),p.at(xx,1.13,d+.03),.035,metal);}}
-  bench(edge(8),edge(8).L*.63,4.35);
-  const grassBench=edge(8),bx=-10.5;grassBench.block(bx,.47,2,.08,.4,wood,4.35);grassBench.block(bx,.85,2,.28,.07,redWood,4.35);for(const x of [bx+.25,bx+1.75])grassBench.block(x,0,.12,1.12,.17,concrete,4.45);
   if(terrain){
-    const asphalt=lift(mat('#83877e'));asphalt.userData.groundSurface=true;const approachAsphalt=lift(asphalt.clone(),.01);
+    // The car park and its driveway east of the tower belong to the town street layer (data/source/road-corrections.json).
     const ground=(x: number,z: number)=>{const xx=Math.max(0,Math.min(terrain.width-1.001,(x-terrain.origin[0])/terrain.step)),zz=Math.max(0,Math.min(terrain.height-1.001,(z-terrain.origin[1])/terrain.step)),i=Math.floor(xx),j=Math.floor(zz),u=xx-i,v=zz-j,k=j*terrain.width+i,d=terrain.values;return (d[k]*(1-u)*(1-v)+d[k+1]*u*(1-v)+d[k+terrain.width]*(1-u)*v+d[k+terrain.width+1]*u*v)/10-level+.12;};
     function quad(points: Polygon,m: THREE.MeshStandardMaterial){const geo=new THREE.BufferGeometry(),ids=[0,1,2,0,2,3];geo.setAttribute('position',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0]-ox,ground(...points[i]),points[i][1]-oz]),3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0],points[i][1]]),2));geo.computeVertexNormals();emit(geo,m,new THREE.Matrix4());}
-    const road=[[232.3,555.5,5],[228.8,564.4,8.4],[218,591.9,8.4],[221.8,601.3,5]];
-    for(let i=0;i<road.length-1;i++){const a=road[i],b=road[i+1],len=Math.hypot(b[0]-a[0],b[1]-a[1]),nx=(b[1]-a[1])/len,nz=-(b[0]-a[0])/len,steps=Math.ceil(len);
-      const point=(t: number,side: number): Point2=>[a[0]+(b[0]-a[0])*t+nx*(a[2]+(b[2]-a[2])*t)*side/2,a[1]+(b[1]-a[1])*t+nz*(a[2]+(b[2]-a[2])*t)*side/2];
-      for(let j=0;j<steps;j++)quad([point(j/steps,-1),point((j+1)/steps,-1),point((j+1)/steps,1),point(j/steps,1)],asphalt);
-    }
-    const approach=edge(6),width=approach.L,left=0;
-    const roadPoint=(x: number,d: number): Point2=>{const p=approach.at(x,0,d);return [p.x+ox,p.z+oz];};
+    const approach=edge(6);
     // Lay continuous concrete into the stair footprint first. Later driveway
     // polygons are clipped against it, rather than stealing a strip at the join.
     // Retain the established concrete apron footprint as stairs widen over it.
     const apronInset=approach.L*.07;
     apron(approach,-.45,apronInset+.50,3.3,-.20);
     apron(approach,approach.L-apronInset-.05,apronInset+.50,3.3,-.20);
-    apron(approach,left-.03,width+.06,12.3,-.10,approachAsphalt,.003);
-    const walk=edge(8);for(let x=-8;x<walk.L+2;x+=1){const pts=[[x,4.85],[x+1,4.85],[x+1,6.05],[x,6.05]].map(([u,d])=>{const p=walk.at(u,0,d);return[p.x+ox,p.z+oz] as Point2;});quad(pts,groundConcrete);}
   }
   // Keep exposed portions of structural end faces. Neighbours only hide the
   // intersection, not the whole cap (their terrain-dependent bottoms differ).

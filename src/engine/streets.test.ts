@@ -18,13 +18,20 @@ function normals(mesh: THREE.Mesh) {
 
 test('carriageways and markings face up whichever way their rings wind', () => {
   for (const ring of [square, [...square].reverse()]) {
-    const scene = new THREE.Scene(), group = addStreets(scene, {carriageways: [[ring]], markings: [[ring]], kerbs: []});
+    const scene = new THREE.Scene(), group = addStreets(scene, {carriageways: [[ring]], markings: [[ring]], kerbs: [], footways: [[ring]], pavers: [[ring]], paths: [[ring]], edges: []});
     for (const mesh of group.children as THREE.Mesh[]) for (const n of normals(mesh)) assert.ok(n.y > .99, 'face points down');
   }
 });
 
+test('footway edges drop a skirt on the right of travel, facing out', () => {
+  const scene = new THREE.Scene(), group = addStreets(scene, {carriageways: [], markings: [], kerbs: [], footways: [], pavers: [], paths: [], edges: [[[0, 1, 0], [10, 1, 0]]]});
+  const mesh = group.children[0] as THREE.Mesh, p = mesh.geometry.getAttribute('position');
+  for (let i = 0; i < p.count; i++) assert.ok(p.getY(i) <= 1 + 1e-9 && Math.abs(p.getZ(i)) < 1e-9);
+  for (const n of normals(mesh)) assert.ok(n.z < -.99, 'skirt faces the surface instead of out');
+});
+
 test('kerbs rise on the right of travel with faces towards the road, up and out', () => {
-  const scene = new THREE.Scene(), group = addStreets(scene, {carriageways: [], markings: [], kerbs: [[[0, 1, 0], [10, 1, 0]]]});
+  const scene = new THREE.Scene(), group = addStreets(scene, {carriageways: [], markings: [], kerbs: [[[0, 1, 0], [10, 1, 0]]], footways: [], pavers: [], paths: [], edges: []});
   const mesh = group.children[0] as THREE.Mesh, faces = normals(mesh);
   // Travel +x with the road on the left (+z): kerb at z < 0.
   const p = mesh.geometry.getAttribute('position');
