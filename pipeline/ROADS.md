@@ -1,6 +1,6 @@
-# Roads: method for extending the pilot
+# Roads: method
 
-How the road layer is built and how to carry it to another block. Read [AGENTS.md](../AGENTS.md) first. The code is the source of truth; this file records the method and the lessons that shaped it.
+How the road layer is built and how to review a block. Read [AGENTS.md](../AGENTS.md) first. The code is the source of truth; this file records the method and the lessons that shaped it.
 
 ## How it works
 
@@ -26,7 +26,7 @@ The survey ground is never cut under roads: it stays as it is beneath them, so a
 
 1. Branch from `main`. Record atlas view URLs of the block (top-down and a low oblique per junction and crossing) and look at Street View for each street: real carriageway width, crossings, what lies beside the road (grass or sidewalk), parking.
 2. Inspect the OSM ways in the block (`data/source/osm.json`): highway types, `lanes`, `sidewalk*`, crossing tags (`crossing`, `crossing:markings`), areas mapped as ways. Note refined sites nearby and check their models build no streets of their own (Kesk 1 did; it was removed).
-3. Move or enlarge the road area (`PILOT` in `pipeline/roads.ts`). Keep junctions well inside it: osm2streets cuts roads at the clip edge and the survey road carries on beyond it. `ROADS_AREA=town` widens the area to every building plus 30 m, for trying the whole town; the build then takes several minutes and needs the larger heap the npm scripts give it (8 GB).
+3. The road area (`roadArea` in `pipeline/roads.ts`) is every building plus 30 m. Keep junctions well inside it: osm2streets cuts roads at the clip edge and the survey road carries on beyond it. The build takes several minutes and needs the larger heap the npm scripts give it (8 GB).
 4. `npm run data` and read the `roads` report line: polygon counts, zebra crossings, how many carriageways were widened, narrowed or left unmeasured. An unmeasured street keeps 3 m lanes; find out why (no paint, short way, paint covered by trees). The next line counts recoloured footway paint; a sidewalk or path seen in Street View that turned to grass is missing from OSM, so report it.
 5. `npm run roads:check` and fix until it passes, then review the rest:
    - broken polygons, walls, surfaces off the ground (a point over 1.5 m from the ground, or from water where there is no ground), footways on the carriageway, trees on a road or path and buildings off their survey contact must be 0 (the command fails otherwise). A wall is a steep triangle rising over 0.5 m with a corner more than 0.5 m off the built ground beneath it. The contact test compares each survey building's roof move with its ground's move; refined models are listed apart and need seating like Kesk 5;

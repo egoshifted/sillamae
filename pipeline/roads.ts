@@ -11,8 +11,7 @@ import type {Bucket} from '../src/engine/survey/classify.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type Polygon, type SceneData} from '../src/engine/types.ts';
 
-// Pilot: osm2streets roads only around Kesk 5 while the approach is tried out.
-const PILOT = {building: '213818453', half: 170}, TOWN_MARGIN = 30; // metres
+const TOWN_MARGIN = 30; // metres
 // Markings span carriageway triangles of differing slope between their own points.
 const DENSIFY = 2, SURFACE = .02, MARKING = .03; // metres
 const LAYER_LIFT = .3, LIFT = .5, MARKING_LIFT = .05; // metres; LAYER_LIFT matches the survey shader's
@@ -132,7 +131,7 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
     for (const id of f.properties.osm_way_ids) halves.set(id, Math.max(halves.get(id) ?? 0, built.get(f.properties.id)! / 2 + (grow.get(f.properties.id) ?? 0)));
   const centrelines: Centreline[] = ways.filter(w => halves.has(w.id)).map(w => ({points: w.points.map(p => { const [x, z] = local(p); return [x + ox, z + oz]; }), half: halves.get(w.id)!}));
   const count = (kind: RoadKind) => shapes.filter(s => s.kind === kind).length, grown = [...grow.values()];
-  return {shapes, centrelines, report: `roads (osm2streets, ${process.env.ROADS_AREA === 'town' ? 'whole town' : `pilot ${PILOT.half * 2} m around building ${PILOT.building}`}): ${count('carriageway')} carriageway, ${count('footway')} footway and ${count('marking')} marking polygons, ${crossings.length} zebra crossings; carriageways sized to the survey paint: ${grown.filter(g => g >= .05).length} widened, ${grown.filter(g => g <= -.05).length} narrowed, ${byRoad.size - grown.length} unmeasured; ${centrelines.length} ways graded`};
+  return {shapes, centrelines, report: `roads (osm2streets, whole town): ${count('carriageway')} carriageway, ${count('footway')} footway and ${count('marking')} marking polygons, ${crossings.length} zebra crossings; carriageways sized to the survey paint: ${grown.filter(g => g >= .05).length} widened, ${grown.filter(g => g <= -.05).length} narrowed, ${byRoad.size - grown.length} unmeasured; ${centrelines.length} ways graded`};
 }
 
 // Trees standing on a built carriageway or footway move to the nearest spot
@@ -225,20 +224,13 @@ export function splitTriangle(v: Float32Array, i: number, region: Point2[][], ci
   return true;
 }
 
-// The square, in the local frame, within which roads are built.
-// ROADS_AREA=town widens it to a rectangle over every building, for trying
-// the whole town before the pilot is retired. half is [x, z].
+// The rectangle, in the local frame, within which roads are built: every
+// building plus a margin. half is [x, z].
 export function roadArea(scene: SceneData, city: CityDefinition) {
   const [ox, oz] = city.frame.origin;
-  let cx: number, cz: number, half: [number, number];
-  if (process.env.ROADS_AREA === 'town') {
-    const xs = scene.buildings.flatMap(b => b.g.map(p => p[0] - ox)), zs = scene.buildings.flatMap(b => b.g.map(p => p[1] - oz));
-    [cx, cz] = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2];
-    half = [(Math.max(...xs) - Math.min(...xs)) / 2 + TOWN_MARGIN, (Math.max(...zs) - Math.min(...zs)) / 2 + TOWN_MARGIN];
-  } else {
-    const b = scene.buildings.find(b => b.id === PILOT.building)!;
-    [cx, cz, half] = [b.g.reduce((s, p) => s + p[0], 0) / b.g.length - ox, b.g.reduce((s, p) => s + p[1], 0) / b.g.length - oz, [PILOT.half, PILOT.half]];
-  }
+  const xs = scene.buildings.flatMap(b => b.g.map(p => p[0] - ox)), zs = scene.buildings.flatMap(b => b.g.map(p => p[1] - oz));
+  const [cx, cz] = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2];
+  const half: [number, number] = [(Math.max(...xs) - Math.min(...xs)) / 2 + TOWN_MARGIN, (Math.max(...zs) - Math.min(...zs)) / 2 + TOWN_MARGIN];
   const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= half[0] + margin && Math.abs(z - cz) <= half[1] + margin;
   return {centre: [cx, cz] as Point2, half, inside};
 }
