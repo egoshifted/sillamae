@@ -8,4 +8,5 @@ export const sillamae: CityDefinition = {
   frame: {origin: [750, 760]},
   defaultFocus: rodina.id,
   overrides: [kesk1, kesk5, rodina, kesk9],
+  extent: [[3430, 2010], [-290, 1840], [-110, -1355], [3550, -1260]],
 };

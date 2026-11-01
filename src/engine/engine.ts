@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import {CameraController, type CameraView} from './camera/controller.ts';
 import {WorldClock} from './clock.ts';
+import {clippingPlanes, extentEdges, insideExtent} from './extent.ts';
 import {addSun} from './lighting/sun.ts';
 import {tileBounds, type NavData, type SurveyBucket, type SurveyManifest, type WorldData, type Zone} from './data.ts';
 import {navOverlay} from './nav-overlay.ts';
 import {createOutline} from './outline.ts';
 import {buildingPrisms, pickPrism} from './picking.ts';
 import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
-import type {Building, BuildingOverride, BuiltOverride, CityDefinition, WorldFrame} from './types.ts';
+import type {Building, BuildingOverride, BuiltOverride, CityDefinition, Point2, WorldFrame} from './types.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
 
@@ -24,7 +25,7 @@ export interface World {
 export class Engine {
   readonly frame: WorldFrame;
   readonly buildings: Building[];
-  readonly clock = new WorldClock(.58);
+  readonly clock = new WorldClock(0);
   readonly camera: CameraController;
   focusedId = '';
   continuous = false;
@@ -58,7 +59,8 @@ export class Engine {
 
   constructor(container: HTMLElement, {data, survey, city}: World) {
     this.frame = {origin: city.frame.origin, base: data.base};
-    this.buildings = data.buildings;
+    const edges = city.extent && extentEdges(city.extent), within = (p: Point2) => !edges || insideExtent(edges, ...p);
+    this.buildings = data.buildings.filter(b => within(b.c));
     this.#data = data;
     this.#city = city;
     for (const o of city.overrides) this.#overrides.set(o.id, o);
@@ -83,6 +85,7 @@ export class Engine {
     this.#resize();
 
     this.#sun = addSun(this.#scene, renderer, this.clock.daylight);
+    if (city.extent) renderer.clippingPlanes = clippingPlanes(city.extent.map(([x, z]): Point2 => [x - ox, z - oz]));
     this.clock.onChange(k => { this.#sun.setDaylight(k); this.#redraw = true; });
 
     const buildingNumbers = Math.max(...data.buildings.map(b => b.pick)) + 1;
@@ -94,10 +97,10 @@ export class Engine {
     this.#outline = createOutline(renderer);
 
     this.#scene.add(this.#vegetation);
-    this.#forest = addTrees(this.#vegetation, data.trees, this.frame);
+    this.#forest = addTrees(this.#vegetation, data.trees.filter(t => within(t.p)), this.frame);
     addStairs(this.#scene, data.stairs);
 
-    this.#prisms = buildingPrisms(data.buildings, this.frame);
+    this.#prisms = buildingPrisms(this.buildings, this.frame);
     this.focusBuilding(this.#building(city.defaultFocus));
   }
 

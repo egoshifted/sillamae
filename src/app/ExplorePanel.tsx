@@ -1,16 +1,17 @@
 import {useEffect, useState} from 'react';
 import type {Engine} from '../engine/engine.ts';
 
-const timeOfDay = (k: number) => k < .3 ? 'Morning' : k > .75 ? 'Late afternoon' : 'Afternoon';
+const timeOfDay = (k: number) => k < .1 ? 'Early morning' : k < .3 ? 'Morning' : k > .75 ? 'Late afternoon' : 'Afternoon';
 
 export function ExplorePanel({engine}: {engine: Engine | null}) {
   const [detail, setDetail] = useState('');
-  const [daylight, setDaylight] = useState(58);
+  const [daylight, setDaylight] = useState(0);
   const [tilt, setTilt] = useState({canRaise: true, canLower: true});
 
   useEffect(() => {
     if (!engine) return;
     setDetail(engine.detail);
+    setDaylight(Math.round(engine.clock.daylight * 100));
     const offDetail = engine.onDetailChange(setDetail);
     const offFrame = engine.onFrame(() => {
       const next = engine.camera.tilt;

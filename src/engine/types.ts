@@ -86,4 +86,5 @@ export interface CityDefinition {
   frame: Omit<WorldFrame, 'base'>;
   defaultFocus: string;
   overrides: BuildingOverride[];
+  extent?: Polygon; // convex, source x/z; the viewer clips everything outside it
 }
