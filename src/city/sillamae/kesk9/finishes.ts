@@ -46,7 +46,7 @@ export function createFinishes(context: OverrideContext): StudyModel {
     aged:material('Kesk 9 · aged painted timber frames','#62645a',.85),
     red:material('Kesk 9 · dark red painted timber frames','#58352f',.80),
     brown:material('Kesk 9 · brown painted timber frames','#665a4d',.80),
-    glass:material('Kesk 9 · provisional glazing','#45565c',.42),
+    glass:material('Kesk 9 · Kesk 5 glazing','#6a8189',.45),
     door:material('Kesk 9 · unresolved entrance finishes','#868d89'),
     sill:material('Kesk 9 · provisional sill metal','#818b8d',.45),
     apron:material('Kesk 9 · apron concrete','#a4a59d'),
@@ -57,7 +57,7 @@ export function createFinishes(context: OverrideContext): StudyModel {
   // Keeps the apron out of building picking and block tints.
   materials.apron.userData.groundSurface=true;
   materials.roof.map=shared.maps['felt-colour-v1'][0]; materials.roof.bumpMap=shared.maps['felt-relief-v1'][0]; materials.roof.bumpScale=.018;
-  materials.sill.metalness=.55;
+  materials.sill.metalness=.55; materials.glass.metalness=.08;
   for(const m of [materials.frame,materials.aged,materials.red,materials.brown,entry.trim])m.userData.joinery=true;
   const frameMaterial={pale:materials.frame,aged:materials.aged,red:materials.red,brown:materials.brown};
   const frameRegions=schedule.filter(o=>o.kind!=='door').flatMap(o=>openingHalves(o).map(p=>({...p,head:o.head,side:o.elevation==='WNW'?-1:1,style:paneFrame(o,p.low)})));
