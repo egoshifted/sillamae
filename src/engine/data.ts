@@ -27,11 +27,6 @@ export interface Streets {
   markings: LocalPoint[][][];
   // Carriageway edges that get a kerb, carriageway on the left; heights at road level.
   kerbs: LocalPoint[][];
-  footways: LocalPoint[][][];
-  pavers: LocalPoint[][][];
-  paths: LocalPoint[][][];
-  // Unkerbed carriageway, footway and path edges, surface on the left; heights at the surface.
-  edges: LocalPoint[][];
 }
 
 export interface WorldData extends SceneData {

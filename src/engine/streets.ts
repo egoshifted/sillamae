@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import type {LocalPoint, Streets} from './data.ts';
 
 const KERB = {width: .15, rise: .12, skirt: .35};
-const EDGE_SKIRT = .3;
 const MARKING_RISE = .01;
 
 export function addStreets(scene: THREE.Scene, streets: Streets) {
@@ -14,11 +13,9 @@ export function addStreets(scene: THREE.Scene, streets: Streets) {
     return m;
   };
   const asphalt = material('#5f625f', .95), kerb = material('#b7b6ad', .9), paint = material('#e4e4dc', .8);
-  const tarmac = material('#696c68', .95), paving = material('#a9a9a1', .95), gravel = material('#b5ab93', 1);
   paint.polygonOffset = true;
   paint.polygonOffsetFactor = paint.polygonOffsetUnits = -2;
-  const surfaceLayers = [[streets.carriageways, asphalt, 0], [streets.markings, paint, MARKING_RISE], [streets.footways, tarmac, 0], [streets.pavers, paving, 0], [streets.paths, gravel, 0]] as const;
-  for (const [polygons, m, rise] of surfaceLayers) {
+  for (const [polygons, m, rise] of [[streets.carriageways, asphalt, 0], [streets.markings, paint, MARKING_RISE]] as const) {
     if (!polygons.length) continue;
     const mesh = new THREE.Mesh(surfaces(polygons, rise), m);
     mesh.receiveShadow = true;
@@ -27,11 +24,6 @@ export function addStreets(scene: THREE.Scene, streets: Streets) {
   if (streets.kerbs.length) {
     const mesh = new THREE.Mesh(kerbs(streets.kerbs), kerb);
     mesh.castShadow = mesh.receiveShadow = true;
-    group.add(mesh);
-  }
-  if (streets.edges.length) {
-    const mesh = new THREE.Mesh(skirts(streets.edges), paving);
-    mesh.receiveShadow = true;
     group.add(mesh);
   }
   scene.add(group);
@@ -49,24 +41,22 @@ function surfaces(polygons: LocalPoint[][][], rise: number) {
       for (const p of up ? [a, b, c] : [a, c, b]) position.push(p[0], p[1] + rise, p[2]);
     }
   }
-  // Outline-only triangulation leaves long slivers; facet normals would shade their slight tilts as streaks.
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(Array.from({length: position.length / 3}, () => [0, 1, 0]).flat(), 3));
-  return g;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
-// Runs have their surface on the left; the outward normal is to the right.
-const outward = (run: LocalPoint[]) => run.map((_, i) => {
-  const a = run[Math.max(0, i - 1)], b = run[Math.min(run.length - 1, i + 1)], dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1;
-  return [dz / l, -dx / l];
-});
-
+// Runs have the carriageway on their left, so the kerb grows to the right.
 function kerbs(runs: LocalPoint[][]) {
   const position: number[] = [];
   const quad = (a: number[], b: number[], c: number[], d: number[]) => position.push(...a, ...b, ...c, ...a, ...c, ...d);
   for (const run of runs) {
-    const out = outward(run), ring = run.map((p, i) => {
+    const out = run.map((p, i) => {
+      const a = run[Math.max(0, i - 1)], b = run[Math.min(run.length - 1, i + 1)], dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1;
+      return [dz / l, -dx / l];
+    });
+    const ring = run.map((p, i) => {
       const [nx, nz] = out[i], top = p[1] + KERB.rise, ox = p[0] + nx * KERB.width, oz = p[2] + nz * KERB.width;
       return {inBottom: [p[0], p[1], p[2]], inTop: [p[0], top, p[2]], outTop: [ox, top, oz], outBottom: [ox, p[1] - KERB.skirt, oz]};
     });
@@ -77,22 +67,8 @@ function kerbs(runs: LocalPoint[][]) {
       quad(a.outTop, b.outTop, b.outBottom, a.outBottom);
     }
   }
-  return geometry(position);
-}
-
-// Footways sit a little above or below the cut survey ground; a skirt closes the gap at their edge.
-function skirts(runs: LocalPoint[][]) {
-  const position: number[] = [];
-  for (const run of runs) for (let i = 1; i < run.length; i++) {
-    const [a, b] = [run[i - 1], run[i]], low = (p: LocalPoint) => [p[0], p[1] - EDGE_SKIRT, p[2]];
-    position.push(...a, ...b, ...low(b), ...a, ...low(b), ...low(a));
-  }
-  return geometry(position);
-}
-
-function geometry(position: number[]) {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
-  g.computeVertexNormals();
-  return g;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.computeVertexNormals();
+  return geometry;
 }

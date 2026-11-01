@@ -1,4 +1,4 @@
-import {TRIANGLE, type Point2, type SceneData} from '../src/engine/types.ts';
+import {TRIANGLE, type SceneData} from '../src/engine/types.ts';
 
 // The survey paints carriageways and footways in these flat colours.
 const ROAD = [.57, .60, .58], FOOTWAY = [.81, .82, .75];
@@ -53,31 +53,4 @@ export function moveTreesOffRoads(vertices: Float32Array, scene: SceneData) {
     if (surface(...t.p) === 'footway') footway++; else verge++;
   }
   return `trees moved off carriageways: ${verge} to verges, ${footway} to footways; ${stranded} left more than ${MAX_SHIFT} m from either`;
-}
-
-// Street-layer surfaces are wider than the survey's painted strips (parking, junction corners, footways).
-export function moveTreesOffStreets(scene: SceneData, streets: Point2[][][]) {
-  const boxes = streets.map(p => { const xs = p[0].map(q => q[0]), zs = p[0].map(q => q[1]); return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]; });
-  const on = (x: number, z: number) => streets.some((p, i) => { const b = boxes[i]; return x >= b[0] && x <= b[1] && z >= b[2] && z <= b[3] && p.filter(ring => within(x, z, ring)).length % 2 === 1; });
-  const clear = (x: number, z: number) => [[0, 0], ...Array.from({length: 8}, (_, k) => [Math.cos(k * Math.PI / 4) * CLEAR, Math.sin(k * Math.PI / 4) * CLEAR])].every(([dx, dz]) => !on(x + dx, z + dz));
-  let moved = 0, stranded = 0;
-  for (const t of scene.trees) {
-    const [x, z] = t.p;
-    if (!on(x, z)) continue;
-    let found: Point2 | null = null;
-    for (let r = STEP; r <= MAX_SHIFT && !found; r += STEP) for (let k = 0; k < 24 && !found; k++) {
-      const p: Point2 = [x + Math.cos(k * Math.PI / 12) * r, z + Math.sin(k * Math.PI / 12) * r];
-      if (clear(...p)) found = p;
-    }
-    if (!found) { stranded++; continue; }
-    t.p = [Math.round(found[0] * 100) / 100, Math.round(found[1] * 100) / 100];
-    moved++;
-  }
-  return `trees moved off street surfaces: ${moved}; ${stranded} left more than ${MAX_SHIFT} m from a verge`;
-}
-
-function within(x: number, z: number, ring: Point2[]) {
-  let c = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, zi] = ring[i], [xj, zj] = ring[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; }
-  return c;
 }
