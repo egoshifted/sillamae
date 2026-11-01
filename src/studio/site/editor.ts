@@ -52,7 +52,7 @@ let selection = new Set<string>(); // 'p:<placement id>', or a tree key from tre
 const undo: string[] = [], redo: string[] = [], path: THREE.Vector3[] = [];
 const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), highlights = new THREE.Group(), preview = new THREE.Group();
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
-const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false};
+const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true};
 
 // Flat on the ground round the selection; dragging it turns the selection, as in The Sims.
 const ring = new THREE.Mesh(new THREE.RingGeometry(.86, 1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#f0a400', transparent: true, opacity: .85, depthTest: false, side: THREE.DoubleSide}));
@@ -309,12 +309,35 @@ function spotFor(b: Brush, clientX: number, clientY: number) {
   return point && inSquare(point.x, point.z) && !loaded!.indoors(point.x, point.z) ? {point, heading: undefined, attach: 'ground' as const, building: undefined} : null;
 }
 
+// With "Vary each tree", every tree drawn from a tree brush gets its own height and
+// crown, within a fifth either way; the atlas then picks its crown shape from that
+// ratio and its colour and turn from where it stands, so no two look alike.
+let next = {h: 1, r: 1};
+const roll = () => { next = {h: .8 + Math.random() * .4, r: .8 + Math.random() * .4}; };
+const sized = (b: Brush): Brush => b.kind === 'tree' && options.vary ? {...b, h: b.h * next.h, r: b.r * next.r} : b;
+// Takes the brush as the next tree will be, and rolls the one after.
+function draw(b: Brush) {
+  const out = sized(b);
+  if (b.kind === 'tree' && options.vary) roll();
+  return out;
+}
+
 let ghost: THREE.Object3D | null = null, placeHeading = 0;
+// The ghost shows the next tree's size, so it changes after every placement.
+function showGhost() {
+  const old = ghost;
+  ghost = brush ? ghostOf(sized(brush)) : null;
+  if (ghost) {
+    ghost.visible = !!old?.visible;
+    if (old) { ghost.position.copy(old.position); ghost.rotation.copy(old.rotation); }
+    loaded?.scene.add(ghost);
+  }
+  old?.removeFromParent();
+}
 function setBrush(b: Brush | null) {
   brush = b;
-  ghost?.removeFromParent();
-  ghost = b ? ghostOf(b) : null;
-  if (ghost) { ghost.visible = false; loaded?.scene.add(ghost); }
+  showGhost();
+  if (ghost) ghost.visible = false;
   if (b && !['place', 'path', 'scatter'].includes(tool)) setTool('place');
   else { showOptions(); updatePreview(); }
   showPalette();
@@ -357,7 +380,7 @@ function updatePreview() {
 function finishPath() {
   if (!brush || path.length < 2) return;
   const b = brush, spots = pathSpots(path);
-  edit(() => { selection = new Set(spots.map(s => add(b, s.at, s.heading))); });
+  edit(() => { selection = new Set(spots.map(s => add(draw(b), s.at, s.heading))); });
   path.length = 0;
   updatePreview();
 }
@@ -373,8 +396,7 @@ function scatter(centre: THREE.Vector3) {
     const angle = Math.random() * Math.PI * 2, distance = Math.sqrt(Math.random()) * options.radius;
     const x = centre.x + Math.sin(angle) * distance, z = centre.z + Math.cos(angle) * distance, y = loaded!.heights.at(x, z);
     if (y === -Infinity || !inSquare(x, z) || loaded!.indoors(x, z) || others.some(([px, pz]) => Math.hypot(px - x, pz - z) < options.gap)) continue;
-    const b: Brush = brush.kind === 'tree' ? {...brush, h: brush.h * (.8 + Math.random() * .4), r: brush.r * (.8 + Math.random() * .4)} : brush;
-    add(b, new THREE.Vector3(x, y, z), options.spin ? Math.random() * Math.PI * 2 : placeHeading);
+    add(draw(brush), new THREE.Vector3(x, y, z), options.spin ? Math.random() * Math.PI * 2 : placeHeading);
     others.push([x, z]);
     added++;
   }
@@ -572,7 +594,10 @@ addEventListener('pointerup', event => {
   if (!click || !onCanvas) return;
   if (tool === 'place' && brush) {
     const b = brush, spot = spotFor(b, event.clientX, event.clientY);
-    if (spot) edit(() => { selection = new Set([add(b, spot.point, placeHeading, spot)]); });
+    if (spot) {
+      edit(() => { selection = new Set([add(draw(b), spot.point, placeHeading, spot)]); });
+      if (b.kind === 'tree') { showGhost(); render(); }
+    }
   } else if (tool === 'path') {
     const at = ground(event.clientX, event.clientY);
     if (at) { path.push(at); updatePreview(); }
@@ -707,6 +732,12 @@ function showOptions() {
     const inPlace = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.inPlace});
     inPlace.onchange = () => { options.inPlace = inPlace.checked; };
     parts.push(labelled('Turn each in place', inPlace));
+  }
+  if (['place', 'path', 'scatter'].includes(tool) && brush?.kind === 'tree') {
+    const vary = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.vary});
+    vary.title = 'Each tree gets its own height and crown, within a fifth of the brush size';
+    vary.onchange = () => { options.vary = vary.checked; showGhost(); render(); };
+    parts.push(labelled('Vary each tree', vary));
   }
   if (['place', 'path', 'scatter'].includes(tool)) parts.unshift(Object.assign(document.createElement('span'), {className: 'tip', textContent: brush ? `Brush: ${brush.kind === 'tree' ? `${brush.type === CONIFER ? 'conifer' : 'broadleaf'} tree` : brush.asset.name}` : 'Pick an asset or tree on the left'}));
   bar.replaceChildren(...parts);

@@ -30,7 +30,7 @@ Every catalogue building has original-survey and provisional-massing views. New 
 | Tool | Key | Use |
 | --- | --- | --- |
 | Select and move | V | Click, Shift-click, Ctrl-click or drag a box to select objects and trees, survey trees included. Drag to move; drag the orange ring to turn the selection round its centre (15° steps, Alt for free); Q/E turn 15° (Shift 90°); arrows nudge 10 cm (Shift 1 m); Del, Ctrl+D, Ctrl+A. |
-| Place | A | Click the ground or a wall; Alt-click an object to pick up its asset. |
+| Place | A | Click the ground or a wall; Alt-click an object to pick up its asset. With a tree brush, **Vary each tree** (on by default, also in Path and Scatter) gives every tree after the first its own height and crown within a fifth of the brush size. |
 | Path | P | Click points; double-click or Enter places a row at the set spacing, facing along or across the path, with a sideways offset. |
 | Scatter | B | Drag to scatter the brush within a radius, keeping a gap from its own kind. |
 | Measure | I | Click points for lengths on plan, height changes and slopes. |
