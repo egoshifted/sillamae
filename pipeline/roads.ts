@@ -8,10 +8,11 @@ import {FOOTWAY, MARKING as PAINT_MARKING, ROAD, surveyLayers} from './survey-co
 import type {Finish, RoadKind, RoadSurface} from '../src/engine/data.ts';
 import {triangulate} from '../src/engine/roads.ts';
 import type {Bucket} from '../src/engine/survey/classify.ts';
+import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type Polygon, type SceneData} from '../src/engine/types.ts';
 
 // Pilot: osm2streets roads only around Kesk 5 while the approach is tried out.
-const PILOT = {building: '213818453', half: 170}; // metres
+const PILOT = {building: '213818453', half: 170}, TOWN_MARGIN = 30; // metres
 // Markings span carriageway triangles of differing slope between their own points.
 const DENSIFY = 2, SURFACE = .02, MARKING = .03; // metres
 const LAYER_LIFT = .3, LIFT = .5, MARKING_LIFT = .05; // metres; LAYER_LIFT matches the survey shader's
@@ -21,7 +22,7 @@ const REACH = 2, SAMPLE = .5, CELL_SIZE = 3;
 // stack to just over half a metre; ground metres away is at another level.
 const STACK = 1;
 const HUGE = 60, CELL = 4;
-const TOUCH = .05, ORDER_LIFT = .02, SLIVER = .05; // metres, metres, square metres
+const TOUCH = .05, ORDER_LIFT = .02, SLIVER = .05, MIN_HOLE = 10; // metres, metres, square metres, square metres
 const CROSSING_WIDTH = 3, ZEBRA = {bar: .5, pitch: 1, clear: 1}; // metres
 const CARRIAGEWAY = new Set(['Driving', 'Parking', 'Shoulder', 'Construction']);
 // Paint measurement, metres: a layer within PAINT_TOP of the top one is seen;
@@ -71,7 +72,7 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
 
   const driven = new Set(lanes.filter(f => f.properties.type === 'Driving').map(f => f.properties.road));
   const drivenJunction = new Set(plain.filter(f => f.properties.type === 'road' && driven.has(f.properties.id)).flatMap(f => [f.properties.src_i, f.properties.dst_i]));
-  const rings = (f: Feature) => outerRings(f.geometry).map(r => r.map(p => local(p)));
+  const rings = (f: Feature) => outerRings(f.geometry).flatMap(r => untangle(r.map(p => local(p))));
 
   // Lanes are 3 m whatever the street, so each carriageway is grown to the
   // width the survey paints it, measured along its OSM ways.
@@ -131,7 +132,7 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
     for (const id of f.properties.osm_way_ids) halves.set(id, Math.max(halves.get(id) ?? 0, built.get(f.properties.id)! / 2 + (grow.get(f.properties.id) ?? 0)));
   const centrelines: Centreline[] = ways.filter(w => halves.has(w.id)).map(w => ({points: w.points.map(p => { const [x, z] = local(p); return [x + ox, z + oz]; }), half: halves.get(w.id)!}));
   const count = (kind: RoadKind) => shapes.filter(s => s.kind === kind).length, grown = [...grow.values()];
-  return {shapes, centrelines, report: `roads (osm2streets pilot, ${PILOT.half * 2} m around building ${PILOT.building}): ${count('carriageway')} carriageway, ${count('footway')} footway and ${count('marking')} marking polygons, ${crossings.length} zebra crossings; carriageways sized to the survey paint: ${grown.filter(g => g >= .05).length} widened, ${grown.filter(g => g <= -.05).length} narrowed, ${byRoad.size - grown.length} unmeasured; ${centrelines.length} ways graded`};
+  return {shapes, centrelines, report: `roads (osm2streets, ${process.env.ROADS_AREA === 'town' ? 'whole town' : `pilot ${PILOT.half * 2} m around building ${PILOT.building}`}): ${count('carriageway')} carriageway, ${count('footway')} footway and ${count('marking')} marking polygons, ${crossings.length} zebra crossings; carriageways sized to the survey paint: ${grown.filter(g => g >= .05).length} widened, ${grown.filter(g => g <= -.05).length} narrowed, ${byRoad.size - grown.length} unmeasured; ${centrelines.length} ways graded`};
 }
 
 // Trees standing on a built carriageway or footway move to the nearest spot
@@ -190,8 +191,8 @@ export function clearFootwayPaint(v: Float32Array, scene: SceneData, city: CityD
 }
 
 export const squareOf = (scene: SceneData, city: CityDefinition): Point2[][] => {
-  const {centre: [cx, cz], half} = roadArea(scene, city);
-  return [[[cx - half, cz - half], [cx + half, cz - half], [cx + half, cz + half], [cx - half, cz + half]]];
+  const {centre: [cx, cz], half: [hx, hz]} = roadArea(scene, city);
+  return [[[cx - hx, cz - hz], [cx + hx, cz - hz], [cx + hx, cz + hz], [cx - hx, cz + hz]]];
 };
 
 export const pushTriangle = (v: Float32Array, i: number, out: number[]) => { for (let k = 0; k < TRIANGLE; k++) out.push(v[i + k]); };
@@ -225,11 +226,21 @@ export function splitTriangle(v: Float32Array, i: number, region: Point2[][], ci
 }
 
 // The square, in the local frame, within which roads are built.
+// ROADS_AREA=town widens it to a rectangle over every building, for trying
+// the whole town before the pilot is retired. half is [x, z].
 export function roadArea(scene: SceneData, city: CityDefinition) {
-  const [ox, oz] = city.frame.origin, b = scene.buildings.find(b => b.id === PILOT.building)!;
-  const cx = b.g.reduce((s, p) => s + p[0], 0) / b.g.length - ox, cz = b.g.reduce((s, p) => s + p[1], 0) / b.g.length - oz;
-  const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= PILOT.half + margin && Math.abs(z - cz) <= PILOT.half + margin;
-  return {centre: [cx, cz] as Point2, half: PILOT.half, inside};
+  const [ox, oz] = city.frame.origin;
+  let cx: number, cz: number, half: [number, number];
+  if (process.env.ROADS_AREA === 'town') {
+    const xs = scene.buildings.flatMap(b => b.g.map(p => p[0] - ox)), zs = scene.buildings.flatMap(b => b.g.map(p => p[1] - oz));
+    [cx, cz] = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2];
+    half = [(Math.max(...xs) - Math.min(...xs)) / 2 + TOWN_MARGIN, (Math.max(...zs) - Math.min(...zs)) / 2 + TOWN_MARGIN];
+  } else {
+    const b = scene.buildings.find(b => b.id === PILOT.building)!;
+    [cx, cz, half] = [b.g.reduce((s, p) => s + p[0], 0) / b.g.length - ox, b.g.reduce((s, p) => s + p[1], 0) / b.g.length - oz, [PILOT.half, PILOT.half]];
+  }
+  const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= half[0] + margin && Math.abs(z - cz) <= half[1] + margin;
+  return {centre: [cx, cz] as Point2, half, inside};
 }
 
 // Width of the survey's road paint across a way, median over stations away
@@ -285,7 +296,7 @@ function offset(rings: Point2[][], by: number, join: number): Point2[][] {
 // painted crossings, would shadow it. Layers that still rise between ring
 // points are outdrawn by a depth lift. Refined sites own the ground they lay,
 // so roads stop at their patches.
-export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[]) {
+export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[], heightAt: HeightAt) {
   const [ox, oz] = city.frame.origin, ground = groundIndex(buckets);
   const sites = area(patches.map(p => p.map(([x, z]): Point2 => [x - ox, z - oz])));
   // Surfaces are cut into cells: the viewer triangulates outlines only, and the
@@ -297,7 +308,9 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
   // level altogether, as at the edge of the ground kept at its surveyed height
   // around refined sites, metres from the draped ground beside it. The stack's
   // top, not its base, is the floor: site works push survey layers down near
-  // their patches.
+  // their patches. Over water there is no ground stack: a path crossing a stream
+  // stands on the graded terrain the ground beside it was built from, as the
+  // mean of its cell's other points stepped between cells on the banks.
   const around = (x: number, z: number) => {
     let thick = 0, layer = 0, found = false;
     for (let dx = -REACH; dx <= REACH; dx += SAMPLE) for (let dz = -REACH; dz <= REACH; dz += SAMPLE) {
@@ -306,38 +319,52 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
       if (g) { thick = Math.max(thick, g.top - g.low); layer = Math.max(layer, g.layer); found = true; }
     }
     const here = ground(x, z);
-    return here && found ? {top: Math.max(here.top, here.low + thick), layer} : null;
-  };  for (const s of surfaces) {
+    if (here && found) return {top: Math.max(here.top, here.low + thick), layer};
+    const terrain = heightAt(x, z);
+    return terrain === null ? null : {top: terrain, layer};
+  };
+  const laid = surfaces.filter(s => {
     const found = s.ring.map(p => around(p[0] + ox, p[2] + oz));
-    const heights = found.filter(g => g !== null).map(g => g!.top);
-    if (!heights.length) continue;
-    const fallback = heights.reduce((a, b) => a + b, 0) / heights.length, rise = s.kind === 'marking' ? SURFACE + MARKING : SURFACE;
-    s.ring.forEach((p, i) => p[1] = round((found[i]?.top ?? fallback) - base + rise));
-    s.lift = round(LAYER_LIFT * Math.max(0, ...found.map(g => g?.layer ?? 0)) + LIFT);
-  }
+    if (found.some(g => g === null)) return false;
+    const rise = s.kind === 'marking' ? SURFACE + MARKING : SURFACE;
+    s.ring.forEach((p, i) => p[1] = round(found[i]!.top - base + rise));
+    s.lift = round(LAYER_LIFT * Math.max(0, ...found.map(g => g!.layer)) + LIFT);
+    return true;
+  });
   // Footways are clipped off the carriageway, but where they meet at the same
   // height the carriageway must win, so it takes any higher neighbour's lift.
-  const carriageways = surfaces.filter(s => s.kind === 'carriageway'), footways = surfaces.filter(s => s.kind === 'footway');
+  const carriageways = laid.filter(s => s.kind === 'carriageway'), footways = boxGrid(laid.filter(s => s.kind === 'footway'), s => boxOf(s.ring, 0));
   for (const c of carriageways) {
-    const box = boxOf(c.ring, TOUCH), touching = footways.filter(f => f.ring.some(([x, , z]) => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ));
+    const box = boxOf(c.ring, TOUCH), touching = footways(box).filter(f => f.ring.some(([x, , z]) => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ));
     c.lift = round(Math.max(c.lift, ...touching.map(f => f.lift + ORDER_LIFT)));
   }
   // Markings lie on the carriageway as the viewer triangulates it: sampled from
   // the ground they would sink where its long triangles span a higher edge. A
   // marking lifted less than any carriageway it overlaps would be hidden there.
   const road = surfaceIndex(carriageways);
-  for (const m of surfaces) if (m.kind === 'marking') {
+  for (const m of laid) if (m.kind === 'marking') {
     for (const p of m.ring) { const h = road.at(p[0], p[2]); if (h !== null) p[1] = round(h + MARKING); }
     m.lift = round(Math.max(m.lift, ...road.overlapping(boxOf(m.ring, 0)).map(c => c.lift)) + MARKING_LIFT);
   }
-  return surfaces;
+  return laid;
+}
+
+// Grid of items by their bounding boxes, so town-wide lookups stay local.
+function boxGrid<T>(items: T[], box: (item: T) => ReturnType<typeof boxOf>) {
+  const grid = new Map<string, T[]>(), keys = (b: ReturnType<typeof boxOf>) => {
+    const out: string[] = [];
+    for (let x = Math.floor(b.minX / CELL); x <= Math.floor(b.maxX / CELL); x++) for (let z = Math.floor(b.minZ / CELL); z <= Math.floor(b.maxZ / CELL); z++) out.push(x + ',' + z);
+    return out;
+  };
+  for (const item of items) for (const k of keys(box(item))) { let list = grid.get(k); if (!list) grid.set(k, list = []); list.push(item); }
+  return (b: ReturnType<typeof boxOf>) => [...new Set(keys(b).flatMap(k => grid.get(k) ?? []))].filter(item => { const c = box(item); return c.minX <= b.maxX && c.maxX >= b.minX && c.minZ <= b.maxZ && c.maxZ >= b.minZ; });
 }
 
 function surfaceIndex(surfaces: RoadSurface[]) {
-  const triangles = surfaces.flatMap(s => triangulate(s.ring).map(t => t.map(i => s.ring[i])));
+  const triangles = boxGrid(surfaces.flatMap(s => triangulate(s.ring).map(t => t.map(i => s.ring[i]))), t => boxOf(t as [number, number, number][], 0));
   const at = (x: number, z: number) => {
     let top: number | null = null;
-    for (const [[x1, h1, z1], [x2, h2, z2], [x3, h3, z3]] of triangles) {
+    for (const [[x1, h1, z1], [x2, h2, z2], [x3, h3, z3]] of triangles({minX: x, maxX: x, minZ: z, maxZ: z})) {
       const d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
       if (Math.abs(d) < 1e-9) continue;
       const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;
@@ -346,7 +373,7 @@ function surfaceIndex(surfaces: RoadSurface[]) {
     }
     return top;
   };
-  const overlapping = (box: ReturnType<typeof boxOf>) => surfaces.filter(s => { const b = boxOf(s.ring, 0); return b.minX <= box.maxX && b.maxX >= box.minX && b.minZ <= box.maxZ && b.maxZ >= box.minZ; });
+  const overlapping = boxGrid(surfaces, s => boxOf(s.ring, 0));
   return {at, overlapping};
 }
 
@@ -389,6 +416,16 @@ function zebra(line: Point2[], width: number) {
 // the viewer triangulates rings without holes.
 const SCALE = 1000;
 const toPath = (ring: Point2[]) => ring.map(([x, z]) => ({X: Math.round(x * SCALE), Y: Math.round(z * SCALE)}));
+// osm2streets can return a ring that crosses itself and winds backwards; in a
+// non-zero union it cancels the ground other rings cover, opening a hole that
+// footways are then not cut by. Each becomes simple rings wound forwards, with
+// the centimetre spikes left where it crossed itself removed.
+function untangle(ring: Point2[]): Point2[][] {
+  const simple = ClipperLib.Clipper.SimplifyPolygon(toPath(ring), ClipperLib.PolyFillType.pftNonZero);
+  return ClipperLib.Clipper.CleanPolygons(simple, SLIVER * SCALE)
+    .filter((p: {X: number; Y: number}[]) => Math.abs(ClipperLib.Clipper.Area(p)) / SCALE / SCALE >= SLIVER)
+    .map((p: {X: number; Y: number}[]) => p.map((q): Point2 => [q.X / SCALE, q.Y / SCALE]));
+}
 function clip(type: number, subject: Point2[][], cut: Point2[][]): Point2[][] {
   const c = new ClipperLib.Clipper(), tree = new ClipperLib.PolyTree();
   c.AddPaths(subject.map(toPath), ClipperLib.PolyType.ptSubject, true);
@@ -406,12 +443,13 @@ function clip(type: number, subject: Point2[][], cut: Point2[][]): Point2[][] {
 }
 const union = (rings: Point2[][]) => clip(ClipperLib.ClipType.ctUnion, rings, []);
 // Outer rings and holes, wound oppositely; only for cutting, where dropping a
-// hole (a block ringed by road) would cut away the whole block.
+// hole (a block ringed by road) would cut away the whole block. Holes under
+// MIN_HOLE are seams between overlapping slivers, not ground, and are filled.
 function area(rings: Point2[][]): Point2[][] {
   const c = new ClipperLib.Clipper(), out: {X: number; Y: number}[][] = [];
   c.AddPaths(rings.map(toPath), ClipperLib.PolyType.ptSubject, true);
   c.Execute(ClipperLib.ClipType.ctUnion, out, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
-  return out.filter(p => Math.abs(ClipperLib.Clipper.Area(p)) / SCALE / SCALE >= SLIVER).map(p => p.map((q): Point2 => [q.X / SCALE, q.Y / SCALE]));
+  return out.filter(p => { const a = ClipperLib.Clipper.Area(p) / SCALE / SCALE; return a >= SLIVER || a <= -MIN_HOLE; }).map(p => p.map((q): Point2 => [q.X / SCALE, q.Y / SCALE]));
 }
 const difference = (subject: Point2[][], cut: Point2[][]) => cut.length ? clip(ClipperLib.ClipType.ctDifference, subject, cut) : subject;
 const intersection = (subject: Point2[][], cut: Point2[][]) => clip(ClipperLib.ClipType.ctIntersection, subject, cut);

@@ -134,15 +134,24 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
     filled += changed;
     if (!changed) break;
   }
+  // Cells under buildings stay: the grid cannot follow a wall, and dropping the
+  // cells a footprint covers left see-through gaps along the foundations.
+  const corners = (i: number, j: number) => [points[j * (nx + 1) + i], points[j * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i]];
+  const kept = (corner: typeof points) => corner.every(p => p?.c && p.h !== null);
   let cells = 0;
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (kept(corners(i, j))) cells++;
+  // Written straight into the typed array: town-wide, a plain array of the grid's numbers outgrows the heap.
+  const vertices = new Float32Array(out.length + cells * 2 * TRIANGLE);
+  vertices.set(out);
+  let at = out.length;
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const corner = [points[j * (nx + 1) + i], points[j * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i]];
-    // Cells under buildings stay: the grid cannot follow a wall, and dropping the
-    // cells a footprint covers left see-through gaps along the foundations.
-    if (corner.some(p => !p?.c || p.h === null)) continue;
-    for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) { const p = corner[k]!; out.push(p.x, p.z, p.h!, ...p.c!, 0); }
-    cells++;
+    const corner = corners(i, j);
+    if (!kept(corner)) continue;
+    // Split along the diagonal across which the height changes least: one fixed
+    // diagonal left a sawtooth of creases on banks that do not run with the grid.
+    const [a, b, c, d] = corner.map(p => p!.h!), split = Math.abs(a - c) <= Math.abs(b - d) ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 3], [1, 2, 3]];
+    for (const t of split) for (const k of t) { const p = corner[k]!; vertices.set([p.x, p.z, p.h!, ...p.c!, 0], at); at += 7; }
   }
   const textured = {minX, maxX, minZ, maxZ};
-  return {vertices: Float32Array.from(out), textured, report: `ground rebuilt on a ${GRID} m grid in the road area: ${cells} cells (${filled} point fills under buildings); ${removed} survey ground triangles replaced`};
+  return {vertices, textured, report: `ground rebuilt on a ${GRID} m grid in the road area: ${cells} cells (${filled} point fills under buildings); ${removed} survey ground triangles replaced`};
 }

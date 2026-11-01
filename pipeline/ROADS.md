@@ -14,7 +14,7 @@ How the road layer is built and how to carry it to another block. Read [AGENTS.m
 5. **Grading** (`pipeline/grade.ts`). The terrain model is graded to the roads before the survey ground is laid on it: each road's terrain profile is smoothed along it (±12 m), held flat across its width and blended back over 3 m. Overlapping corridors are averaged by weight, so junctions have no steps. The graded `HeightAt` feeds the drape, trees, stairs and building settling.
 6. **Laying** (`layRoads`). After the drape:
    - Roads stop at the ground patches of refined sites (`prepareSurvey` returns them); refined building models must not build streets.
-   - Carriageways and footways are cut into 3 m cells and densified every 2 m. Each ring point stands on the ground stack beneath it (its lowest surface and the layers within 1 m of it), raised to the thickest stack within 2 m, plus 2 cm. Neighbouring ground is never used as a floor: around refined sites the survey keeps its surveyed height, metres from the draped ground beside it.
+   - Carriageways and footways are cut into 3 m cells and densified every 2 m. Each ring point stands on the ground stack beneath it (its lowest surface and the layers within 1 m of it), raised to the thickest stack within 2 m, plus 2 cm. Over water, where there is no stack, it stands on the graded terrain. Neighbouring ground is never used as a floor: around refined sites the survey keeps its surveyed height, metres from the draped ground beside it.
    - Trees standing on a carriageway or footway move to the nearest spot 0.6 m clear of it (`moveTreesOffPaths`).
    - Each surface gets a depth lift: 0.3 m per survey layer beneath it (the survey shader's step) plus 0.5 m. A carriageway takes any touching footway's lift plus 2 cm, so it always wins at their shared edge.
    - Markings are laid on the carriageway's own triangles (shared `triangulate`), 3 cm above it, with the highest lift of any carriageway they overlap plus 5 cm.
@@ -26,13 +26,13 @@ The survey ground is never cut under roads: it stays as it is beneath them, so a
 
 1. Branch from `main`. Record atlas view URLs of the block (top-down and a low oblique per junction and crossing) and look at Street View for each street: real carriageway width, crossings, what lies beside the road (grass or sidewalk), parking.
 2. Inspect the OSM ways in the block (`data/source/osm.json`): highway types, `lanes`, `sidewalk*`, crossing tags (`crossing`, `crossing:markings`), areas mapped as ways. Note refined sites nearby and check their models build no streets of their own (Kesk 1 did; it was removed).
-3. Move or enlarge the road area (`PILOT` in `pipeline/roads.ts`). Keep junctions well inside it: osm2streets cuts roads at the clip edge and the survey road carries on beyond it.
+3. Move or enlarge the road area (`PILOT` in `pipeline/roads.ts`). Keep junctions well inside it: osm2streets cuts roads at the clip edge and the survey road carries on beyond it. `ROADS_AREA=town` widens the area to every building plus 30 m, for trying the whole town; the build then takes several minutes and needs the larger heap the npm scripts give it (8 GB).
 4. `npm run data` and read the `roads` report line: polygon counts, zebra crossings, how many carriageways were widened, narrowed or left unmeasured. An unmeasured street keeps 3 m lanes; find out why (no paint, short way, paint covered by trees). The next line counts recoloured footway paint; a sidewalk or path seen in Street View that turned to grass is missing from OSM, so report it.
 5. `npm run roads:check` and fix until it passes, then review the rest:
-   - broken polygons, walls, footways on the carriageway, trees on a road or path and buildings off their survey contact must be 0 (the command fails otherwise). The contact test compares each survey building's roof move with its ground's move; refined models are listed apart and need seating like Kesk 5;
-   - steep ground followed is listed for review: it should lie where the terrain itself is steep; steps within 15 m of the area's edge, where the rebuilt ground meets stacked survey layers, are counted apart;
+   - broken polygons, walls, surfaces off the ground (a point over 1.5 m from the ground, or from water where there is no ground), footways on the carriageway, trees on a road or path and buildings off their survey contact must be 0 (the command fails otherwise). A wall is a steep triangle rising over 0.5 m with a corner more than 0.5 m off the built ground beneath it. The contact test compares each survey building's roof move with its ground's move; refined models are listed apart and need seating like Kesk 5;
+   - steep ground followed (steep triangles whose corners sit on the ground) is listed for review: it should lie where the terrain itself is steep; steps within 15 m of the area's edge, where the rebuilt ground meets stacked survey layers, are counted apart;
    - each marked crossing's carriageway span should match the paint span within 0.5 m;
-   - uncovered survey road paint shows as a second road; review the largest cells. Parking, driveways and unmapped service areas legitimately stay uncovered.
+   - uncovered survey road paint shows as a second road; review the largest cells. Over a large area the scan step widens (it prints the step). Parking, driveways and unmapped service areas legitimately stay uncovered.
 6. Look in the atlas: full reload after every data build. Check from above and low down, at junction mouths, crossings, the area's edge and next to refined sites.
 7. `npm run check`, `npm test`, `npm run build`. Commit without `public/data`.
 
@@ -60,6 +60,9 @@ Do not hand-place road geometry in building models, edit `osm.json` by hand (it 
 | A refined building sunk into the ground, with a pit at its entrances | Its model kept a fixed study datum and flattened the ground to it | Seat it on the ground at its entrances (`seatsOnGround`); see the studio refinement rules |
 | See-through gaps along building foundations | Grid cells whose centre lay inside a footprint were dropped, and the survey has no ground there | Keep the grid under buildings, filling height and colour from neighbours where data is missing |
 | Blocky, terraced, jagged ground between walkways and buildings | Survey ground is flat sheets stacked 35-45 cm apart over large triangles, and ground near refined sites kept its old height in rectangles | Rebuild the area's ground on a 1 m terrain grid; blend near refined sites |
+| Sawtooth creases along a steep bank | Every grid cell split along the same diagonal, across the slope where the bank runs diagonally | Split each cell along the diagonal with the smaller height change |
+| Spiky slivers of footway on the carriageway | osm2streets returned a ring that crosses itself and winds backwards; it cancelled the ring under it in the union, opening a hole footways were not cut by | Untangle every osm2streets ring into simple rings wound forwards; fill holes under 10 m² in `area` |
+| A path floating metres above a stream, or stepping across it | Water has no ground stack: a surface wholly over it was never laid (left at height 0), and points over it took their cell's mean height | Over water, stand on the graded terrain |
 | Trees growing out of a path | Survey tree points ignore paths | Move trees off built roads and paths |
 | Thick dark band behind a raised edge (seen with trial kerbs) | Geometry below the verge, drawn over the grass in front by the depth lift | Never extend lifted geometry below the ground beside it |
 
@@ -69,5 +72,5 @@ Do not hand-place road geometry in building models, edit `osm.json` by hand (it 
 - Survey colours for road, footway and marking paint are in `pipeline/survey-colour.ts`; a layer within 3 cm of the top one is what is seen.
 - Clipper works in integer millimetres and the viewer cannot draw holes, so drawn clip results keep outer contours only; cutting operands keep their holes (`area`).
 - Hash changes alone do not always move the atlas camera; set the hash and reload.
-- The finer ground makes the site ground recorded for refined models in `world.json` much larger (about 19 MB in all, from 9.7 MB); the whole-town rollout should send it at a coarser grid or in tiles.
+- The finer ground makes the site ground recorded for refined models in `world.json` much larger; it is written in millimetres to keep it down, and town-wide the road rings are the larger part, so a full rollout may still want them in tiles.
 - Open: kerbs are not modelled (a trial was removed); driving lanes keep osm2streets' layout inside the new width; white edge lines and double centre lines are not drawn.

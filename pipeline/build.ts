@@ -37,7 +37,7 @@ const {vertices: cleared, report: paintReport} = clearFootwayPaint(vertices, dat
 const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, heightAt, data, sillamae);
 const {vertices: seated, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
 const {buckets, siteGround, settled, draped, patches} = prepareSurvey(seated, data, sillamae, heightAt, [textured]);
-const roads = layRoads(shapes, buckets, sillamae, data.base, patches);
+const roads = layRoads(shapes, buckets, sillamae, data.base, patches, heightAt);
 const {stairs, report: stairReport} = buildStairs(osm, data, sillamae, georef, heightAt);
 const {nav, report} = buildNav(osm, data, sillamae, georef);
 const {zones, report: zoneReport} = buildZones(osm, data, sillamae, georef);
@@ -62,7 +62,10 @@ for (const [name, parts] of tiles) {
   manifest.tiles.push(name);
   bytes += packed.length;
 }
-const world: WorldData = {...data, siteGround, geo, zones, stairs, roads};
+// Site ground comes from Float32 survey data; millimetres keep it exact enough and halve world.json.
+const mm = (v: number) => Math.round(v * 1000) / 1000;
+const siteGroundMm = Object.fromEntries(Object.entries(siteGround).map(([id, triangles]) => [id, triangles.map(t => t.map(mm))]));
+const world: WorldData = {...data, siteGround: siteGroundMm, geo, zones, stairs, roads};
 fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
 fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
 fs.writeFileSync(path.join(OUT, 'nav.json'), JSON.stringify(nav));
