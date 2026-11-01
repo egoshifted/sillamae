@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import ClipperLib from 'clipper-lib';
+import * as THREE from 'three';
 import {initSync, JsStreetNetwork} from 'osm2streets-js/osm2streets_js.js';
 import type {Georeference, OsmExtract} from './geo.ts';
 import type {Centreline} from './grade.ts';
-import {MARKING as PAINT_MARKING, ROAD, surveyLayers} from './survey-colour.ts';
+import {FOOTWAY, MARKING as PAINT_MARKING, ROAD, surveyLayers} from './survey-colour.ts';
 import type {RoadKind, RoadSurface} from '../src/engine/data.ts';
 import {triangulate} from '../src/engine/roads.ts';
 import type {Bucket} from '../src/engine/survey/classify.ts';
-import type {CityDefinition, Point2, Polygon, SceneData} from '../src/engine/types.ts';
+import {TRIANGLE, type CityDefinition, type Point2, type Polygon, type SceneData} from '../src/engine/types.ts';
 
 // Pilot: osm2streets roads only around Kesk 5 while the approach is tried out.
 const PILOT = {building: '213818453', half: 170}; // metres
@@ -23,20 +24,20 @@ const CARRIAGEWAY = new Set(['Driving', 'Parking', 'Shoulder', 'Construction']);
 // Paint measurement, metres: a layer within PAINT_TOP of the top one is seen;
 // OSM ways lie up to SEEK off the painted road.
 const STATION = 4, STATION_END = 8, SCAN = .25, SEEK = 2, MAX_PAINT = 12, MIN_STATIONS = 3, PAINT_TOP = .03, MAX_GROW = 2.5;
+// Metres from a repainted triangle at which the surrounding ground colour is sampled, nearest first.
+const VERGE_SAMPLES = [2.5, 4, 8];
 const SEEKS = [0, ...Array.from({length: SEEK / SCAN}, (_, k) => [(k + 1) * SCAN, -(k + 1) * SCAN]).flat()];
 
 type Feature = {geometry: {type: string; coordinates: any}; properties: Record<string, any>};
 export type RoadShape = {kind: RoadKind; ring: Point2[]};
 
-const isCrossing = (tags: Record<string, string>) => tags.footway === 'crossing' || (tags.highway === 'footway' && 'crossing' in tags);
-const marked = (tags: Record<string, string>) => tags['crossing:markings'] ? tags['crossing:markings'] !== 'no' : ['zebra', 'marked', 'uncontrolled'].includes(tags.crossing);
+export const isCrossing = (tags: Record<string, string>) => tags.footway === 'crossing' || (tags.highway === 'footway' && 'crossing' in tags);
+export const marked = (tags: Record<string, string>) => tags['crossing:markings'] ? tags['crossing:markings'] !== 'no' : ['zebra', 'marked', 'uncontrolled'].includes(tags.crossing);
 
 // osm2streets builds lane and junction polygons from OSM tags alone. This
 // version ignores width tags: driving lanes are 3 m, footways 2 m.
 export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefinition, {local}: Georeference, vertices: Float32Array) {
-  const [ox, oz] = city.frame.origin, b = scene.buildings.find(b => b.id === PILOT.building)!;
-  const cx = b.g.reduce((s, p) => s + p[0], 0) / b.g.length - ox, cz = b.g.reduce((s, p) => s + p[1], 0) / b.g.length - oz;
-  const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= PILOT.half + margin && Math.abs(z - cz) <= PILOT.half + margin;
+  const [ox, oz] = city.frame.origin, {inside} = roadArea(scene, city);
   // Steps are built as stairs. Crossings would become footway lanes over the
   // carriageway, as this osm2streets version does not turn them into markings.
   const near = osm.highways.filter(w => w.points.some(p => inside(local(p), 50)));
@@ -74,15 +75,24 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
   const junctionGrow = new Map<number, number>();
   for (const f of plain) if (f.properties.type === 'road' && grow.has(f.properties.id))
     for (const j of [f.properties.src_i, f.properties.dst_i]) junctionGrow.set(j, Math.max(junctionGrow.get(j) ?? -MAX_GROW, grow.get(f.properties.id)!));
+  const wayById = new Map(ways.map(w => [w.id, w]));
+  const roadWays = new Map(plain.filter(f => f.properties.type === 'road').map(f => [f.properties.id as number, f.properties.osm_way_ids.map((id: number) => wayById.get(id)).filter((w?: OsmExtract['highways'][number]) => w) as OsmExtract['highways']]));
   const byRoad = new Map<number, Point2[][]>();
   for (const f of lanes) if (CARRIAGEWAY.has(f.properties.type)) byRoad.set(f.properties.road, [...byRoad.get(f.properties.road) ?? [], ...rings(f)]);
   const carriageways = [
-    ...[...byRoad].flatMap(([id, parts]) => offset(union(parts), grow.get(id) ?? 0, ClipperLib.JoinType.jtMiter)),
+    ...[...byRoad].flatMap(([id, parts]) => {
+      const by = grow.get(id) ?? 0;
+      if (by >= 0) return offset(union(parts), by, ClipperLib.JoinType.jtMiter);
+      // Shrinking the outline would also pull its ends back from the junctions;
+      // a band along the OSM ways narrows it across only.
+      const lines = (roadWays.get(id) ?? []).map(w => w.points.map(p => local(p)));
+      return intersection(union(parts), corridor(lines, built.get(id)! / 2 + by));
+    }),
     ...plain.filter(f => f.properties.type === 'intersection' && drivenJunction.has(f.properties.id)).flatMap(f => offset(rings(f), junctionGrow.get(f.properties.id) ?? 0, ClipperLib.JoinType.jtRound)),
   ];
   const footways = [...plain.filter(f => f.properties.type === 'intersection' && !drivenJunction.has(f.properties.id)), ...lanes.filter(f => !CARRIAGEWAY.has(f.properties.type))].flatMap(rings);
   // Separately mapped sidewalks and paths reach onto the carriageway at junctions and run along its edge.
-  const road = union(carriageways);
+  const road = area(carriageways);
   // Crossing ways often bend onto the sidewalks; the painted zebra is straight.
   const zebras = crossings.map(w => ({line: [local(w.points[0]), local(w.points[w.points.length - 1])], width: parseFloat(w.tags.width) || CROSSING_WIDTH}));
   // Lane lines stop short of a zebra rather than running through its bars.
@@ -100,6 +110,61 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
   const centrelines: Centreline[] = ways.filter(w => halves.has(w.id)).map(w => ({points: w.points.map(p => { const [x, z] = local(p); return [x + ox, z + oz]; }), half: halves.get(w.id)!}));
   const count = (kind: RoadKind) => shapes.filter(s => s.kind === kind).length, grown = [...grow.values()];
   return {shapes, centrelines, report: `roads (osm2streets pilot, ${PILOT.half * 2} m around building ${PILOT.building}): ${count('carriageway')} carriageway, ${count('footway')} footway and ${count('marking')} marking polygons, ${crossings.length} zebra crossings; carriageways sized to the survey paint: ${grown.filter(g => g >= .05).length} widened, ${grown.filter(g => g <= -.05).length} narrowed, ${byRoad.size - grown.length} unmeasured; ${centrelines.length} ways graded`};
+}
+
+// The survey's footway paint does not match the ground (a wide band along the
+// roads where there is a small kerb and grass), so inside the road area it
+// takes the colour of the ground around it; mapped footways are drawn over it.
+// Only colours change, so the stacked ground layers stay as they are.
+export function clearFootwayPaint(v: Float32Array, scene: SceneData, city: CityDefinition) {
+  const [ox, oz] = city.frame.origin, {layers, is} = surveyLayers(v), {centre: [cx, cz], half} = roadArea(scene, city);
+  const vergeColour = (x: number, z: number) => {
+    const found: number[][] = [];
+    for (const r of VERGE_SAMPLES) for (let k = 0; k < 8; k++) {
+      const top = layers(x + ox + Math.cos(k * Math.PI / 4) * r, z + oz + Math.sin(k * Math.PI / 4) * r)[0];
+      if (top && !is(top.i, ROAD) && !is(top.i, FOOTWAY) && !is(top.i, PAINT_MARKING)) found.push([v[top.i + 3], v[top.i + 4], v[top.i + 5]]);
+    }
+    return found.length ? [0, 1, 2].map(c => median(found.map(f => f[c]))) : null;
+  };
+  // Footway triangles can be large and cross the area's edge, so they are split
+  // along it and only the part inside is recoloured. Pieces lie in their
+  // triangle's plane and replace it in place, keeping heights, layers and the
+  // survey's order.
+  const band: Point2[][] = [[[cx - half, cz - half], [cx + half, cz - half], [cx + half, cz + half], [cx - half, cz + half]]];
+  const out: number[] = [];
+  let repainted = 0, kept = 0;
+  for (let i = 0; i < v.length; i += TRIANGLE) {
+    const keep = () => { for (let k = 0; k < TRIANGLE; k++) out.push(v[i + k]); };
+    if (v[i + 6] || !is(i, FOOTWAY)) { keep(); continue; }
+    const tri = [0, 7, 14].map((k): Point2 => [v[i + k] - ox, v[i + k + 1] - oz]);
+    const inside = intersection([tri], band), outside = difference([tri], band);
+    const areaOf = (rings: Point2[][]) => rings.reduce((s, r) => s + Math.abs(ClipperLib.Clipper.Area(toPath(r))), 0) / SCALE / SCALE;
+    // A hole dropped by the clip would break the area sum; such triangles stay whole.
+    if (!inside.length || Math.abs(areaOf(inside) + areaOf(outside) - areaOf([tri])) > .01 * areaOf([tri]) + SLIVER) { keep(); continue; }
+    const colour = vergeColour(...inside[0][0]);
+    if (!colour) { keep(); kept++; continue; }
+    const [a, b, c] = tri, d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]), winding = Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+    const vertex = ([x, z]: Point2, paint: number[] | null) => {
+      const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (z - c[1])) / d, l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (z - c[1])) / d, w = [l1, l2, 1 - l1 - l2];
+      const at = (k: number) => w.reduce((s, wj, j) => s + wj * v[i + j * 7 + k], 0);
+      out.push(x + ox, z + oz, at(2), ...(paint ?? [at(3), at(4), at(5)]), 0);
+    };
+    for (const [rings, paint] of [[inside, colour], [outside, null]] as const) for (const ring of rings)
+      for (const t of THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(...p)), [])) {
+        const [p, q, r] = t.map(j => ring[j]), same = Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) === winding;
+        for (const point of same ? [p, q, r] : [p, r, q]) vertex(point, paint);
+      }
+    repainted++;
+  }
+  return {vertices: Float32Array.from(out), report: `survey footway paint recoloured to the ground around it: ${repainted} triangles; ${kept} kept, with no other ground within ${VERGE_SAMPLES[VERGE_SAMPLES.length - 1]} m`};
+}
+
+// The square, in the local frame, within which roads are built.
+export function roadArea(scene: SceneData, city: CityDefinition) {
+  const [ox, oz] = city.frame.origin, b = scene.buildings.find(b => b.id === PILOT.building)!;
+  const cx = b.g.reduce((s, p) => s + p[0], 0) / b.g.length - ox, cz = b.g.reduce((s, p) => s + p[1], 0) / b.g.length - oz;
+  const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= PILOT.half + margin && Math.abs(z - cz) <= PILOT.half + margin;
+  return {centre: [cx, cz] as Point2, half: PILOT.half, inside};
 }
 
 // Width of the survey's road paint across a way, median over stations away
@@ -135,6 +200,13 @@ function paintedWidth({layers, is}: ReturnType<typeof surveyLayers>, [ox, oz]: P
 
 const median = (values: number[]) => { const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
+function corridor(lines: Point2[][], half: number): Point2[][] {
+  const o = new ClipperLib.ClipperOffset(2, .1 * SCALE), out: {X: number; Y: number}[][] = [];
+  o.AddPaths(lines.map(toPath), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etOpenSquare);
+  o.Execute(out, half * SCALE);
+  return out.map(p => p.map((q): Point2 => [q.X / SCALE, q.Y / SCALE]));
+}
+
 function offset(rings: Point2[][], by: number, join: number): Point2[][] {
   if (Math.abs(by) < .05) return rings;
   const o = new ClipperLib.ClipperOffset(2, .1 * SCALE), out: {X: number; Y: number}[][] = [];
@@ -150,7 +222,7 @@ function offset(rings: Point2[][], by: number, join: number): Point2[][] {
 // so roads stop at their patches.
 export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[]) {
   const [ox, oz] = city.frame.origin, ground = groundIndex(buckets);
-  const sites = union(patches.map(p => p.map(([x, z]): Point2 => [x - ox, z - oz])));
+  const sites = area(patches.map(p => p.map(([x, z]): Point2 => [x - ox, z - oz])));
   // Surfaces are cut into cells: the viewer triangulates outlines only, and the
   // middle of a wide carriageway would otherwise sink below survey paint
   // sheets, which then shadow it.
@@ -262,6 +334,14 @@ function clip(type: number, subject: Point2[][], cut: Point2[][]): Point2[][] {
   return out;
 }
 const union = (rings: Point2[][]) => clip(ClipperLib.ClipType.ctUnion, rings, []);
+// Outer rings and holes, wound oppositely; only for cutting, where dropping a
+// hole (a block ringed by road) would cut away the whole block.
+function area(rings: Point2[][]): Point2[][] {
+  const c = new ClipperLib.Clipper(), out: {X: number; Y: number}[][] = [];
+  c.AddPaths(rings.map(toPath), ClipperLib.PolyType.ptSubject, true);
+  c.Execute(ClipperLib.ClipType.ctUnion, out, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+  return out.filter(p => Math.abs(ClipperLib.Clipper.Area(p)) / SCALE / SCALE >= SLIVER).map(p => p.map((q): Point2 => [q.X / SCALE, q.Y / SCALE]));
+}
 const difference = (subject: Point2[][], cut: Point2[][]) => cut.length ? clip(ClipperLib.ClipType.ctDifference, subject, cut) : subject;
 const intersection = (subject: Point2[][], cut: Point2[][]) => clip(ClipperLib.ClipType.ctIntersection, subject, cut);
 

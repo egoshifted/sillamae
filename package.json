@@ -4,6 +4,7 @@
   "scripts": {
     "data": "node pipeline/build.ts",
     "osm": "node pipeline/fetch-osm.ts",
+    "roads:check": "node pipeline/check-roads.ts",
     "dev": "node pipeline/build.ts && vite",
     "check": "tsc -p .",
     "test": "node --test \"src/**/*.test.ts\"",

@@ -9,18 +9,22 @@ export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[]) {
   for (const kind of Object.keys(LOOK) as RoadKind[]) {
     const own = surfaces.filter(s => s.kind === kind);
     if (!own.length) continue;
-    const [color, roughness] = LOOK[kind], material = new THREE.MeshStandardMaterial({color, roughness});
-    material.userData.groundSurface = true;
-    material.onBeforeCompile = shader => {
-      shader.vertexShader = 'attribute float lift;\n' + shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
-    };
-    material.customProgramCacheKey = () => 'road-lift';
-    const mesh = new THREE.Mesh(surfaceGeometry(own), material);
+    const mesh = new THREE.Mesh(surfaceGeometry(own), lifted(...LOOK[kind]));
     mesh.receiveShadow = true;
     group.add(mesh);
   }
   scene.add(group);
   return group;
+}
+
+function lifted(color: string, roughness: number) {
+  const material = new THREE.MeshStandardMaterial({color, roughness});
+  material.userData.groundSurface = true;
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = 'attribute float lift;\n' + shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
+  };
+  material.customProgramCacheKey = () => 'road-lift';
+  return material;
 }
 
 // The data build lays markings on these same triangles.
