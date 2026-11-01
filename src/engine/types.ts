@@ -126,6 +126,23 @@ export interface SiteTree {
   type: string; // as Tree.type
 }
 
+export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed';
+// An area drawn on the ground in the studio, laid like a footway.
+export interface SiteSurface {
+  id: string;
+  finish: SurfaceFinish;
+  ring: Point2[]; // source x/z, either winding
+}
+
+export type LineKind = 'fence' | 'hedge' | 'wall' | 'kerb';
+// A fence, hedge, low wall or kerb drawn along the ground in the studio.
+export interface SiteLine {
+  id: string;
+  kind: LineKind;
+  points: Point2[]; // source x/z
+  height?: number; // metres; each kind has its own default
+}
+
 // One studio square and what was placed in it.
 export interface PlacementSite {
   version: 1;
@@ -138,6 +155,9 @@ export interface PlacementSite {
   // Change to the terrain model over the square, centimetres on a TERRAIN_STEP grid
   // from its low corner, rows along z; see terrain-edit.ts.
   terrain?: {deltas: number[]};
+  surfaces?: SiteSurface[];
+  lines?: SiteLine[];
+  hidden?: string[]; // survey buildings (Building.id) left out of the build: sheds, kiosks, survey blobs
 }
 
 export const TREE_MATCH = .75; // metres

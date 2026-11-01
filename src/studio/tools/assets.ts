@@ -147,6 +147,22 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     if (!Array.isArray(d) || d.length !== n * n) fail(name, `terrain needs ${n * n} heights for a ${site.square.size} m square, has ${Array.isArray(d) ? d.length : 'none'}`);
     else if (!d.every(v => Number.isInteger(v) && Math.abs(v) <= 1000)) fail(name, 'terrain heights must be whole centimetres within 10 m');
   }
+  const pair = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
+  for (const s of site.surfaces ?? []) {
+    if (ids.has(s.id)) fail(name, `id ${s.id} used twice`);
+    ids.add(s.id);
+    if (!['asphalt', 'paving', 'gravel', 'grass', 'flowerbed'].includes(s.finish) || !Array.isArray(s.ring) || s.ring.length < 3 || !s.ring.every(pair)) fail(name, `surface ${s.id} needs a finish and at least three x/z corners`);
+  }
+  for (const l of site.lines ?? []) {
+    if (ids.has(l.id)) fail(name, `id ${l.id} used twice`);
+    ids.add(l.id);
+    if (!['fence', 'hedge', 'wall', 'kerb'].includes(l.kind) || !Array.isArray(l.points) || l.points.length < 2 || !l.points.every(pair) || (l.height !== undefined && !(l.height > 0 && l.height <= 4))) fail(name, `line ${l.id} needs a kind, at least two x/z points and a height up to 4 m`);
+  }
+  const refined = new Set(sillamae.overrides.map(o => o.id));
+  for (const id of site.hidden ?? []) {
+    if (refined.has(id)) fail(name, `building ${id} is a refined model and cannot be hidden`);
+    else if (world && !world.buildings.some(b => b.id === id)) warnings.push(`${name}: hidden building ${id} is not in the built data (already left out, or gone from the survey)`);
+  }
   const point = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
   for (const r of site.trees?.remove ?? []) if (!point(r)) fail(name, `removed tree ${JSON.stringify(r)} is not an x/z pair`);
   for (const t of site.trees?.add ?? []) {

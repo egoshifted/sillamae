@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type {BuiltLine} from '../src/engine/data.ts';
+import {LINE_HEIGHT, standLine} from '../src/engine/lines.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
-import {TREE_MATCH, type Placement, type PlacementSite, type SceneData} from '../src/engine/types.ts';
+import {TREE_MATCH, TRIANGLE, type CityDefinition, type Placement, type PlacementSite, type Point2, type SceneData} from '../src/engine/types.ts';
+import type {RoadShape} from './roads.ts';
 
 // What the studio site editor saved: placed objects and tree edits, one file per square.
 export function loadSites(dir: string): PlacementSite[] {
@@ -27,6 +30,35 @@ export function applyTreeEdits(scene: SceneData, sites: PlacementSite[]) {
     }
   }
   return `studio tree edits: ${removed} removed, ${added} added${unmatched ? `; ${unmatched} removals matched no tree within ${TREE_MATCH} m (survey trees moved since)` : ''}`;
+}
+
+// Survey buildings hidden in the studio leave the survey mesh and the building
+// list; the rebuilt ground runs on under them. Refined models cannot be hidden.
+export function dropHidden(v: Float32Array, scene: SceneData, sites: PlacementSite[], city: CityDefinition) {
+  const refined = new Set(city.overrides.map(o => o.id)), ids = new Set(sites.flatMap(s => s.hidden ?? []).filter(id => !refined.has(id)));
+  const picks = new Set(scene.buildings.filter(b => ids.has(b.id)).map(b => b.pick));
+  if (!picks.size) return {vertices: v, report: 'studio hidden survey objects: 0'};
+  const kept: number[] = [];
+  for (let i = 0; i < v.length; i += TRIANGLE) if (!picks.has(v[i + 6])) kept.push(i);
+  const out = new Float32Array(kept.length * TRIANGLE);
+  kept.forEach((i, k) => out.set(v.subarray(i, i + TRIANGLE), k * TRIANGLE));
+  scene.buildings = scene.buildings.filter(b => !picks.has(b.pick));
+  return {vertices: out, report: `studio hidden survey objects: ${picks.size}, ${(v.length - out.length) / TRIANGLE} triangles`};
+}
+
+// Areas drawn in the studio, as footways in the local frame for the road layer to lay.
+export function studioSurfaces(sites: PlacementSite[], city: CityDefinition): RoadShape[] {
+  const [ox, oz] = city.frame.origin;
+  return sites.flatMap(s => (s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})));
+}
+
+// Lines drawn in the studio, stood on the built terrain in the local frame.
+export function studioLines(sites: PlacementSite[], city: CityDefinition, heightAt: HeightAt, base: number): BuiltLine[] {
+  const [ox, oz] = city.frame.origin;
+  return sites.flatMap(s => (s.lines ?? []).map(l => ({
+    kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind],
+    points: standLine(l.points.map(([x, z]): [number, number] => [x - ox, z - oz]), (x, z) => { const h = heightAt(x + ox, z + oz); return h === null ? null : h - base; }).map(p => p.map(v => Math.round(v * 1000) / 1000) as [number, number, number]),
+  })));
 }
 
 // Placements of approved library assets only; drafts are previews and never ship.

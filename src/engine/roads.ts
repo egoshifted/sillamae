@@ -9,6 +9,8 @@ const FINISH: Record<Finish, {tile: number; roughness: number; paint: (x: Canvas
   asphalt: {tile: 6, roughness: .97, paint: asphalt},
   paving: {tile: 1, roughness: .9, paint: paving},
   gravel: {tile: 2, roughness: 1, paint: gravel},
+  grass: {tile: 3, roughness: 1, paint: lawn},
+  flowerbed: {tile: 2, roughness: 1, paint: flowerbed},
 };
 
 export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1) {
@@ -22,9 +24,11 @@ export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy
   };
   for (const kind of Object.keys(LOOK) as (keyof typeof LOOK)[]) add(surfaces.filter(s => s.kind === kind), lifted(...LOOK[kind]));
   for (const [finish, {tile, roughness, paint}] of Object.entries(FINISH) as [Finish, typeof FINISH[Finish]][]) {
+    const own = surfaces.filter(s => s.kind === 'footway' && (s.surface ?? 'asphalt') === finish);
+    if (!own.length) continue;
     const material = lifted('#ffffff', roughness);
     material.map = finishTexture(paint, anisotropy);
-    add(surfaces.filter(s => s.kind === 'footway' && (s.surface ?? 'asphalt') === finish), material, tile);
+    add(own, material, tile);
   }
   scene.add(group);
   return group;
@@ -141,6 +145,37 @@ function paving(x: CanvasRenderingContext2D, rng: () => number) {
     x.fillRect(col * w + (row % 2) * w / 2 + 2, row * h + 2, w - 4, h - 4);
   }
   speckle(x, rng, 20000, 140, 50, 1.2, .25);
+}
+
+// Mown lawn: a fresher green than the survey's grass, with faint mowing stripes.
+function lawn(x: CanvasRenderingContext2D, rng: () => number) {
+  x.fillStyle = '#6f8f44';
+  x.fillRect(0, 0, SIZE, SIZE);
+  for (let i = 0; i < 4; i++) { x.globalAlpha = .06; x.fillStyle = i % 2 ? '#86a653' : '#5f7d3a'; x.fillRect(0, i * SIZE / 4, SIZE, SIZE / 4); }
+  for (let i = 0; i < 30000; i++) {
+    const n = (rng() - .5) * 60;
+    x.globalAlpha = .35;
+    x.fillStyle = `rgb(${105 + n},${140 + n},${66 + n * .6})`;
+    x.fillRect(rng() * SIZE, rng() * SIZE, 1, 1 + rng() * 3);
+  }
+  x.globalAlpha = 1;
+}
+
+// Dug soil with clumps of planting in flower.
+function flowerbed(x: CanvasRenderingContext2D, rng: () => number) {
+  x.fillStyle = '#5b4636';
+  x.fillRect(0, 0, SIZE, SIZE);
+  speckle(x, rng, 20000, 95, 40, 1.5, .35);
+  const flowers = ['#d9443f', '#e8c33a', '#f2efe6', '#b45ab8', '#e9874a'];
+  for (let i = 0; i < 70; i++) {
+    const cx = rng() * SIZE, cy = rng() * SIZE, r = 14 + rng() * 22;
+    blob(x, cx, cy, r, r * .8, '#55743a', .9);
+    const colour = flowers[Math.floor(rng() * flowers.length)];
+    for (let k = 0; k < 40; k++) {
+      const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * r * .8;
+      blob(x, cx + Math.cos(a) * d, cy + Math.sin(a) * d * .8, 2 + rng() * 2, 2 + rng() * 2, colour, .95);
+    }
+  }
 }
 
 function gravel(x: CanvasRenderingContext2D, rng: () => number) {

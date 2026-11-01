@@ -1,7 +1,7 @@
 import {MeshoptDecoder} from 'meshoptimizer/decoder';
 import * as THREE from 'three';
 import {expandBucket, type Detail, type Surface} from './survey/classify.ts';
-import type {GroundTriangle, Placement, SceneData, WorldFrame} from './types.ts';
+import type {GroundTriangle, LineKind, Placement, SceneData, SurfaceFinish, WorldFrame} from './types.ts';
 
 export interface Zone {
   id: number;
@@ -20,7 +20,8 @@ export interface Stair {
 }
 
 export type RoadKind = 'carriageway' | 'footway' | 'marking';
-export type Finish = 'asphalt' | 'paving' | 'gravel';
+// Grass and flowerbeds come only from areas drawn in the studio.
+export type Finish = SurfaceFinish;
 
 // One road polygon, ring in the local frame (x, height, z); lift is its depth
 // lift in metres above the survey layers it covers. Footways carry a finish.
@@ -91,6 +92,14 @@ async function json<T>(url: string) {
 export const loadNav = (root: string) => json<NavData>(root + 'nav.json');
 // Data built before the site editor existed has no placements file.
 export const loadPlacements = (root: string) => json<Placement[]>(root + 'placements.json').catch(() => []);
+
+// A studio line stood on the ground: local x, height, z, a point every metre or so.
+export interface BuiltLine {
+  kind: LineKind;
+  height: number;
+  points: [number, number, number][];
+}
+export const loadLines = (root: string) => json<BuiltLine[]>(root + 'lines.json').catch(() => []);
 
 export async function loadWorld(root: string) {
   const [world, survey] = await Promise.all([json<WorldData>(root + 'world.json'), json<SurveyManifest>(root + 'survey.json'), MeshoptDecoder.ready]);

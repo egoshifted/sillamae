@@ -12,7 +12,7 @@ import {gradeRoads} from './grade.ts';
 import {withTerrainEdits} from '../src/engine/terrain-edit.ts';
 import {blendSites, gridGround, seatBuildings} from './ground.ts';
 import {buildNav} from './nav.ts';
-import {applyTreeEdits, collectPlacements, loadSites} from './placements.ts';
+import {applyTreeEdits, collectPlacements, dropHidden, loadSites, studioLines, studioSurfaces} from './placements.ts';
 import {buildRoads, clearFootwayPaint, layRoads, moveTreesOffPaths} from './roads.ts';
 import {buildStairs} from './stairs.ts';
 import {moveTreesOffRoads} from './trees.ts';
@@ -20,6 +20,7 @@ import {buildZones} from './zones.ts';
 import type {SurveyManifest, WorldData} from '../src/engine/data.ts';
 
 const SOURCE = 'data/source', OUT = 'public/data', TILE_CELLS = 2;
+const STUDIO_LIFT = .05, STUDIO_RISE = .01; // metres of depth lift and height over the road layer's own footways
 
 // Override models paint procedural textures on canvases. Here only their
 // geometry matters, so canvases are inert stand-ins.
@@ -40,9 +41,13 @@ const treeReport = moveTreesOffRoads(vertices, data), pathTreeReport = moveTrees
 const editReport = applyTreeEdits(data, sites);
 const {vertices: cleared, report: paintReport} = clearFootwayPaint(vertices, data, sillamae);
 const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, heightAt, data, sillamae);
-const {vertices: seated, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
+const {vertices: seatedAll, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
+const {vertices: seated, report: hiddenReport} = dropHidden(seatedAll, data, sites, sillamae);
 const {buckets, siteGround, settled, draped, patches} = prepareSurvey(seated, data, sillamae, heightAt, [textured]);
-const roads = layRoads(shapes, buckets, sillamae, data.base, patches, heightAt);
+// Studio areas are laid on their own and drawn over any footway they overlap.
+const drawn = layRoads(studioSurfaces(sites, sillamae), buckets, sillamae, data.base, patches, heightAt).map(s => ({...s, lift: s.lift + STUDIO_LIFT, ring: s.ring.map(([x, y, z]): [number, number, number] => [x, y + STUDIO_RISE, z])}));
+const roads = [...layRoads(shapes, buckets, sillamae, data.base, patches, heightAt), ...drawn];
+const lines = studioLines(sites, sillamae, heightAt, data.base);
 const {stairs, report: stairReport} = buildStairs(osm, data, sillamae, georef, heightAt);
 const {nav, report} = buildNav(osm, data, sillamae, georef);
 const {zones, report: zoneReport} = buildZones(osm, data, sillamae, georef);
@@ -76,6 +81,7 @@ fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
 fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
 fs.writeFileSync(path.join(OUT, 'nav.json'), JSON.stringify(nav));
 fs.writeFileSync(path.join(OUT, 'placements.json'), JSON.stringify(placements));
+fs.writeFileSync(path.join(OUT, 'lines.json'), JSON.stringify(lines));
 // The edits this data was built with, so the studio previews only what changed since.
 const terrain = Object.fromEntries(sites.filter(s => s.terrain).map(s => [s.id, s.terrain!.deltas]));
 fs.writeFileSync(path.join(OUT, 'terrain.json'), JSON.stringify(terrain));
@@ -91,6 +97,7 @@ console.log(seatReport);
 console.log(treeReport);
 console.log(pathTreeReport);
 console.log(editReport + `; terrain edited in ${Object.keys(terrain).length} squares`);
-console.log(placementReport);
+console.log(placementReport + `; ${drawn.length} area cells, ${lines.length} lines`);
+console.log(hiddenReport);
 console.log(`ground on the 1 m terrain model: ${draped!.before} -> ${draped!.after} triangles; ${settled} buildings lowered onto it`);
 console.log(`${buckets.length} buckets in ${tiles.size} tiles, ${mb(bytes)} gzip; world.json ${mb(fs.statSync(path.join(OUT, 'world.json')).size)}; ${((performance.now() - started) / 1000).toFixed(1)} s`);

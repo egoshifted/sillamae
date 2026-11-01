@@ -3,7 +3,8 @@ import {CameraController, type CameraView} from './camera/controller.ts';
 import {WorldClock} from './clock.ts';
 import {clippingPlanes, extentEdges, insideExtent} from './extent.ts';
 import {addSun} from './lighting/sun.ts';
-import {tileBounds, type NavData, type SurveyBucket, type SurveyManifest, type WorldData, type Zone} from './data.ts';
+import {lineMeshes} from './lines.ts';
+import {tileBounds, type BuiltLine, type NavData, type SurveyBucket, type SurveyManifest, type WorldData, type Zone} from './data.ts';
 import {navOverlay} from './nav-overlay.ts';
 import {createOutline} from './outline.ts';
 import {buildingPrisms, pickPrism} from './picking.ts';
@@ -127,6 +128,14 @@ export class Engine {
   addPlacements(placements: Placement[], assets: ReadonlyMap<string, AssetDefinition>) {
     if (this.#placements || !placements.length) return;
     this.#placements = addPlacements(this.#scene, placements, assets, this.frame);
+    this.#renderer.shadowMap.needsUpdate = true;
+    this.#redraw = true;
+  }
+
+  // Fences, hedges, walls and kerbs drawn in the studio, already stood on the ground.
+  addLines(lines: BuiltLine[]) {
+    if (!lines.length) return;
+    this.#scene.add(lineMeshes(lines));
     this.#renderer.shadowMap.needsUpdate = true;
     this.#redraw = true;
   }
