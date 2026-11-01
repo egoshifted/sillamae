@@ -23,6 +23,21 @@ Search the catalogue by address or stable ID and select any building. Orbit, pan
 
 Every catalogue building has original-survey and provisional-massing views. New draft stages are discovered from `src/city/sillamae/*/study.ts`; existing refined buildings provide optional examples. Plain materials do not simplify the shell or certify material appearance. Assembled mode calls the same `BuildingOverride` used by the atlas. Studio uses diagnostic lighting and untextured local site triangles, without vegetation or atlas depth layering. It removes the atlas-only projected ground-depth offsets from the study material shaders; these orthographic offsets would otherwise draw hidden stairs through walls and roofs in the perspective study camera. A small polygon offset keeps coplanar ground contacts stable without the metre-scale displacement. Original survey is ungraded; a draft may be based on a prepared height envelope. Always finish datum, ground-contact, lighting, vegetation and loading checks in the atlas.
 
+## Site editor
+
+`/src/studio/site/` opens a square of the atlas (50, 100 or 200 m) for adding street detail from the asset library. Choose the square on the map. The palette on the left sets the brush (an asset, or a broadleaf or conifer tree); the toolbar on the canvas holds the tools, each with its options in the top bar and its keys in the footer:
+
+| Tool | Key | Use |
+| --- | --- | --- |
+| Select and move | V | Click, Shift-click, Ctrl-click or drag a box to select objects and trees, survey trees included. Drag to move; drag the orange ring to turn the selection round its centre (15° steps, Alt for free); Q/E turn 15° (Shift 90°); arrows nudge 10 cm (Shift 1 m); Del, Ctrl+D, Ctrl+A. |
+| Place | A | Click the ground or a wall; Alt-click an object to pick up its asset. |
+| Path | P | Click points; double-click or Enter places a row at the set spacing, facing along or across the path, with a sideways offset. |
+| Scatter | B | Drag to scatter the brush within a radius, keeping a gap from its own kind. |
+| Measure | I | Click points for lengths on plan, height changes and slopes. |
+| Orbit, Pan | R, H | Navigation; in any tool Space or the middle button orbits, right-drag pans, the wheel zooms to the pointer. F frames the selection, T looks straight down, Home resets. |
+
+Ground assets stand on the highest ground or road surface and never inside a building footprint; wall assets sit flat against the wall facing out. Ctrl+Z/Ctrl+Y undo and redo, Ctrl+S saves to `data/source/placements/<x>_<z>_<size>.json`. A changed survey tree is saved as removed at its old position and added anew, matched within 0.75 m so the edit survives a data rebuild that nudges trees. Drafts appear under **Drafts to review** for previewing in place; **Approve** moves a draft into the library, **Reject** writes notes for the agent. Placements and tree edits are not drawn in the atlas yet. Generating assets is described in [ASSETS.md](ASSETS.md); `npm run assets:check` validates the library, drafts and saved placements.
+
 ## What lives where
 
 | Location | Responsibility |

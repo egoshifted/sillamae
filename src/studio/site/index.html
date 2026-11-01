@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas site editor</title><link rel="icon" href="data:,"></head>
+<body class="site">
+<header><strong>Site editor</strong><span id="where">Choose a square</span><a href="../">Building studio</a><a id="atlas" href="/">Open atlas</a><a href="../ASSETS.md">Asset guide</a></header>
+<nav aria-label="Site controls">
+  <button id="choose">Choose square…</button>
+  <button id="undo" title="Ctrl+Z">Undo</button><button id="redo" title="Ctrl+Y">Redo</button>
+  <span class="divider"></span>
+  <div id="options" aria-label="Tool options"></div>
+  <span class="spacer"></span>
+  <label><input id="grid" type="checkbox">Grid 0.25 m (G)</label>
+  <label>Light <select id="light"><option value="morning">Early morning</option><option value="midday">Midday</option><option value="late">Late afternoon</option></select></label>
+  <label><input id="shadows" type="checkbox" checked>Shadows</label><label><input id="trees" type="checkbox" checked>Trees</label>
+  <button id="save" title="Ctrl+S">Save</button>
+</nav>
+<div class="workspace">
+  <aside aria-label="Asset library">
+    <input id="filter" type="search" placeholder="Find an asset">
+    <div id="palette"></div>
+    <section id="selection" hidden></section>
+  </aside>
+  <main aria-label="Square">
+    <div id="tools" role="toolbar" aria-label="Tools" aria-orientation="vertical"></div>
+    <div id="views" role="toolbar" aria-label="Views"></div>
+    <div id="labels"></div>
+    <div id="marquee" hidden></div>
+    <p id="error" role="alert"></p>
+  </main>
+</div>
+<footer><output id="status">Loading…</output><output id="cursor"></output><span id="hint"></span></footer>
+<dialog id="map">
+  <form method="dialog">
+    <p><strong>Choose a square</strong> Click the map to centre it; scroll to zoom, drag to pan. Squares already worked on are outlined.</p>
+    <canvas id="chart" width="900" height="600"></canvas>
+    <p><label>Size <select id="size"><option value="50">50 m</option><option value="100" selected>100 m</option><option value="200">200 m</option></select></label>
+    <output id="picked"></output><button id="open" value="open">Open square</button><button value="cancel">Cancel</button></p>
+  </form>
+</dialog>
+<script type="module" src="./editor.ts"></script>
+</body></html>

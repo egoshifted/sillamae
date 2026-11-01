@@ -85,6 +85,59 @@ export interface BuildingOverride {
   seatsOnGround?: boolean;
 }
 
+export type Attachment = 'ground' | 'wall';
+export type AssetDetail = 'near' | 'far';
+
+// A reusable object placed around the town: bins, benches, lamps. The id is
+// permanent and never reused; placements refer to it.
+export interface AssetDefinition {
+  id: string;
+  name: string;
+  category: string;
+  tags: string[];
+  attach: Attachment | 'either';
+  size: [number, number, number]; // metres along x, y, z, as built
+  triangles: number; // budget for the near detail
+  variants: {id: string; label: string}[]; // the first is the default
+  retired?: boolean; // hidden from the palette, still drawn where placed
+  // The origin is the contact point: the centre of the base on the ground, the
+  // middle of the back against a wall. +z faces away from the wall.
+  build(options: {variant: string; detail: AssetDetail}): THREE.Object3D;
+}
+
+export interface Placement {
+  id: string;
+  asset: string;
+  variant?: string;
+  p: [number, number, number]; // source x, z and absolute height of the contact point
+  heading: number; // radians about the vertical; 0 faces +z
+  attach: Attachment;
+  building?: string; // the wall's building, for wall placements
+}
+
+// A tree added in the studio; moving a survey tree removes it and adds one of these.
+export interface SiteTree {
+  id: string;
+  p: Point2; // source x/z
+  z: number; // absolute ground height
+  h: number;
+  r: number;
+  type: string; // as Tree.type
+}
+
+// One studio square and what was placed in it.
+export interface PlacementSite {
+  version: 1;
+  id: string;
+  square: {centre: Point2; size: number}; // source x/z, metres
+  placements: Placement[];
+  // Survey trees are named by position: the data build moves some by up to a few
+  // metres, so an edit matches the nearest survey tree within TREE_MATCH.
+  trees?: {remove: Point2[]; add: SiteTree[]};
+}
+
+export const TREE_MATCH = .75; // metres
+
 export interface CityDefinition {
   frame: Omit<WorldFrame, 'base'>;
   defaultFocus: string;
