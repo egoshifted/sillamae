@@ -108,6 +108,8 @@ Kesk 1 examples below explain why a check exists. Their dimensions, edge numbers
 
 ### D09 Foundations aprons and ground datum
 
+- Always build the model on a flat foundation. Its top is the model's datum, taken from the atlas ground at the entrances with `entranceDatum` (`src/studio/assembly/seat.ts`), never a fixed study height; its bottom reaches below the lowest ground around the footprint. The foundation absorbs the terrain: it shows more on the downhill side. Do not flatten or grade the ground to the model; only the model's own features (landings, steps, lightwells, sunken entrances) may shape the ground beside it. Mark the override `seatsOnGround`.
+- A model written against a fixed study datum can be seated without rewriting it: build it against the ground lowered by the difference (`seatModel`) and raise its root by the same amount, so every ground-relative part still meets the real ground.
 - Distinguish wall foundation, below-ground continuation, thin surface apron and a raised structural footing. Kesk 1's initial raised apron blocks were wrong; the reference showed a thin near-flush strip.
 - Sample the actual rendered terrain triangles at front/back boundaries and both ends, not just a coarse height at the centre. Keep top faces correctly wound and check all visible side faces.
 - Carry full-height wall projections to actual ground even when ground lies below local zero. Check the projection's face and both returns; a base wall behind it does not close its own exposed foot.
