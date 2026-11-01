@@ -4,6 +4,7 @@ import {pathToFileURL} from 'node:url';
 import * as THREE from 'three';
 import {sillamae} from '../../city/sillamae/index.ts';
 import type {WorldData} from '../../engine/data.ts';
+import {gridSize} from '../../engine/terrain-edit.ts';
 import type {AssetDefinition, AssetDetail, PlacementSite, Point2} from '../../engine/types.ts';
 import {option, repo} from './local.ts';
 
@@ -140,6 +141,11 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     if (!(p.p?.length === 3 && p.p.every(Number.isFinite) && Number.isFinite(p.heading))) fail(name, `${p.id} has an invalid position or heading`);
     if (p.attach === 'wall' && !p.building) fail(name, `${p.id} is on a wall but names no building`);
     else if (p.p?.every(Number.isFinite)) againstTown(name, p.id, p.attach, p.p[0], p.p[1], p.building);
+  }
+  if (site.terrain) {
+    const d = site.terrain.deltas, n = gridSize(site.square.size);
+    if (!Array.isArray(d) || d.length !== n * n) fail(name, `terrain needs ${n * n} heights for a ${site.square.size} m square, has ${Array.isArray(d) ? d.length : 'none'}`);
+    else if (!d.every(v => Number.isInteger(v) && Math.abs(v) <= 1000)) fail(name, 'terrain heights must be whole centimetres within 10 m');
   }
   const point = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
   for (const r of site.trees?.remove ?? []) if (!point(r)) fail(name, `removed tree ${JSON.stringify(r)} is not an x/z pair`);

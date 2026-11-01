@@ -55,6 +55,22 @@ export class HeightField {
     }
   }
 
+  #base: Float32Array | null = null;
+  // Each sample becomes its loaded height plus shift(x, z), within the box if one is given.
+  reshape(shift: (x: number, z: number) => number, box?: {minX: number; maxX: number; minZ: number; maxZ: number}) {
+    const base = this.#base ??= this.heights.slice();
+    const i0 = box ? Math.max(0, Math.floor((box.minX - this.minX) / STEP)) : 0, i1 = box ? Math.min(this.nx - 1, Math.ceil((box.maxX - this.minX) / STEP)) : this.nx - 1;
+    const j0 = box ? Math.max(0, Math.floor((box.minZ - this.minZ) / STEP)) : 0, j1 = box ? Math.min(this.nz - 1, Math.ceil((box.maxZ - this.minZ) / STEP)) : this.nz - 1;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * this.nx + i;
+      if (base[k] === -Infinity) continue;
+      const h = base[k] + shift(this.minX + i * STEP, this.minZ + j * STEP);
+      this.heights[k] = h;
+      if (h < this.low) this.low = h;
+      if (h > this.high) this.high = h;
+    }
+  }
+
   // -Infinity where no ground was found nearby.
   at(x: number, z: number) {
     const fx = (x - this.minX) / STEP, fz = (z - this.minZ) / STEP, i = Math.floor(fx), j = Math.floor(fz);
@@ -95,7 +111,8 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
   const inside = (x: number, z: number) => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
   const scene = new THREE.Scene(), heights = new HeightField(box.minX, box.minZ, half * 2);
   const buildings = Math.max(...world.buildings.map(b => b.pick)) + 1;
-  const layer = addSurveyLayer(scene, survey.buckets, surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildings, world.base));
+  const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildings, world.base);
+  const layer = addSurveyLayer(scene, survey.buckets, materials);
   const walls: number[] = [], wallPicks: number[] = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
 
   // Survey cells, and so tile bounds, are in the local frame.
@@ -121,7 +138,7 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
 
   progress('Roads, trees and buildings…');
   const roads = world.roads.filter(r => r.ring.some(([x, , z]) => inside(x, z)));
-  addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy());
+  const roadGroup = addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy());
   for (const r of roads) for (const t of triangulate(r.ring)) {
     const [p, q, s] = t.map(k => r.ring[k]);
     heights.add({x: p[0], y: p[1], z: p[2]}, {x: q[0], y: q[1], z: q[2]}, {x: s[0], y: s[1], z: s[2]});
@@ -155,5 +172,17 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
     for (let i = 0, j = g.length - 1; i < g.length; j = i++) if ((g[i][1] > z) !== (g[j][1] > z) && x < (g[j][0] - g[i][0]) * (z - g[i][1]) / (g[j][1] - g[i][1]) + g[i][0]) inside = !inside;
     return inside;
   });
-  return {scene, heights, wallMesh, refined, trees, byPick, box, frame, indoors};
+  // What the terrain brush reshapes while previewing: survey ground and buildings
+  // (water keeps its level), roads, and the picking walls. Buildings move whole, by
+  // the change at their centre, as the data build seats them.
+  const shapeable: {mesh: THREE.Mesh; picks?: THREE.BufferAttribute}[] = [];
+  scene.traverse(o => {
+    if (!(o instanceof THREE.Mesh) || !o.parent?.visible) return;
+    const g = o.geometry as THREE.BufferGeometry;
+    if (g.attributes.layer && g.attributes.position && o.material !== materials.near.water) shapeable.push({mesh: o, picks: g.attributes.building as THREE.BufferAttribute});
+  });
+  roadGroup.traverse(o => { if (o instanceof THREE.Mesh) shapeable.push({mesh: o}); });
+  shapeable.push({mesh: wallMesh, picks: wallGeometry.attributes.pick as THREE.BufferAttribute});
+  const centres = new Map(world.buildings.map(b => [b.pick, [b.c[0] - ox, b.c[1] - oz] as Point2]));
+  return {scene, heights, wallMesh, refined, trees, byPick, box, frame, indoors, shapeable, centres};
 }

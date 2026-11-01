@@ -135,6 +135,9 @@ export interface PlacementSite {
   // Survey trees are named by position: the data build moves some by up to a few
   // metres, so an edit matches the nearest survey tree within TREE_MATCH.
   trees?: {remove: Point2[]; add: SiteTree[]};
+  // Change to the terrain model over the square, centimetres on a TERRAIN_STEP grid
+  // from its low corner, rows along z; see terrain-edit.ts.
+  terrain?: {deltas: number[]};
 }
 
 export const TREE_MATCH = .75; // metres

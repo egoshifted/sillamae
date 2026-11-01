@@ -9,6 +9,7 @@ import {loadDtm} from './dtm.ts';
 import {encodeBucket} from './encode.ts';
 import {georeference, type OsmExtract} from './geo.ts';
 import {gradeRoads} from './grade.ts';
+import {withTerrainEdits} from '../src/engine/terrain-edit.ts';
 import {blendSites, gridGround, seatBuildings} from './ground.ts';
 import {buildNav} from './nav.ts';
 import {applyTreeEdits, collectPlacements, loadSites} from './placements.ts';
@@ -32,9 +33,11 @@ const vertices = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4
 const osm: OsmExtract = JSON.parse(fs.readFileSync(path.join(SOURCE, 'osm.json'), 'utf8'));
 const georef = georeference(osm, data, sillamae), geo = georef.geo;
 const {shapes, centrelines, report: roadReport} = buildRoads(osm, data, sillamae, georef, vertices);
-const heightAt = blendSites(gradeRoads(loadDtm(geo.toGrid), centrelines), vertices, data, sillamae);
+const sites = loadSites(path.join(SOURCE, 'placements'));
+// Studio terrain edits go in before the roads are graded, so roads follow them too.
+const heightAt = blendSites(gradeRoads(withTerrainEdits(loadDtm(geo.toGrid), sites), centrelines), vertices, data, sillamae);
 const treeReport = moveTreesOffRoads(vertices, data), pathTreeReport = moveTreesOffPaths(shapes, data, sillamae);
-const sites = loadSites(path.join(SOURCE, 'placements')), editReport = applyTreeEdits(data, sites);
+const editReport = applyTreeEdits(data, sites);
 const {vertices: cleared, report: paintReport} = clearFootwayPaint(vertices, data, sillamae);
 const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, heightAt, data, sillamae);
 const {vertices: seated, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
@@ -73,6 +76,9 @@ fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
 fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
 fs.writeFileSync(path.join(OUT, 'nav.json'), JSON.stringify(nav));
 fs.writeFileSync(path.join(OUT, 'placements.json'), JSON.stringify(placements));
+// The edits this data was built with, so the studio previews only what changed since.
+const terrain = Object.fromEntries(sites.filter(s => s.terrain).map(s => [s.id, s.terrain!.deltas]));
+fs.writeFileSync(path.join(OUT, 'terrain.json'), JSON.stringify(terrain));
 
 const mb = (n: number) => (n / 1048576).toFixed(1) + ' MB';
 console.log(`georeference RMS ${geo.rms.toFixed(2)} m; ${report}`);
@@ -84,7 +90,7 @@ console.log(groundReport);
 console.log(seatReport);
 console.log(treeReport);
 console.log(pathTreeReport);
-console.log(editReport);
+console.log(editReport + `; terrain edited in ${Object.keys(terrain).length} squares`);
 console.log(placementReport);
 console.log(`ground on the 1 m terrain model: ${draped!.before} -> ${draped!.after} triangles; ${settled} buildings lowered onto it`);
 console.log(`${buckets.length} buckets in ${tiles.size} tiles, ${mb(bytes)} gzip; world.json ${mb(fs.statSync(path.join(OUT, 'world.json')).size)}; ${((performance.now() - started) / 1000).toFixed(1)} s`);

@@ -6,6 +6,7 @@ import type {SurveyManifest, WorldData} from '../../engine/data.ts';
 import type {AssetDefinition, Placement, PlacementSite, Point2, SiteTree} from '../../engine/types.ts';
 import {city} from '../project.ts';
 import {Measure} from './measure.ts';
+import {TerrainEdit, type TerrainMode} from './terrain.ts';
 import {loadSquare, type Square} from './scene.ts';
 import {BROADLEAF, CONIFER, pickTree, TreeLayer, treeGhost, treeItems, type TreeItem} from './trees.ts';
 import '../style.css';
@@ -38,21 +39,25 @@ controls.addEventListener('change', () => render());
 
 type Loaded = Awaited<ReturnType<typeof loadSquare>>;
 type Brush = {kind: 'asset'; asset: AssetDefinition; variant: string} | {kind: 'tree'; type: string; h: number; r: number};
-type Tool = 'select' | 'place' | 'path' | 'scatter' | 'measure' | 'orbit' | 'pan';
+type Tool = 'select' | 'place' | 'path' | 'scatter' | 'terrain' | 'measure' | 'orbit' | 'pan';
 type Gesture =
   | {kind: 'move'; before: string; anchor: THREE.Vector3; start: Map<string, Point2>; moved: boolean; wall?: string}
   | {kind: 'rotate'; before: string; centre: THREE.Vector3; from: number; start: Map<string, {p: Point2; heading: number}>; moved: boolean}
   | {kind: 'marquee'; x: number; y: number; additive: boolean}
   | {kind: 'scatter'; before: string; count: number}
+  | {kind: 'terrain'; before: string; last: THREE.Vector3; target: number | null}
   | {kind: 'click'};
 
 let loaded: Loaded | undefined, site: PlacementSite | undefined, sun: THREE.DirectionalLight | undefined, trees: TreeLayer | undefined, measure: Measure | undefined;
+// The square's terrain edit, and the one the loaded data was built with: the
+// preview shows only the difference.
+let terrain: TerrainEdit | undefined, built: TerrainEdit | undefined;
 let tool: Tool = 'select', brush: Brush | null = null, gesture: Gesture | null = null, dirty = false, treesChanged = false, space = false;
 let selection = new Set<string>(); // 'p:<placement id>', or a tree key from trees.ts
 const undo: string[] = [], redo: string[] = [], path: THREE.Vector3[] = [];
 const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), highlights = new THREE.Group(), preview = new THREE.Group();
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
-const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true};
+const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true, shape: 'raise' as TerrainMode, lift: .2, blend: .4};
 
 // Flat on the ground round the selection; dragging it turns the selection, as in The Sims.
 const ring = new THREE.Mesh(new THREE.RingGeometry(.86, 1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#f0a400', transparent: true, opacity: .85, depthTest: false, side: THREE.DoubleSide}));
@@ -132,7 +137,12 @@ function itemAt(clientX: number, clientY: number) {
 // ---- Items -----------------------------------------------------------------------
 
 const edits = () => site!.trees ??= {remove: [], add: []};
-const treeList = () => loaded && site ? treeItems(loaded.trees, edits()) : [];
+// Survey trees stand where the loaded data put them, plus any terrain change since.
+const treeList = () => {
+  if (!loaded || !site) return [];
+  const [ox, oz] = loaded.frame.origin;
+  return treeItems(loaded.trees, edits()).map(i => i.added ? i : {...i, tree: {...i.tree, z: i.tree.z + shift(i.tree.p[0] - ox, i.tree.p[1] - oz)}});
+};
 const placementOf = (key: string) => key.startsWith('p:') ? site!.placements.find(p => p.id === key.slice(2)) : undefined;
 const treeOf = (key: string, list = treeList()) => list.find(i => i.key === key);
 const round = (v: number, digits = 3) => Math.round(v * 10 ** digits) / 10 ** digits;
@@ -261,7 +271,7 @@ function placeRing(list: TreeItem[]) {
   ring.rotation.y = selection.size === 1 ? headingOf([...selection][0]) : 0;
 }
 
-const snapshot = () => JSON.stringify({placements: site!.placements, trees: edits()});
+const snapshot = () => JSON.stringify({placements: site!.placements, trees: edits(), terrain: terrain?.saved() ?? null});
 function commit(before: string) {
   if (before === snapshot()) return sync();
   undo.push(before);
@@ -281,9 +291,60 @@ function step(from: string[], to: string[]) {
   const restored = JSON.parse(state);
   site!.placements = restored.placements;
   site!.trees = restored.trees;
+  if (terrain && JSON.stringify(terrain.saved()) !== JSON.stringify(restored.terrain)) { terrain.load(restored.terrain); reshape(); settle(); }
   treesChanged = true;
   dirty = true;
   sync();
+}
+
+// ---- Terrain ---------------------------------------------------------------------
+
+// Metres the shown ground must move at local x/z: the edit, less what the loaded data already holds.
+const shift = (x: number, z: number) => (terrain?.at(x, z) ?? 0) - (built?.at(x, z) ?? 0);
+const baseY = new Map<THREE.BufferGeometry, Float32Array>(), reshaped = new Set<THREE.BufferGeometry>();
+// Moves the preview: ground and roads by the shift beneath each point, buildings
+// whole by the shift at their centre, and the height lookup used for snapping.
+function reshape(box?: {minX: number; maxX: number; minZ: number; maxZ: number}) {
+  const {shapeable, centres, heights} = loaded!, reach = box ?? {minX: -Infinity, maxX: Infinity, minZ: -Infinity, maxZ: Infinity};
+  const within = (x: number, z: number) => x >= reach.minX && x <= reach.maxX && z >= reach.minZ && z <= reach.maxZ;
+  for (const {mesh, picks} of shapeable) {
+    const g = mesh.geometry as THREE.BufferGeometry, position = g.attributes.position as THREE.BufferAttribute;
+    if (!position) continue;
+    let base = baseY.get(g);
+    if (!base) baseY.set(g, base = (position.array as Float32Array).slice());
+    const out = position.array as Float32Array;
+    let touched = false;
+    for (let v = 0; v < position.count; v++) {
+      const pick = picks ? picks.getX(v) : 0, at = pick ? centres.get(pick) : undefined;
+      const x = at ? at[0] : base[v * 3], z = at ? at[1] : base[v * 3 + 2];
+      if (!within(x, z)) continue;
+      out[v * 3 + 1] = base[v * 3 + 1] + shift(x, z);
+      touched = true;
+    }
+    if (touched) { position.needsUpdate = true; reshaped.add(g); }
+  }
+  heights.reshape(shift, box);
+  render();
+}
+// After a stroke: lighting normals and bounds once, not on every touch of the brush.
+function settle() {
+  for (const g of reshaped) { g.computeVertexNormals(); g.computeBoundingSphere(); g.computeBoundingBox(); }
+  reshaped.clear();
+  treesChanged = true;
+}
+// One touch of the terrain brush; objects and added trees on the ground ride with it.
+function dab(at: THREE.Vector3, target: number | null) {
+  if (!terrain || !loaded) return;
+  const [ox, oz] = loaded.frame.origin, r = options.radius, near = (x: number, z: number) => Math.hypot(x - at.x, z - at.z) < r;
+  const riders = [
+    ...site!.placements.filter(p => p.attach === 'ground' && near(p.p[0] - ox, p.p[1] - oz)).map(p => ({get: () => p.p[2], set: (v: number) => { p.p[2] = v; }, x: p.p[0] - ox, z: p.p[1] - oz})),
+    ...edits().add.filter(t => near(t.p[0] - ox, t.p[1] - oz)).map(t => ({get: () => t.z, set: (v: number) => { t.z = v; treesChanged = true; }, x: t.p[0] - ox, z: t.p[1] - oz})),
+  ].map(item => ({...item, before: shift(item.x, item.z)}));
+  const strength = options.shape === 'raise' || options.shape === 'lower' ? options.lift : options.blend;
+  const box = terrain.dab(options.shape, at.x, at.z, r, strength, (x, z) => loaded!.heights.at(x, z), target);
+  for (const item of riders) item.set(round(item.get() + shift(item.x, item.z) - item.before));
+  reshape(box);
+  sync(true);
 }
 
 // ---- Adding ----------------------------------------------------------------------
@@ -403,7 +464,7 @@ function scatter(centre: THREE.Vector3) {
   return added;
 }
 function showBrushRing(at: THREE.Vector3 | null) {
-  brushRing.visible = tool === 'scatter' && !!at;
+  brushRing.visible = (tool === 'scatter' || tool === 'terrain') && !!at;
   if (!at) return;
   const points: THREE.Vector3[] = [];
   for (let k = 0; k < 48; k++) {
@@ -492,6 +553,13 @@ renderer.domElement.addEventListener('pointerdown', event => {
   if (event.button !== 0 || !loaded || !site || space || tool === 'orbit' || tool === 'pan') return;
   Object.assign(pointer, {downX: event.clientX, downY: event.clientY, down: true});
   if (event.altKey && ['place', 'path', 'scatter'].includes(tool)) { eyedrop(event.clientX, event.clientY); pointer.down = false; return; }
+  if (tool === 'terrain') {
+    const at = ground(event.clientX, event.clientY);
+    if (!at) { pointer.down = false; return; }
+    gesture = {kind: 'terrain', before: snapshot(), last: at, target: options.shape === 'flatten' ? at.y : null};
+    dab(at, gesture.target);
+    return;
+  }
   if (tool === 'scatter') {
     const at = ground(event.clientX, event.clientY);
     gesture = {kind: 'scatter', before: snapshot(), count: at ? scatter(at) : 0};
@@ -526,7 +594,7 @@ renderer.domElement.addEventListener('pointermove', event => {
   element('cursor').textContent = at ? `x ${(at.x + ox).toFixed(2)} · z ${(at.z + oz).toFixed(2)} · ground ${(at.y + loaded.frame.base).toFixed(2)} m` : '';
   if (tool === 'measure') { measure!.hover(at); render(); }
   if (tool === 'path') { pointer.last = at; updatePreview(); }
-  if (tool === 'scatter') { showBrushRing(at); render(); }
+  if (tool === 'scatter' || tool === 'terrain') { showBrushRing(at); render(); }
   if (tool === 'place' && ghost && brush) {
     const spot = spotFor(brush, event.clientX, event.clientY);
     ghost.visible = !!spot;
@@ -536,6 +604,8 @@ renderer.domElement.addEventListener('pointermove', event => {
   if (!gesture || !pointer.down) return;
   const moved = Math.hypot(event.clientX - pointer.downX, event.clientY - pointer.downY) >= CLICK;
   if (gesture.kind === 'scatter' && at) { gesture.count += scatter(at); sync(true); }
+  // Touches are spaced a third of the brush apart, so a stroke's effect does not depend on the pointer's speed.
+  else if (gesture.kind === 'terrain' && at && Math.hypot(at.x - gesture.last.x, at.z - gesture.last.z) >= options.radius / 3) { gesture.last = at; dab(at, gesture.target); }
   else if (gesture.kind === 'marquee' && moved) {
     const rect = main.getBoundingClientRect();
     Object.assign(marquee.style, {left: Math.min(gesture.x, event.clientX) - rect.left + 'px', top: Math.min(gesture.y, event.clientY) - rect.top + 'px', width: Math.abs(event.clientX - gesture.x) + 'px', height: Math.abs(event.clientY - gesture.y) + 'px'});
@@ -577,7 +647,8 @@ addEventListener('pointerup', event => {
   const g = gesture, click = Math.hypot(event.clientX - pointer.downX, event.clientY - pointer.downY) < CLICK, onCanvas = event.target === renderer.domElement;
   gesture = null;
   if (!g || !site) return;
-  if (g.kind === 'move' || g.kind === 'rotate' || g.kind === 'scatter') return commit(g.before);
+  if (g.kind === 'terrain') settle();
+  if (g.kind === 'move' || g.kind === 'rotate' || g.kind === 'scatter' || g.kind === 'terrain') return commit(g.before);
   if (g.kind === 'marquee') {
     marquee.hidden = true;
     if (!g.additive) selection.clear();
@@ -617,7 +688,7 @@ renderer.domElement.addEventListener('contextmenu', event => {
 
 // ---- Keys ------------------------------------------------------------------------
 
-const TOOL_KEYS: Record<string, Tool> = {v: 'select', a: 'place', p: 'path', b: 'scatter', i: 'measure', r: 'orbit', h: 'pan'};
+const TOOL_KEYS: Record<string, Tool> = {v: 'select', a: 'place', p: 'path', b: 'scatter', u: 'terrain', i: 'measure', r: 'orbit', h: 'pan'};
 addEventListener('keydown', event => {
   if (!site || (event.target as HTMLElement).closest('input, select, textarea, dialog')) return;
   const key = event.key.toLowerCase(), ctrl = event.ctrlKey || event.metaKey, by = event.shiftKey ? 10 : 1;
@@ -659,6 +730,7 @@ const ICONS: Record<string, string> = {
   place: '<path d="M10 4v12M4 10h12"/><circle cx="10" cy="10" r="7.5"/>',
   path: '<path d="M3 16c4-1 4-11 8-11s3 9 6 9"/><circle cx="3" cy="16" r="1.4"/><circle cx="11" cy="5" r="1.4"/><circle cx="17" cy="14" r="1.4"/>',
   scatter: '<circle cx="10" cy="10" r="7.5" stroke-dasharray="2 2"/><circle cx="7" cy="8" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="9" cy="13" r="1"/><circle cx="13.5" cy="12" r="1"/>',
+  terrain: '<path d="M2 16l5-8 3 4 2-3 6 7z"/><path d="M14 3v4M12 5l2-2 2 2"/>',
   measure: '<path d="M2.5 13.5l11-11 4 4-11 11z"/><path d="M6 10l1.5 1.5M8.5 7.5l1.5 1.5M11 5l1.5 1.5"/>',
   orbit: '<ellipse cx="10" cy="10" rx="8" ry="3.5"/><path d="M15 4.5l2.5 2-3 1"/><circle cx="10" cy="10" r="1.6"/>',
   pan: '<path d="M10 2v16M2 10h16M10 2l-2 2M10 2l2 2M10 18l-2-2M10 18l2-2M2 10l2-2M2 10l2 2M18 10l-2-2M18 10l-2 2"/>',
@@ -672,6 +744,7 @@ const TOOLS: [Tool, string, string][] = [
   ['place', 'Place (A)', 'Pick an asset or tree on the left, then click the ground or a wall · Q/E turn before placing · Alt-click an object to pick up its asset · right-click or Esc stops'],
   ['path', 'Draw a row along a path (P)', 'Click points along the path · double-click or Enter places the row · Backspace removes the last point · Esc or right-click clears'],
   ['scatter', 'Scatter brush (B)', 'Drag over the ground to scatter the brush; nothing lands closer than the gap to its own kind · Alt-click picks up an object'],
+  ['terrain', 'Shape the ground (U)', 'Drag over the ground to raise, lower, flatten (to the height where the stroke began), smooth, or reset it to the survey · objects and trees on the ground ride with it · edits fade out 5 m inside the square · keep away from refined buildings, whose models do not follow'],
   ['measure', 'Measure (I)', 'Click points along the ground for lengths on plan, height changes and slope · double-click or Enter ends · Esc clears'],
   ['orbit', 'Orbit view (R)', 'Drag to orbit · in any tool, hold Space or drag with the middle button to orbit, right-drag to pan, scroll to zoom'],
   ['pan', 'Pan view (H)', 'Drag to pan · scroll zooms toward the pointer'],
@@ -727,6 +800,19 @@ function showOptions() {
     const spin = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.spin});
     spin.onchange = () => { options.spin = spin.checked; };
     parts.push(number('Radius m', 'radius', .5, .5), number('Gap m', 'gap', .25, .1), labelled('Random turn', spin));
+  }
+  else if (tool === 'terrain') {
+    const shape = document.createElement('select');
+    for (const [v, t] of [['raise', 'Raise'], ['lower', 'Lower'], ['flatten', 'Flatten'], ['smooth', 'Smooth'], ['reset', 'Reset to survey']]) shape.add(new Option(t, v));
+    shape.value = options.shape;
+    shape.onchange = () => { options.shape = shape.value as TerrainMode; showOptions(); };
+    const amount = (label: string, key: 'lift' | 'blend', step: number, min: number, max: number) => {
+      const input = Object.assign(document.createElement('input'), {type: 'number', step: String(step), min: String(min), max: String(max), value: String(options[key])});
+      input.onchange = () => { options[key] = Math.min(max, Math.max(min, Number(input.value) || min)); };
+      return labelled(label, input);
+    };
+    parts.push(labelled('Brush', shape), number('Radius m', 'radius', .5, .5),
+      options.shape === 'raise' || options.shape === 'lower' ? amount('Per touch m', 'lift', .05, .01, 2) : amount('Strength 0–1', 'blend', .05, .05, 1));
   }
   else if (tool === 'select') {
     const inPlace = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.inPlace});
@@ -880,6 +966,8 @@ async function save() {
   if (!site) return;
   const kept: PlacementSite = {...site, placements: site.placements.filter(p => !drafts.some(d => d.id === p.asset)), trees: edits()};
   if (!kept.trees!.add.length && !kept.trees!.remove.length) delete kept.trees;
+  const deltas = terrain?.saved();
+  if (deltas) kept.terrain = {deltas}; else delete kept.terrain;
   const response = await fetch('/__studio/sites/' + site.id, {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(kept)});
   if (!response.ok) throw Error('Save failed: ' + (await response.json()).error);
   dirty = kept.placements.length !== site.placements.length;
@@ -1008,6 +1096,11 @@ async function open(square: Square) {
   // The built data holds this square's added trees from the last data build; they
   // are drawn from the edits instead. Trees can only be added inside their square.
   loaded.trees = loaded.trees.filter(t => !t.added || !inSquare(t.p[0] - ox, t.p[1] - oz));
+  const low: Point2 = [square.centre[0] - ox - square.size / 2, square.centre[1] - oz - square.size / 2];
+  const baked: Record<string, number[]> = await fetch('/data/terrain.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+  built = new TerrainEdit(...low, square.size, baked[id]);
+  terrain = new TerrainEdit(...low, square.size, site.terrain?.deltas);
+  if (JSON.stringify(terrain.saved()) !== JSON.stringify(built.saved())) { reshape(); settle(); }
   trees = new TreeLayer(scene, frame, new THREE.Vector3(square.centre[0] - ox, 0, square.centre[1] - oz));
   treesChanged = true;
   measure = new Measure(scene, element('labels'));
