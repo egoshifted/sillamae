@@ -80,6 +80,9 @@ export interface BuildingOverride {
   entrances?(building: Building): Point2[];
   view?: {offset: [number, number, number]; span: number};
   detailShadows?: boolean;
+  // The model takes its height from the site ground it is given, so that ground
+  // need not be eased toward a surveyed height.
+  seatsOnGround?: boolean;
 }
 
 export interface CityDefinition {
