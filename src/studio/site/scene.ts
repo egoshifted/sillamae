@@ -137,7 +137,9 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
   layer.setLevel(2);
 
   progress('Roads, trees and buildings…');
-  const roads = world.roads.filter(r => r.ring.some(([x, , z]) => inside(x, z)));
+  // The square's own drawn roads come from the data build too; the editor previews those instead.
+  const id = `${cx}_${cz}_${square.size}`;
+  const roads = world.roads.filter(r => r.studio !== id && r.ring.some(([x, , z]) => inside(x, z)));
   const roadGroup = addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy());
   for (const r of roads) for (const t of triangulate(r.ring)) {
     const [p, q, s] = t.map(k => r.ring[k]);

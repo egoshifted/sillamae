@@ -158,6 +158,11 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     ids.add(l.id);
     if (!['fence', 'hedge', 'wall', 'kerb'].includes(l.kind) || !Array.isArray(l.points) || l.points.length < 2 || !l.points.every(pair) || (l.height !== undefined && !(l.height > 0 && l.height <= 4))) fail(name, `line ${l.id} needs a kind, at least two x/z points and a height up to 4 m`);
   }
+  for (const r of site.roads ?? []) {
+    if (ids.has(r.id)) fail(name, `id ${r.id} used twice`);
+    ids.add(r.id);
+    if (!['main', 'residential', 'service'].includes(r.type) || !Array.isArray(r.points) || r.points.length < 2 || !r.points.every(pair)) fail(name, `road ${r.id} needs a type and at least two x/z points`);
+  }
   const refined = new Set(sillamae.overrides.map(o => o.id));
   for (const id of site.hidden ?? []) {
     if (refined.has(id)) fail(name, `building ${id} is a refined model and cannot be hidden`);

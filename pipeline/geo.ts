@@ -24,6 +24,15 @@ export function lest97(lon: number, lat: number): [number, number] {
   return [FALSE_EAST + rho * Math.sin(theta), FALSE_NORTH + RHO0 - rho * Math.cos(theta)];
 }
 
+// The inverse, for streets drawn in the studio: latitude by fixed-point iteration (Snyder 7-9).
+export function lest97Inverse(east: number, north: number): [number, number] {
+  const x = east - FALSE_EAST, y = RHO0 - (north - FALSE_NORTH), rho = Math.sign(N) * Math.hypot(x, y);
+  const tt = (rho / AF) ** (1 / N), theta = Math.atan2(x, y);
+  let lat = Math.PI / 2 - 2 * Math.atan(tt);
+  for (let i = 0; i < 10; i++) lat = Math.PI / 2 - 2 * Math.atan(tt * ((1 - E * Math.sin(lat)) / (1 + E * Math.sin(lat))) ** (E / 2));
+  return [(theta / N + LON0) / RAD, lat / RAD];
+}
+
 export function fitAffine(a: [number, number][], b: [number, number][]) {
   const n = a.length, mean = (p: [number, number][], k: number) => p.reduce((s, q) => s + q[k], 0) / n;
   const ax = mean(a, 0), az = mean(a, 1), bx = mean(b, 0), bz = mean(b, 1);
@@ -58,6 +67,7 @@ export function georeference(osm: OsmExtract, scene: SceneData, city: CityDefini
   const round = (v: number) => Math.round(v * 100) / 100;
   return {
     local: (lonLat: Point2): Point2 => { const [x, z] = fromGrid.apply(lest97(...lonLat)); return [round(x - ox), round(z - oz)]; },
+    lonLat: (source: Point2): Point2 => lest97Inverse(...toGrid.apply(source)),
     geo: {crs: 'EPSG:3301', toGrid: toGrid.matrix.map(v => +v.toPrecision(12)), rms: round(toGrid.rms)},
   };
 }

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type {RoadSurface} from '../../engine/data.ts';
 import {LINE_HEIGHT, lineMeshes, standLine} from '../../engine/lines.ts';
 import {addRoads} from '../../engine/roads.ts';
-import type {Point2, SiteLine, SiteSurface} from '../../engine/types.ts';
+import {FOOTWAY, offsetLine, ROAD_TAGS, ROAD_WIDTH} from '../../engine/streets.ts';
+import type {Point2, SiteLine, SiteRoad, SiteSurface, SurfaceFinish} from '../../engine/types.ts';
 import {usePhysicalDepth} from '../depth.ts';
 
 const CELL = 3; // metres; as the data build, areas are cut into cells so their middles follow the ground
@@ -37,18 +38,47 @@ function densify(ring: Point2[], step = 1) {
   });
 }
 
-// The preview of the square's areas and lines, in the local frame, rebuilt whole after each change.
-export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], origin: Point2, height: (x: number, z: number) => number, anisotropy: number) {
+type Shape = {kind: RoadSurface['kind']; ring: Point2[]; surface?: SurfaceFinish; rise: number};
+const MARK = {dash: 3, gap: 6, width: .12}; // metres, a centre line's dashes
+
+// A drawn road as the data build will roughly make it: a carriageway band, a
+// dashed centre line on two-lane roads, footways beside it. osm2streets shapes
+// the real one, with its junctions, when the data is built.
+export function roadShapes(road: SiteRoad, points: Point2[]): Shape[] {
+  const half = ROAD_WIDTH[road.type] / 2, band = (a: Point2[], b: Point2[]) => [...a, ...[...b].reverse()];
+  const shapes: Shape[] = [{kind: 'carriageway', ring: band(offsetLine(points, half), offsetLine(points, -half)), rise: RISE + .01}];
+  if (road.footways) for (const side of [1, -1]) {
+    const inner = half + FOOTWAY.offset - FOOTWAY.width / 2;
+    shapes.push({kind: 'footway', surface: 'asphalt', ring: band(offsetLine(points, side * inner), offsetLine(points, side * (inner + FOOTWAY.width))), rise: RISE});
+  }
+  if (ROAD_TAGS[road.type].lanes !== '1') {
+    let along = 0;
+    for (let i = 1; i < points.length; i++) {
+      const [ax, az] = points[i - 1], [bx, bz] = points[i], length = Math.hypot(bx - ax, bz - az);
+      for (let s = Math.ceil(along / (MARK.dash + MARK.gap)) * (MARK.dash + MARK.gap) - along; s < length; s += MARK.dash + MARK.gap) {
+        const e = Math.min(length, s + MARK.dash), at = (t: number): Point2 => [ax + (bx - ax) * t / length, az + (bz - az) * t / length];
+        shapes.push({kind: 'marking', ring: band(offsetLine([at(s), at(e)], MARK.width / 2), offsetLine([at(s), at(e)], -MARK.width / 2)), rise: RISE + .03});
+      }
+      along += length;
+    }
+  }
+  return shapes;
+}
+
+// The preview of the square's areas, roads and lines, in the local frame, rebuilt whole after each change.
+export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads: SiteRoad[], origin: Point2, height: (x: number, z: number) => number, anisotropy: number) {
   const [ox, oz] = origin, group = new THREE.Group(), scratch = new THREE.Scene();
   const local = (ring: Point2[]) => ring.map(([x, z]): Point2 => [x - ox, z - oz]);
+  const shapes: Shape[] = [...roads.flatMap(r => roadShapes(r, local(r.points))), ...surfaces.map(s => ({kind: 'footway' as const, surface: s.finish, ring: local(s.ring), rise: RISE + .02}))];
   const laid: RoadSurface[] = [];
-  for (const s of surfaces) {
-    const ring = local(s.ring), xs = ring.map(p => p[0]), zs = ring.map(p => p[1]);
+  const lay = (ring: Point2[], s: Shape) => laid.push({kind: s.kind, lift: 0, ...s.surface && {surface: s.surface}, ring: densify(ring).map(([px, pz]): [number, number, number] => [px, height(px, pz) + s.rise, pz])});
+  for (const s of shapes) {
+    if (s.kind === 'marking') { lay(s.ring, s); continue; }
+    const xs = s.ring.map(p => p[0]), zs = s.ring.map(p => p[1]);
     for (let x = Math.floor(Math.min(...xs) / CELL) * CELL; x < Math.max(...xs); x += CELL)
       for (let z = Math.floor(Math.min(...zs) / CELL) * CELL; z < Math.max(...zs); z += CELL) {
-        const cell = clip(ring, x, z, x + CELL, z + CELL);
-        if (cell.length < 3 || area(cell) < .01) continue;
-        laid.push({kind: 'footway', lift: 0, surface: s.finish, ring: densify(cell).map(([px, pz]): [number, number, number] => [px, height(px, pz) + RISE, pz])});
+        const cell = clip(s.ring, x, z, x + CELL, z + CELL);
+        if (cell.length >= 3 && area(cell) >= .01) lay(cell, s);
       }
   }
   if (laid.length) group.add(addRoads(scratch, laid, anisotropy));

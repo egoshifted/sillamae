@@ -143,6 +143,16 @@ export interface SiteLine {
   height?: number; // metres; each kind has its own default
 }
 
+export type RoadType = 'main' | 'residential' | 'service';
+// A street drawn in the studio. The data build adds it to the OpenStreetMap
+// streets, so it is laid, marked and joined at junctions like them.
+export interface SiteRoad {
+  id: string;
+  type: RoadType;
+  points: Point2[]; // source x/z along its centre
+  footways?: boolean; // a path along each side
+}
+
 // One studio square and what was placed in it.
 export interface PlacementSite {
   version: 1;
@@ -157,6 +167,7 @@ export interface PlacementSite {
   terrain?: {deltas: number[]};
   surfaces?: SiteSurface[];
   lines?: SiteLine[];
+  roads?: SiteRoad[];
   hidden?: string[]; // survey buildings (Building.id) left out of the build: sheds, kiosks, survey blobs
 }
 

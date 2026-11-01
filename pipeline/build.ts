@@ -12,7 +12,7 @@ import {gradeRoads} from './grade.ts';
 import {withTerrainEdits} from '../src/engine/terrain-edit.ts';
 import {blendSites, gridGround, seatBuildings} from './ground.ts';
 import {buildNav} from './nav.ts';
-import {applyTreeEdits, collectPlacements, dropHidden, loadSites, studioLines, studioSurfaces} from './placements.ts';
+import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSites, markStudioRoads, streetLines, studioLines, studioSurfaces} from './placements.ts';
 import {buildRoads, clearFootwayPaint, layRoads, moveTreesOffPaths} from './roads.ts';
 import {buildStairs} from './stairs.ts';
 import {moveTreesOffRoads} from './trees.ts';
@@ -33,8 +33,10 @@ const raw = zlib.gunzipSync(fs.readFileSync(path.join(SOURCE, 'geometry.bin.gz')
 const vertices = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
 const osm: OsmExtract = JSON.parse(fs.readFileSync(path.join(SOURCE, 'osm.json'), 'utf8'));
 const georef = georeference(osm, data, sillamae), geo = georef.geo;
-const {shapes, centrelines, report: roadReport} = buildRoads(osm, data, sillamae, georef, vertices);
 const sites = loadSites(path.join(SOURCE, 'placements'));
+// Everything built from the streets sees the roads drawn in the studio too.
+const {osm: streets, report: studioRoadReport} = addStudioRoads(osm, sites, georef, sillamae);
+const {shapes, centrelines, report: roadReport} = buildRoads(streets, data, sillamae, georef, vertices);
 // Studio terrain edits go in before the roads are graded, so roads follow them too.
 const heightAt = blendSites(gradeRoads(withTerrainEdits(loadDtm(geo.toGrid), sites), centrelines), vertices, data, sillamae);
 const treeReport = moveTreesOffRoads(vertices, data), pathTreeReport = moveTreesOffPaths(shapes, data, sillamae);
@@ -47,10 +49,11 @@ const {buckets, siteGround, settled, draped, patches} = prepareSurvey(seated, da
 // Studio areas are laid on their own and drawn over any footway they overlap.
 const drawn = layRoads(studioSurfaces(sites, sillamae), buckets, sillamae, data.base, patches, heightAt).map(s => ({...s, lift: s.lift + STUDIO_LIFT, ring: s.ring.map(([x, y, z]): [number, number, number] => [x, y + STUDIO_RISE, z])}));
 const roads = [...layRoads(shapes, buckets, sillamae, data.base, patches, heightAt), ...drawn];
+markStudioRoads(roads, sites, sillamae);
 const lines = studioLines(sites, sillamae, heightAt, data.base);
-const {stairs, report: stairReport} = buildStairs(osm, data, sillamae, georef, heightAt);
-const {nav, report} = buildNav(osm, data, sillamae, georef);
-const {zones, report: zoneReport} = buildZones(osm, data, sillamae, georef);
+const {stairs, report: stairReport} = buildStairs(streets, data, sillamae, georef, heightAt);
+const {nav, report} = buildNav(streets, data, sillamae, georef);
+const {zones, report: zoneReport} = buildZones(streets, data, sillamae, georef);
 const {placements, report: placementReport} = collectPlacements(sites, 'src/city/sillamae/assets', heightAt);
 
 // Bucket order is kept: it is the draw order of equal-depth survey meshes.
@@ -82,6 +85,8 @@ fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
 fs.writeFileSync(path.join(OUT, 'nav.json'), JSON.stringify(nav));
 fs.writeFileSync(path.join(OUT, 'placements.json'), JSON.stringify(placements));
 fs.writeFileSync(path.join(OUT, 'lines.json'), JSON.stringify(lines));
+// The OSM streets, without the studio's own, for drawn roads to snap to in the editor.
+fs.writeFileSync(path.join(OUT, 'streets.json'), JSON.stringify(streetLines(osm, georef, sillamae)));
 // The edits this data was built with, so the studio previews only what changed since.
 const terrain = Object.fromEntries(sites.filter(s => s.terrain).map(s => [s.id, s.terrain!.deltas]));
 fs.writeFileSync(path.join(OUT, 'terrain.json'), JSON.stringify(terrain));
@@ -91,6 +96,7 @@ console.log(`georeference RMS ${geo.rms.toFixed(2)} m; ${report}`);
 console.log(zoneReport);
 console.log(stairReport);
 console.log(roadReport);
+console.log(studioRoadReport);
 console.log(paintReport);
 console.log(groundReport);
 console.log(seatReport);
