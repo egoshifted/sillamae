@@ -13,10 +13,11 @@ How the road layer is built and how to carry it to another block. Read [AGENTS.m
 4. **Grading** (`pipeline/grade.ts`). The terrain model is graded to the roads before the survey ground is laid on it: each road's terrain profile is smoothed along it (±12 m), held flat across its width and blended back over 3 m. Overlapping corridors are averaged by weight, so junctions have no steps. The graded `HeightAt` feeds the drape, trees, stairs and building settling.
 5. **Laying** (`layRoads`). After the drape:
    - Roads stop at the ground patches of refined sites (`prepareSurvey` returns them); refined building models must not build streets.
-   - Carriageways and footways are cut into 3 m cells and densified every 2 m. Each ring point takes the top draped ground surface within 2 m, plus 2 cm.
+   - Carriageways and footways are cut into 3 m cells and densified every 2 m. Each ring point stands on the ground stack beneath it (its lowest surface and the layers within 1 m of it), raised to the thickest stack within 2 m, plus 2 cm. Neighbouring ground is never used as a floor: around refined sites the survey keeps its surveyed height, metres from the draped ground beside it.
+   - Trees standing on a carriageway or footway move to the nearest spot 0.6 m clear of it (`moveTreesOffPaths`).
    - Each surface gets a depth lift: 0.3 m per survey layer beneath it (the survey shader's step) plus 0.5 m. A carriageway takes any touching footway's lift plus 2 cm, so it always wins at their shared edge.
    - Markings are laid on the carriageway's own triangles (shared `triangulate`), 3 cm above it, with the highest lift of any carriageway they overlap plus 5 cm.
-6. **Viewer** (`src/engine/roads.ts`). One mesh per kind; the per-vertex `lift` attribute moves depth only. Roads receive shadows but do not cast them.
+6. **Viewer** (`src/engine/roads.ts`). One mesh per kind; the per-vertex `lift` attribute moves depth only. Roads receive shadows but do not cast them. Footways carry a finish from their OSM `surface` tag: paving stones, gravel, or asphalt for untagged and plain paved paths, as Street View shows most are. Finishes are textures drawn in code, laid in ground metres so they run on across polygon edges; the asphalt was matched to Street View on Kesk (worn grey a little lighter than the carriageway, with faint square repairs).
 
 The survey ground is never cut under roads: it stays as it is beneath them, so a road can never open a see-through hole.
 
@@ -27,7 +28,8 @@ The survey ground is never cut under roads: it stays as it is beneath them, so a
 3. Move or enlarge the road area (`PILOT` in `pipeline/roads.ts`). Keep junctions well inside it: osm2streets cuts roads at the clip edge and the survey road carries on beyond it.
 4. `npm run data` and read the `roads` report line: polygon counts, zebra crossings, how many carriageways were widened, narrowed or left unmeasured. An unmeasured street keeps 3 m lanes; find out why (no paint, short way, paint covered by trees). The next line counts recoloured footway paint; a sidewalk or path seen in Street View that turned to grass is missing from OSM, so report it.
 5. `npm run roads:check` and fix until it passes, then review the rest:
-   - broken polygons and footways on the carriageway must be 0 (the command fails otherwise);
+   - broken polygons, walls, footways on the carriageway and trees on a road or path must be 0 (the command fails otherwise);
+   - steep ground followed is listed for review: it should lie where the survey ground itself is steep, such as the edges of ground kept around refined sites;
    - each marked crossing's carriageway span should match the paint span within 0.5 m;
    - uncovered survey road paint shows as a second road; review the largest cells. Parking, driveways and unmapped service areas legitimately stay uncovered.
 6. Look in the atlas: full reload after every data build. Check from above and low down, at junction mouths, crossings, the area's edge and next to refined sites.
@@ -52,6 +54,8 @@ Do not hand-place road geometry in building models, edit `osm.json` by hand (it 
 | A bar doubled by a centre-line dash | Lane line running through the zebra | Cut lane lines back from zebras |
 | Wide pale "marble" band beside the road where Street View shows a small kerb and grass | Survey footway paint spreads about 1 m past the road paint | Recolour survey footway paint to the ground around it |
 | Footways and zebras inside a block ringed by road vanish | A dropped hole in a carriageway union used for cutting | Use `area` (keeps holes) for anything used to cut |
+| A patch of walkway standing up vertically | Ring points took the height of ground kept at its surveyed height 2 m away (2.4 m higher), and the triangulation joined collinear ring points into triangles over no ground | Stand each point on the stack beneath it; drop triangles covering no ground |
+| Trees growing out of a path | Survey tree points ignore paths | Move trees off built roads and paths |
 | Thick dark band behind a raised edge (seen with trial kerbs) | Geometry below the verge, drawn over the grass in front by the depth lift | Never extend lifted geometry below the ground beside it |
 
 ## Working notes

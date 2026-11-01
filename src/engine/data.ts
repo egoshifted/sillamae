@@ -20,13 +20,15 @@ export interface Stair {
 }
 
 export type RoadKind = 'carriageway' | 'footway' | 'marking';
+export type Finish = 'asphalt' | 'paving' | 'gravel';
 
 // One road polygon, ring in the local frame (x, height, z); lift is its depth
-// lift in metres above the survey layers it covers.
+// lift in metres above the survey layers it covers. Footways carry a finish.
 export interface RoadSurface {
   kind: RoadKind;
   lift: number;
   ring: [number, number, number][];
+  surface?: Finish;
 }
 
 export interface WorldData extends SceneData {

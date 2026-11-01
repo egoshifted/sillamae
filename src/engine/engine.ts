@@ -97,7 +97,7 @@ export class Engine {
     this.#scene.add(this.#vegetation);
     this.#forest = addTrees(this.#vegetation, data.trees, this.frame);
     addStairs(this.#scene, data.stairs);
-    addRoads(this.#scene, data.roads);
+    addRoads(this.#scene, data.roads, renderer.capabilities.getMaxAnisotropy());
 
     this.#prisms = buildingPrisms(data.buildings, this.frame);
     this.focusBuilding(this.#building(city.defaultFocus));

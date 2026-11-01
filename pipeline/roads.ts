@@ -5,7 +5,7 @@ import {initSync, JsStreetNetwork} from 'osm2streets-js/osm2streets_js.js';
 import type {Georeference, OsmExtract} from './geo.ts';
 import type {Centreline} from './grade.ts';
 import {FOOTWAY, MARKING as PAINT_MARKING, ROAD, surveyLayers} from './survey-colour.ts';
-import type {RoadKind, RoadSurface} from '../src/engine/data.ts';
+import type {Finish, RoadKind, RoadSurface} from '../src/engine/data.ts';
 import {triangulate} from '../src/engine/roads.ts';
 import type {Bucket} from '../src/engine/survey/classify.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type Polygon, type SceneData} from '../src/engine/types.ts';
@@ -17,6 +17,9 @@ const DENSIFY = 2, SURFACE = .02, MARKING = .03; // metres
 const LAYER_LIFT = .3, LIFT = .5, MARKING_LIFT = .05; // metres; LAYER_LIFT matches the survey shader's
 // Metres: with CELL_SIZE cells densified every DENSIFY, ring points lie within REACH of any point of their polygon.
 const REACH = 2, SAMPLE = .5, CELL_SIZE = 3;
+// Metres: survey ground layers stack 5-35 cm apart, and draping can stretch a
+// stack to just over half a metre; ground metres away is at another level.
+const STACK = 1;
 const HUGE = 60, CELL = 4;
 const TOUCH = .05, ORDER_LIFT = .02, SLIVER = .05; // metres, metres, square metres
 const CROSSING_WIDTH = 3, ZEBRA = {bar: .5, pitch: 1, clear: 1}; // metres
@@ -24,12 +27,20 @@ const CARRIAGEWAY = new Set(['Driving', 'Parking', 'Shoulder', 'Construction']);
 // Paint measurement, metres: a layer within PAINT_TOP of the top one is seen;
 // OSM ways lie up to SEEK off the painted road.
 const STATION = 4, STATION_END = 8, SCAN = .25, SEEK = 2, MAX_PAINT = 12, MIN_STATIONS = 3, PAINT_TOP = .03, MAX_GROW = 2.5;
+// Metres: a trunk keeps TRUNK clear of paths and moves at most TREE_SHIFT.
+const TRUNK = .6, TREE_STEP = .25, TREE_SHIFT = 5;
 // Metres from a repainted triangle at which the surrounding ground colour is sampled, nearest first.
 const VERGE_SAMPLES = [2.5, 4, 8];
 const SEEKS = [0, ...Array.from({length: SEEK / SCAN}, (_, k) => [(k + 1) * SCAN, -(k + 1) * SCAN]).flat()];
 
 type Feature = {geometry: {type: string; coordinates: any}; properties: Record<string, any>};
-export type RoadShape = {kind: RoadKind; ring: Point2[]};
+export type RoadShape = {kind: RoadKind; ring: Point2[]; surface?: Finish};
+
+// OSM surface tags to the finishes the viewer draws. Untagged and plain
+// "paved" paths are asphalt, as most here are on the ground.
+const PAVING = new Set(['paving_stones', 'sett', 'concrete:plates', 'concrete:lanes', 'bricks']);
+const LOOSE = new Set(['fine_gravel', 'gravel', 'compacted', 'unpaved', 'ground', 'dirt', 'grass', 'sand']);
+const finish = (surface?: string): Finish => surface && PAVING.has(surface) ? 'paving' : surface && LOOSE.has(surface) ? 'gravel' : 'asphalt';
 
 export const isCrossing = (tags: Record<string, string>) => tags.footway === 'crossing' || (tags.highway === 'footway' && 'crossing' in tags);
 export const marked = (tags: Record<string, string>) => tags['crossing:markings'] ? tags['crossing:markings'] !== 'no' : ['zebra', 'marked', 'uncontrolled'].includes(tags.crossing);
@@ -96,7 +107,12 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
       return intersection(rings(f), streets.flatMap(r => corridor((roadWays.get(r.properties.id) ?? []).map(w => w.points.map(p => local(p))), built.get(r.properties.id)! / 2 + (grow.get(r.properties.id) ?? 0))));
     }),
   ];
-  const footways = [...plain.filter(f => f.properties.type === 'intersection' && !drivenJunction.has(f.properties.id)), ...lanes.filter(f => !CARRIAGEWAY.has(f.properties.type))].flatMap(rings);
+  // Footway junctions take the asphalt most paths here have.
+  const surfaceOf = (f: Feature) => finish((f.properties.osm_way_ids ?? []).map((id: number) => wayById.get(id)?.tags.surface).find(Boolean));
+  const footways = [
+    ...plain.filter(f => f.properties.type === 'intersection' && !drivenJunction.has(f.properties.id)).flatMap(f => rings(f).map(ring => ({ring, surface: 'asphalt' as Finish}))),
+    ...lanes.filter(f => !CARRIAGEWAY.has(f.properties.type)).flatMap(f => rings(f).map(ring => ({ring, surface: surfaceOf(f)}))),
+  ];
   // Separately mapped sidewalks and paths reach onto the carriageway at junctions and run along its edge.
   const road = area(carriageways);
   // Crossing ways often bend onto the sidewalks; the painted zebra is straight.
@@ -105,7 +121,7 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
   const zebraBands = zebras.map(({line, width}) => band(line[0], line[1], width / 2 + ZEBRA.clear));
   const shapes: RoadShape[] = [
     ...carriageways.map(ring => ({kind: 'carriageway' as const, ring})),
-    ...footways.flatMap(ring => difference([ring], road)).map(ring => ({kind: 'footway' as const, ring})),
+    ...footways.flatMap(({ring, surface}) => difference([ring], road).map(piece => ({kind: 'footway' as const, ring: piece, surface}))),
     ...markings.flatMap(rings).flatMap(ring => difference([ring], zebraBands)).map(ring => ({kind: 'marking' as const, ring})),
     ...zebras.flatMap(({line, width}) => zebra(line, width)).flatMap(bar => intersection([bar], road)).map(ring => ({kind: 'marking' as const, ring})),
   ];
@@ -116,6 +132,35 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
   const centrelines: Centreline[] = ways.filter(w => halves.has(w.id)).map(w => ({points: w.points.map(p => { const [x, z] = local(p); return [x + ox, z + oz]; }), half: halves.get(w.id)!}));
   const count = (kind: RoadKind) => shapes.filter(s => s.kind === kind).length, grown = [...grow.values()];
   return {shapes, centrelines, report: `roads (osm2streets pilot, ${PILOT.half * 2} m around building ${PILOT.building}): ${count('carriageway')} carriageway, ${count('footway')} footway and ${count('marking')} marking polygons, ${crossings.length} zebra crossings; carriageways sized to the survey paint: ${grown.filter(g => g >= .05).length} widened, ${grown.filter(g => g <= -.05).length} narrowed, ${byRoad.size - grown.length} unmeasured; ${centrelines.length} ways graded`};
+}
+
+// Trees standing on a built carriageway or footway move to the nearest spot
+// clear of it, trunk and all; survey crown points do not respect paths.
+export function moveTreesOffPaths(shapes: RoadShape[], scene: SceneData, city: CityDefinition) {
+  const [ox, oz] = city.frame.origin, paved = area(shapes.filter(s => s.kind !== 'marking').map(s => s.ring));
+  const boxes = paved.map(r => { const xs = r.map(p => p[0]), zs = r.map(p => p[1]); return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]; });
+  const onPath = (x: number, z: number) => paved.filter((r, i) => x >= boxes[i][0] && x <= boxes[i][1] && z >= boxes[i][2] && z <= boxes[i][3] && inRing(r, x, z)).length % 2 === 1;
+  const clear = (x: number, z: number) => [[0, 0], ...Array.from({length: 8}, (_, k) => [Math.cos(k * Math.PI / 4) * TRUNK, Math.sin(k * Math.PI / 4) * TRUNK])].every(([dx, dz]) => !onPath(x + dx, z + dz));
+  let moved = 0, stranded = 0;
+  for (const t of scene.trees) {
+    const x = t.p[0] - ox, z = t.p[1] - oz;
+    if (clear(x, z)) continue;
+    let spot: Point2 | null = null;
+    for (let r = TREE_STEP; r <= TREE_SHIFT && !spot; r += TREE_STEP) for (let k = 0; k < 24 && !spot; k++) {
+      const p: Point2 = [x + Math.cos(k * Math.PI / 12) * r, z + Math.sin(k * Math.PI / 12) * r];
+      if (clear(...p)) spot = p;
+    }
+    if (!spot) { stranded++; continue; }
+    t.p = [round(spot[0] + ox), round(spot[1] + oz)];
+    moved++;
+  }
+  return `trees moved off built roads and paths: ${moved}; ${stranded} left more than ${TREE_SHIFT} m from clear ground`;
+}
+
+function inRing(r: Point2[], x: number, z: number) {
+  let inside = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > z) !== (r[j][1] > z) && x < (r[j][0] - r[i][0]) * (z - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) inside = !inside;
+  return inside;
 }
 
 // The survey's footway paint does not match the ground (a wide band along the
@@ -232,17 +277,23 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
   // Surfaces are cut into cells: the viewer triangulates outlines only, and the
   // middle of a wide carriageway would otherwise sink below survey paint
   // sheets, which then shadow it.
-  const surfaces: RoadSurface[] = shapes.flatMap(s => difference([s.ring], sites).flatMap(ring => s.kind === 'marking' ? [ring] : cells(ring)).map(ring => ({kind: s.kind, lift: 0, ring: densify(ring).map(([x, z]): [number, number, number] => [x, 0, z])})));
+  const surfaces: RoadSurface[] = shapes.flatMap(s => difference([s.ring], sites).flatMap(ring => s.kind === 'marking' ? [ring] : cells(ring)).map((ring): RoadSurface => ({kind: s.kind, lift: 0, ring: densify(ring).map(([x, z]): [number, number, number] => [x, 0, z]), ...s.surface && {surface: s.surface}})));
+  // The point stands on the ground stack beneath it and takes from around it
+  // only how thick the layers stack: neighbouring ground can lie at another
+  // level altogether, as at the edge of the ground kept at its surveyed height
+  // around refined sites, metres from the draped ground beside it. The stack's
+  // top, not its base, is the floor: site works push survey layers down near
+  // their patches.
   const around = (x: number, z: number) => {
-    let top = -Infinity, layer = 0;
+    let thick = 0, layer = 0, found = false;
     for (let dx = -REACH; dx <= REACH; dx += SAMPLE) for (let dz = -REACH; dz <= REACH; dz += SAMPLE) {
       if (dx * dx + dz * dz > REACH * REACH) continue;
       const g = ground(x + dx, z + dz);
-      if (g) { top = Math.max(top, g.top); layer = Math.max(layer, g.layer); }
+      if (g) { thick = Math.max(thick, g.top - g.low); layer = Math.max(layer, g.layer); found = true; }
     }
-    return top === -Infinity ? null : {top, layer};
-  };
-  for (const s of surfaces) {
+    const here = ground(x, z);
+    return here && found ? {top: Math.max(here.top, here.low + thick), layer} : null;
+  };  for (const s of surfaces) {
     const found = s.ring.map(p => around(p[0] + ox, p[2] + oz));
     const heights = found.filter(g => g !== null).map(g => g!.top);
     if (!heights.length) continue;
@@ -369,17 +420,20 @@ function groundIndex(buckets: Bucket[]) {
         }
     }
   }
+  // The stack at a point is its lowest surface and the layers within STACK of
+  // it; anything higher is not ground (a shelter roof painted as ground).
   return (x: number, z: number) => {
-    let top = -Infinity, layer = 0;
+    const found: {h: number; layer: number}[] = [];
     for (const index of grid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL)) ?? []) {
-      const {p: [x1, z1, h1, x2, z2, h2, x3, z3, h3], layer: l} = triangles[index], d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
+      const {p: [x1, z1, h1, x2, z2, h2, x3, z3, h3], layer} = triangles[index], d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
       if (Math.abs(d) < 1e-9) continue;
       const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;
       if (Math.min(a, b, c) < -1e-6) continue;
-      top = Math.max(top, a * h1 + b * h2 + c * h3);
-      layer = Math.max(layer, l);
+      found.push({h: a * h1 + b * h2 + c * h3, layer});
     }
-    return top === -Infinity ? null : {top, layer};
+    if (!found.length) return null;
+    const low = Math.min(...found.map(f => f.h)), stack = found.filter(f => f.h <= low + STACK);
+    return {low, top: Math.max(...stack.map(f => f.h)), layer: Math.max(...stack.map(f => f.layer))};
   };
 }
 

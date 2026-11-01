@@ -9,9 +9,10 @@ import {isCrossing, marked, roadArea} from './roads.ts';
 import {MARKING, ROAD, surveyLayers} from './survey-colour.ts';
 
 // Checks the generated road surfaces against the survey; run after `npm run data`.
-// Fails on broken polygons or footways on the carriageway; the rest is for review.
+// Fails on broken polygons, walls, footways on the carriageway or trees on a road
+// surface; the rest is for review.
 // Metres; EDGE skips the strip along the area's edge, where roads stop by design.
-const SCAN = .5, REACH = 8, CLUSTER = 10, PAINT_TOP = .03, MISMATCH = .5, INSET = .1, EDGE = 15;
+const SCAN = .5, REACH = 8, CLUSTER = 10, PAINT_TOP = .03, MISMATCH = .5, INSET = .1, EDGE = 15, RAMP = .25, WALL = 1, MAX_STEP = .3, MAX_WALL = .5;
 
 const scene: SceneData = JSON.parse(fs.readFileSync('data/source/scene.json', 'utf8'));
 const osm: OsmExtract = JSON.parse(fs.readFileSync('data/source/osm.json', 'utf8'));
@@ -58,6 +59,24 @@ for (const s of world.roads) {
 }
 console.log(`polygons: ${world.roads.length}, ${broken} broken`);
 
+// Walls: a drawn triangle steeper than 1 in 1 that rises over MAX_WALL stands up out
+// of the road, from a ring point that took another level's height or a triangle
+// over no ground; no ground layer stack is that thick. Steep triangles rising
+// MAX_STEP to MAX_WALL, and ramps steeper than 1 in 4, follow steep survey ground, as
+// where ground kept at its surveyed height meets draped ground; they are listed for
+// review. Slivers made steep by centimetre rounding rise less than MAX_STEP.
+const walls: string[] = [], ramps: string[] = [];
+for (const s of world.roads) for (const t of triangulate(s.ring)) {
+  const [a, b, c] = t.map(i => s.ring[i]), rise = Math.max(a[1], b[1], c[1]) - Math.min(a[1], b[1], c[1]);
+  if (rise < MAX_STEP) continue;
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, slope = Math.abs(ny) < 1e-9 ? Infinity : Math.hypot(nx, nz) / Math.abs(ny);
+  const where = `${s.kind} ${((a[0] + b[0] + c[0]) / 3).toFixed(1)},${((a[2] + b[2] + c[2]) / 3).toFixed(1)}`;
+  if (slope > WALL && rise > MAX_WALL) walls.push(where); else if (slope > RAMP) ramps.push(where);
+}
+console.log(`walls (steeper than 1 in 1, rising over ${MAX_WALL} m): ${walls.length}${walls.length ? ` (local x,z: ${walls.slice(0, 8).join('; ')})` : ''}`);
+console.log(`steep ground followed (steeper than 1 in 4): ${ramps.length}${ramps.length ? ` (local x,z: ${ramps.slice(0, 5).join('; ')})` : ''}`);
+
 // Footways on the carriageway: points just inside each footway edge that a carriageway contains.
 const carriageway = index(world.roads.filter(s => s.kind === 'carriageway'));
 let onRoad = 0;
@@ -74,6 +93,11 @@ for (const s of world.roads) if (s.kind === 'footway') {
   }
 }
 console.log(`footway edge points on the carriageway: ${onRoad}${where.length ? ` (local x,z: ${where.join(' ')})` : ''}`);
+
+// Trees: no trunk may stand on a carriageway or footway.
+const surface = index(world.roads.filter(s => s.kind !== 'marking'));
+const treesOn = world.trees.filter(t => surface(t.p[0] - ox, t.p[1] - oz).length).map(t => `${(t.p[0] - ox).toFixed(1)},${(t.p[1] - oz).toFixed(1)}`);
+console.log(`trees on a road or path: ${treesOn.length}${treesOn.length ? ` (local x,z: ${treesOn.slice(0, 8).join('; ')})` : ''}`);
 
 // Crossings: the carriageway should span the survey's road paint along each zebra.
 console.log('marked crossings (paint span | carriageway span, metres along the crossing from its middle):');
@@ -107,4 +131,4 @@ for (let x = cx - scan; x < cx + scan; x += SCAN) for (let z = cz - scan; z < cz
 console.log(`uncovered survey road paint: ${exposed.toFixed(0)} m2; largest ${CLUSTER} m cells (local x,z of their corner):`);
 for (const [k, m2] of [...clusters].sort((p, q) => q[1] - p[1]).slice(0, 10)) console.log(`  ${k}: ${m2.toFixed(1)} m2`);
 
-if (broken || onRoad) process.exitCode = 1;
+if (broken || onRoad || walls.length || treesOn.length) process.exitCode = 1;
