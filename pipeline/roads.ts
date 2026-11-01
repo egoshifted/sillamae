@@ -88,7 +88,13 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
       const lines = (roadWays.get(id) ?? []).map(w => w.points.map(p => local(p)));
       return intersection(union(parts), corridor(lines, built.get(id)! / 2 + by));
     }),
-    ...plain.filter(f => f.properties.type === 'intersection' && drivenJunction.has(f.properties.id)).flatMap(f => offset(rings(f), junctionGrow.get(f.properties.id) ?? 0, ClipperLib.JoinType.jtRound)),
+    ...plain.filter(f => f.properties.type === 'intersection' && drivenJunction.has(f.properties.id)).flatMap(f => {
+      const by = junctionGrow.get(f.properties.id) ?? 0;
+      if (by >= 0) return offset(rings(f), by, ClipperLib.JoinType.jtRound);
+      // As for streets: shrinking would open a gap along the road where a path joins it.
+      const streets = plain.filter(r => r.properties.type === 'road' && byRoad.has(r.properties.id) && [r.properties.src_i, r.properties.dst_i].includes(f.properties.id));
+      return intersection(rings(f), streets.flatMap(r => corridor((roadWays.get(r.properties.id) ?? []).map(w => w.points.map(p => local(p))), built.get(r.properties.id)! / 2 + (grow.get(r.properties.id) ?? 0))));
+    }),
   ];
   const footways = [...plain.filter(f => f.properties.type === 'intersection' && !drivenJunction.has(f.properties.id)), ...lanes.filter(f => !CARRIAGEWAY.has(f.properties.type))].flatMap(rings);
   // Separately mapped sidewalks and paths reach onto the carriageway at junctions and run along its edge.
