@@ -57,7 +57,10 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
   // Painted leaves fill about four fifths of a card's half-width.
   const reach = 1 - size * .4;
   const centre = new THREE.Vector3(0, aspect * (conifer ? .5 : .62), 0), radiusY = aspect * (conifer ? .46 : .38);
-  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], colours: number[] = [];
+  // A separate sequence, so the turn order leaves the crown's layout as it was.
+  let turnSeed = 4211 + Math.round(aspect * 100) + level * 13;
+  const turnRand = () => { turnSeed = (turnSeed * 1664525 + 1013904223) >>> 0; return turnSeed / 4294967296; };
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], colours: number[] = [], turns: number[] = [];
   const c = new THREE.Vector3(), n = new THREE.Vector3(), t = new THREE.Vector3(), b = new THREE.Vector3(), volume = new THREE.Vector3(), q = new THREE.Quaternion();
   for (let i = 0; i < count; i++) {
     const a = rand() * 6.283, depth = .55 + .45 * Math.sqrt(rand());
@@ -85,12 +88,15 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
       volume.set(c.x, (c.y - centre.y) / aspect * 2.2, c.z).normalize().lerp(new THREE.Vector3(0, 1, 0), .25).normalize();
     }
     const s = size * (.8 + .4 * rand()), light = (.62 + .38 * THREE.MathUtils.smoothstep(height, .05, .95)) * (.72 + .28 * depth);
+    // Order in which a card turns in autumn, 0 first: outer and upper leaves lead. Spruce never turns.
+    const turn = conifer ? 2 : .6 * turnRand() + .4 * (1 - .5 * height - .5 * (depth - .55) / .45);
     const corners = [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, -1, 0, 0], [1, 1, 1, 1], [-1, 1, 0, 1]];
     for (const [u, v, tu, tv] of corners) {
       positions.push(c.x + (t.x * u + b.x * v) * s / 2, c.y + (t.y * u + b.y * v) * s / 2, c.z + (t.z * u + b.z * v) * s / 2);
       normals.push(volume.x, volume.y, volume.z);
       uvs.push(half + tu * .5, tv);
       colours.push(light, light, light);
+      turns.push(turn);
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -98,9 +104,37 @@ function crownGeometry(conifer: boolean, aspect: number, level: number) {
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
+  geo.setAttribute('turn', new THREE.Float32BufferAttribute(turns, 1));
   geo.computeBoundingSphere();
   return geo;
 }
+
+// Early September: most broadleaf trees have a few turned leaves, about one in
+// seven is well on, the odd one barely started. Each tree's share and colour come
+// from its position, so instances need no extra data and keep their look across
+// detail levels. Mostly birch yellow, some maple orange, a little rust.
+const AUTUMN_VERTEX = `
+attribute float turn;
+varying float vTurned;
+varying float vAutumnHue;
+void autumnLeaf() {
+  vec2 at = instanceMatrix[3].xz;
+  float share = fract(sin(dot(at, vec2(12.9898, 78.233))) * 43758.5453);
+  share = share < .15 ? mix(.45, .85, share / .15) : .05 + .3 * pow((share - .15) / .85, 2.);
+  vTurned = 1. - smoothstep(share - .05, share + .05, turn);
+  vAutumnHue = fract(sin(dot(at, vec2(39.346, 11.135))) * 24634.6345);
+}
+`;
+const AUTUMN_FRAGMENT = `
+varying float vTurned;
+varying float vAutumnHue;
+vec3 autumnColour(vec3 green) {
+  if (vTurned <= 0.) return green;
+  vec3 turned = vAutumnHue < .78 ? vec3(.6, .45, .04) : vAutumnHue < .96 ? vec3(.7, .26, .03) : vec3(.45, .1, .03);
+  const vec3 LUMA = vec3(.2126, .7152, .0722);
+  return mix(green, turned * dot(green, LUMA) / dot(turned, LUMA) * 1.15, vTurned);
+}
+`;
 
 // Mipmapping averages leaf alpha down, so the far level needs a lower cut-off or its crowns dissolve into specks.
 function foliageMaterials() {
@@ -109,9 +143,12 @@ function foliageMaterials() {
     const material = new THREE.MeshLambertMaterial({vertexColors: true, map, alphaTest, alphaToCoverage: true, side: THREE.DoubleSide});
     // Back faces keep the crown's volume normal; the default flip would light the far side of each card from inside.
     material.onBeforeCompile = shader => {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
+      shader.vertexShader = AUTUMN_VERTEX + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nautumnLeaf();');
+      shader.fragmentShader = AUTUMN_FRAGMENT + shader.fragmentShader
+        .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = autumnColour(diffuseColor.rgb);');
     };
-    material.customProgramCacheKey = () => 'tree-leaf-cards-v1';
+    material.customProgramCacheKey = () => 'tree-leaf-cards-v2';
     return material;
   };
   const depth = (alphaTest: number) => new THREE.MeshDepthMaterial({depthPacking: THREE.RGBADepthPacking, map, alphaTest, side: THREE.DoubleSide});
