@@ -488,11 +488,6 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
     const asphalt=lift(mat('#83877e'));asphalt.userData.groundSurface=true;const approachAsphalt=lift(asphalt.clone(),.01);
     const ground=(x: number,z: number)=>{const xx=Math.max(0,Math.min(terrain.width-1.001,(x-terrain.origin[0])/terrain.step)),zz=Math.max(0,Math.min(terrain.height-1.001,(z-terrain.origin[1])/terrain.step)),i=Math.floor(xx),j=Math.floor(zz),u=xx-i,v=zz-j,k=j*terrain.width+i,d=terrain.values;return (d[k]*(1-u)*(1-v)+d[k+1]*u*(1-v)+d[k+terrain.width]*(1-u)*v+d[k+terrain.width+1]*u*v)/10-level+.12;};
     function quad(points: Polygon,m: THREE.MeshStandardMaterial){const geo=new THREE.BufferGeometry(),ids=[0,1,2,0,2,3];geo.setAttribute('position',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0]-ox,ground(...points[i]),points[i][1]-oz]),3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(ids.flatMap(i=>[points[i][0],points[i][1]]),2));geo.computeVertexNormals();emit(geo,m,new THREE.Matrix4());}
-    const road=[[232.3,555.5,5],[228.8,564.4,8.4],[218,591.9,8.4],[221.8,601.3,5]];
-    for(let i=0;i<road.length-1;i++){const a=road[i],b=road[i+1],len=Math.hypot(b[0]-a[0],b[1]-a[1]),nx=(b[1]-a[1])/len,nz=-(b[0]-a[0])/len,steps=Math.ceil(len);
-      const point=(t: number,side: number): Point2=>[a[0]+(b[0]-a[0])*t+nx*(a[2]+(b[2]-a[2])*t)*side/2,a[1]+(b[1]-a[1])*t+nz*(a[2]+(b[2]-a[2])*t)*side/2];
-      for(let j=0;j<steps;j++)quad([point(j/steps,-1),point((j+1)/steps,-1),point((j+1)/steps,1),point(j/steps,1)],asphalt);
-    }
     const approach=edge(6),width=approach.L,left=0;
     const roadPoint=(x: number,d: number): Point2=>{const p=approach.at(x,0,d);return [p.x+ox,p.z+oz];};
     // Lay continuous concrete into the stair footprint first. Later driveway

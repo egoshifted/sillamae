@@ -19,9 +19,20 @@ export interface Stair {
   steps: number;
 }
 
+export type RoadKind = 'carriageway' | 'footway' | 'marking';
+
+// One road polygon, ring in the local frame (x, height, z); lift is its depth
+// lift in metres above the survey layers it covers.
+export interface RoadSurface {
+  kind: RoadKind;
+  lift: number;
+  ring: [number, number, number][];
+}
+
 export interface WorldData extends SceneData {
   zones: Zone[];
   stairs: Stair[];
+  roads: RoadSurface[];
   siteGround: Record<string, GroundTriangle[]>;
   // Source x/z to EPSG:3301 easting/northing: [a, b, c, d, e, f] maps (x, z)
   // to (a x + b z + c, d x + e z + f). Fitted to OSM outlines; rms in metres.

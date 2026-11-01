@@ -8,6 +8,7 @@ import {createOutline} from './outline.ts';
 import {buildingPrisms, pickPrism} from './picking.ts';
 import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
 import type {Building, BuildingOverride, BuiltOverride, CityDefinition, WorldFrame} from './types.ts';
+import {addRoads} from './roads.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
 
@@ -96,6 +97,7 @@ export class Engine {
     this.#scene.add(this.#vegetation);
     this.#forest = addTrees(this.#vegetation, data.trees, this.frame);
     addStairs(this.#scene, data.stairs);
+    addRoads(this.#scene, data.roads);
 
     this.#prisms = buildingPrisms(data.buildings, this.frame);
     this.focusBuilding(this.#building(city.defaultFocus));
