@@ -288,13 +288,28 @@ function step(from: string[], to: string[]) {
   const state = from.pop();
   if (state === undefined) return;
   to.push(snapshot());
+  restore(state);
+  dirty = true;
+  sync();
+}
+// The square as it was opened, for Reset, and as last saved, to tell whether a reset leaves unsaved changes.
+let opened = '', saved = '';
+function reset() {
+  if (!site || snapshot() === opened || !confirm('All changes will be lost. Do you want to reset?')) return;
+  // Kept on the undo stack all the same, so a reset clicked by mistake can be taken back.
+  undo.push(snapshot());
+  redo.length = 0;
+  restore(opened);
+  selection.clear();
+  dirty = opened !== saved;
+  sync();
+}
+function restore(state: string) {
   const restored = JSON.parse(state);
   site!.placements = restored.placements;
   site!.trees = restored.trees;
   if (terrain && JSON.stringify(terrain.saved()) !== JSON.stringify(restored.terrain)) { terrain.load(restored.terrain); reshape(); settle(); }
   treesChanged = true;
-  dirty = true;
-  sync();
 }
 
 // ---- Terrain ---------------------------------------------------------------------
@@ -959,6 +974,7 @@ function showStatus() {
   element<HTMLButtonElement>('undo').disabled = !undo.length;
   element<HTMLButtonElement>('redo').disabled = !redo.length;
   element<HTMLButtonElement>('save').textContent = dirty ? 'Save •' : 'Save';
+  element<HTMLButtonElement>('reset').disabled = snapshot() === opened;
 }
 
 // Draft previews let the owner judge a draft in place; they never reach the saved file.
@@ -971,6 +987,7 @@ async function save() {
   const response = await fetch('/__studio/sites/' + site.id, {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(kept)});
   if (!response.ok) throw Error('Save failed: ' + (await response.json()).error);
   dirty = kept.placements.length !== site.placements.length;
+  saved = dirty ? '' : snapshot();
   showStatus();
   status.textContent = `Saved to data/source/placements/${site.id}.json` + (dirty ? '; draft previews were left out' : '');
 }
@@ -1005,6 +1022,7 @@ element('grid').onchange = () => render();
 element('undo').onclick = () => step(undo, redo);
 element('redo').onclick = () => step(redo, undo);
 element('save').onclick = () => action(save);
+element('reset').onclick = reset;
 const action = (run: () => Promise<unknown>) => { void run().catch(e => { error.textContent = String(e instanceof Error ? e.message : e); }); };
 addEventListener('beforeunload', event => { if (dirty) event.preventDefault(); });
 
@@ -1101,6 +1119,7 @@ async function open(square: Square) {
   built = new TerrainEdit(...low, square.size, baked[id]);
   terrain = new TerrainEdit(...low, square.size, site.terrain?.deltas);
   if (JSON.stringify(terrain.saved()) !== JSON.stringify(built.saved())) { reshape(); settle(); }
+  opened = saved = snapshot();
   trees = new TreeLayer(scene, frame, new THREE.Vector3(square.centre[0] - ox, 0, square.centre[1] - oz));
   treesChanged = true;
   measure = new Measure(scene, element('labels'));
