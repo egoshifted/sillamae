@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import {sillamae} from '../src/city/sillamae/index.ts';
-import type {RoadSurface, WorldData} from '../src/engine/data.ts';
+import {MeshoptDecoder} from 'meshoptimizer/decoder';
+import {decodeTile, type RoadSurface, type SurveyManifest, type WorldData} from '../src/engine/data.ts';
 import {triangulate} from '../src/engine/roads.ts';
 import type {SceneData} from '../src/engine/types.ts';
 import {georeference, type OsmExtract} from './geo.ts';
@@ -9,16 +10,18 @@ import {isCrossing, marked, roadArea} from './roads.ts';
 import {MARKING, ROAD, surveyLayers} from './survey-colour.ts';
 
 // Checks the generated road surfaces against the survey; run after `npm run data`.
-// Fails on broken polygons, walls, footways on the carriageway or trees on a road
-// surface; the rest is for review.
+// Fails on broken polygons, walls, footways on the carriageway, trees on a road
+// surface or buildings off their survey contact; the rest is for review.
 // Metres; EDGE skips the strip along the area's edge, where roads stop by design.
-const SCAN = .5, REACH = 8, CLUSTER = 10, PAINT_TOP = .03, MISMATCH = .5, INSET = .1, EDGE = 15, RAMP = .25, WALL = 1, MAX_STEP = .3, MAX_WALL = .5;
+const SCAN = .5, REACH = 8, CLUSTER = 10, PAINT_TOP = .03, MISMATCH = .5, INSET = .1, EDGE = 15, RAMP = .25, WALL = 1, MAX_STEP = .3, MAX_WALL = .5, CONTACT = .3;
 
 const scene: SceneData = JSON.parse(fs.readFileSync('data/source/scene.json', 'utf8'));
 const osm: OsmExtract = JSON.parse(fs.readFileSync('data/source/osm.json', 'utf8'));
 const world: WorldData = JSON.parse(fs.readFileSync('public/data/world.json', 'utf8'));
+const manifest: SurveyManifest = JSON.parse(fs.readFileSync('public/data/survey.json', 'utf8'));
 const raw = zlib.gunzipSync(fs.readFileSync('data/source/geometry.bin.gz'));
-const {layers, is} = surveyLayers(new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4));
+const surveyed = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+const {layers, is} = surveyLayers(surveyed);
 const {local} = georeference(osm, scene, sillamae), [ox, oz] = sillamae.frame.origin, area = roadArea(scene, sillamae);
 
 type Ring = RoadSurface['ring'];
@@ -65,17 +68,21 @@ console.log(`polygons: ${world.roads.length}, ${broken} broken`);
 // MAX_STEP to MAX_WALL, and ramps steeper than 1 in 4, follow steep survey ground, as
 // where ground kept at its surveyed height meets draped ground; they are listed for
 // review. Slivers made steep by centimetre rounding rise less than MAX_STEP.
-const walls: string[] = [], ramps: string[] = [];
+// Along the area's edge the rebuilt ground meets survey layers stacked above it,
+// so roads leaving the area step up; those are listed apart.
+const walls: string[] = [], ramps: string[] = [], edgeSteps: string[] = [];
 for (const s of world.roads) for (const t of triangulate(s.ring)) {
   const [a, b, c] = t.map(i => s.ring[i]), rise = Math.max(a[1], b[1], c[1]) - Math.min(a[1], b[1], c[1]);
   if (rise < MAX_STEP) continue;
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
   const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, slope = Math.abs(ny) < 1e-9 ? Infinity : Math.hypot(nx, nz) / Math.abs(ny);
-  const where = `${s.kind} ${((a[0] + b[0] + c[0]) / 3).toFixed(1)},${((a[2] + b[2] + c[2]) / 3).toFixed(1)}`;
-  if (slope > WALL && rise > MAX_WALL) walls.push(where); else if (slope > RAMP) ramps.push(where);
+  const x = (a[0] + b[0] + c[0]) / 3, z = (a[2] + b[2] + c[2]) / 3, where = `${s.kind} ${x.toFixed(1)},${z.toFixed(1)}`;
+  if (slope <= RAMP) continue;
+  if (!area.inside([x, z], -EDGE)) edgeSteps.push(where); else if (slope > WALL && rise > MAX_WALL) walls.push(where); else ramps.push(where);
 }
 console.log(`walls (steeper than 1 in 1, rising over ${MAX_WALL} m): ${walls.length}${walls.length ? ` (local x,z: ${walls.slice(0, 8).join('; ')})` : ''}`);
 console.log(`steep ground followed (steeper than 1 in 4): ${ramps.length}${ramps.length ? ` (local x,z: ${ramps.slice(0, 5).join('; ')})` : ''}`);
+console.log(`steep within ${EDGE} m of the area's edge: ${edgeSteps.length}`);
 
 // Footways on the carriageway: points just inside each footway edge that a carriageway contains.
 const carriageway = index(world.roads.filter(s => s.kind === 'carriageway'));
@@ -98,6 +105,70 @@ console.log(`footway edge points on the carriageway: ${onRoad}${where.length ? `
 const surface = index(world.roads.filter(s => s.kind !== 'marking'));
 const treesOn = world.trees.filter(t => surface(t.p[0] - ox, t.p[1] - oz).length).map(t => `${(t.p[0] - ox).toFixed(1)},${(t.p[1] - oz).toFixed(1)}`);
 console.log(`trees on a road or path: ${treesOn.length}${treesOn.length ? ` (local x,z: ${treesOn.slice(0, 8).join('; ')})` : ''}`);
+
+// Buildings: each survey building in the area should have moved with its ground. The
+// ground's move is the median just outside its walls of built minus survey ground; the
+// building's is the move of its roof top, which settling (lowering wall bottoms onto
+// the ground) leaves alone. Sunk or floating by more than CONTACT fails. Refined
+// models are placed by their own code and are listed apart.
+await MeshoptDecoder.ready;
+const frame = {origin: sillamae.frame.origin, base: world.base}, builtGround: number[][] = [], builtTop = new Map<number, number>();
+for (const name of manifest.tiles) {
+  const bytes = zlib.gunzipSync(fs.readFileSync(`public/data/tiles/${name}.bin.gz`));
+  for (const b of decodeTile(manifest, name, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), frame)) {
+    if (manifest.buckets[b.index].kind === 'water') continue;
+    for (let t = 0; t < b.building.length; t += 3) {
+      const p = b.position, k = t * 3;
+      if (b.building[t]) builtTop.set(b.building[t], Math.max(builtTop.get(b.building[t]) ?? -Infinity, p[k + 1], p[k + 4], p[k + 7]));
+      else if (Math.max(p[k], p[k + 3], p[k + 6]) - Math.min(p[k], p[k + 3], p[k + 6]) < 60) builtGround.push([p[k], p[k + 1], p[k + 2], p[k + 3], p[k + 4], p[k + 5], p[k + 6], p[k + 7], p[k + 8]]);
+    }
+  }
+}
+const groundGrid = new Map<string, number[][]>();
+for (const tri of builtGround) {
+  const xs = [tri[0], tri[3], tri[6]], zs = [tri[2], tri[5], tri[8]];
+  for (let x = Math.floor(Math.min(...xs) / 4); x <= Math.floor(Math.max(...xs) / 4); x++) for (let z = Math.floor(Math.min(...zs) / 4); z <= Math.floor(Math.max(...zs) / 4); z++) {
+    const k = x + ',' + z;
+    groundGrid.set(k, [...groundGrid.get(k) ?? [], tri]);
+  }
+}
+const builtLow = (x: number, z: number) => {
+  let low = Infinity;
+  for (const [x1, h1, z1, x2, h2, z2, x3, h3, z3] of groundGrid.get(Math.floor(x / 4) + ',' + Math.floor(z / 4)) ?? []) {
+    const d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
+    if (Math.abs(d) < 1e-9) continue;
+    const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;
+    if (Math.min(a, b, c) >= -1e-6) low = Math.min(low, a * h1 + b * h2 + c * h3);
+  }
+  return low === Infinity ? null : low;
+};
+const surveyTop = new Map<number, number>();
+for (let i = 0; i < surveyed.length; i += 21) if (surveyed[i + 6]) surveyTop.set(surveyed[i + 6], Math.max(surveyTop.get(surveyed[i + 6]) ?? -Infinity, surveyed[i + 2], surveyed[i + 9], surveyed[i + 16]));
+const refinedIds = new Set(sillamae.overrides.map(o => o.id)), offContact: string[] = [], refinedListed: string[] = [];
+const middle = (values: number[]) => { const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+for (const b of scene.buildings) {
+  const g = b.g.map(([x, z]): [number, number] => [x - ox, z - oz]), cx = g.reduce((s, p) => s + p[0], 0) / g.length, cz = g.reduce((s, p) => s + p[1], 0) / g.length;
+  if (!area.inside([cx, cz], -EDGE)) continue;
+  if (refinedIds.has(b.id)) { refinedListed.push(b.name ?? b.id); continue; }
+  const top = builtTop.get(b.pick), was = surveyTop.get(b.pick);
+  if (top === undefined || was === undefined) continue;
+  const turn = Math.sign(g.reduce((s, p, i) => { const q = g[(i + 1) % g.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)), groundMoves: number[] = [];
+  g.forEach((p, i) => {
+    const q = g[(i + 1) % g.length], length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (!length) return;
+    const nx = (q[1] - p[1]) / length * turn, nz = -(q[0] - p[0]) / length * turn;
+    for (let t = .5; t < length; t += 1) {
+      const x = p[0] + (q[0] - p[0]) * t / length + nx, z = p[1] + (q[1] - p[1]) * t / length + nz, h = builtLow(x, z), s = layers(x + ox, z + oz).at(-1)?.h;
+      // Built heights are in the local frame, survey heights absolute.
+      if (h !== null && s !== undefined) groundMoves.push(h + world.base - s);
+    }
+  });
+  if (!groundMoves.length) continue;
+  const change = middle(groundMoves) - (top + world.base - was);
+  if (Math.abs(change) > CONTACT) offContact.push(`${b.name ?? b.id} ${change > 0 ? 'sunk' : 'floating'} ${Math.abs(change).toFixed(2)} m`);
+}
+console.log(`buildings meeting the ground off their survey contact by over ${CONTACT} m: ${offContact.length}${offContact.length ? ` (${offContact.slice(0, 8).join('; ')})` : ''}`);
+console.log(`refined models placed by their own code, not checked: ${refinedListed.join(', ') || 'none'}`);
 
 // Crossings: the carriageway should span the survey's road paint along each zebra.
 console.log('marked crossings (paint span | carriageway span, metres along the crossing from its middle):');
@@ -131,4 +202,4 @@ for (let x = cx - scan; x < cx + scan; x += SCAN) for (let z = cz - scan; z < cz
 console.log(`uncovered survey road paint: ${exposed.toFixed(0)} m2; largest ${CLUSTER} m cells (local x,z of their corner):`);
 for (const [k, m2] of [...clusters].sort((p, q) => q[1] - p[1]).slice(0, 10)) console.log(`  ${k}: ${m2.toFixed(1)} m2`);
 
-if (broken || onRoad || walls.length || treesOn.length) process.exitCode = 1;
+if (broken || onRoad || walls.length || treesOn.length || offContact.length) process.exitCode = 1;

@@ -157,7 +157,7 @@ export function moveTreesOffPaths(shapes: RoadShape[], scene: SceneData, city: C
   return `trees moved off built roads and paths: ${moved}; ${stranded} left more than ${TREE_SHIFT} m from clear ground`;
 }
 
-function inRing(r: Point2[], x: number, z: number) {
+export function inRing(r: Point2[], x: number, z: number) {
   let inside = false;
   for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > z) !== (r[j][1] > z) && x < (r[j][0] - r[i][0]) * (z - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) inside = !inside;
   return inside;
@@ -168,7 +168,7 @@ function inRing(r: Point2[], x: number, z: number) {
 // takes the colour of the ground around it; mapped footways are drawn over it.
 // Only colours change, so the stacked ground layers stay as they are.
 export function clearFootwayPaint(v: Float32Array, scene: SceneData, city: CityDefinition) {
-  const [ox, oz] = city.frame.origin, {layers, is} = surveyLayers(v), {centre: [cx, cz], half} = roadArea(scene, city);
+  const [ox, oz] = city.frame.origin, {layers, is} = surveyLayers(v);
   const vergeColour = (x: number, z: number) => {
     const found: number[][] = [];
     for (const r of VERGE_SAMPLES) for (let k = 0; k < 8; k++) {
@@ -178,36 +178,50 @@ export function clearFootwayPaint(v: Float32Array, scene: SceneData, city: CityD
     return found.length ? [0, 1, 2].map(c => median(found.map(f => f[c]))) : null;
   };
   // Footway triangles can be large and cross the area's edge, so they are split
-  // along it and only the part inside is recoloured. Pieces lie in their
-  // triangle's plane and replace it in place, keeping heights, layers and the
-  // survey's order.
-  const band: Point2[][] = [[[cx - half, cz - half], [cx + half, cz - half], [cx + half, cz + half], [cx - half, cz + half]]];
-  const out: number[] = [];
+  // along it and only the part inside is recoloured.
+  const square = squareOf(scene, city), out: number[] = [];
   let repainted = 0, kept = 0;
   for (let i = 0; i < v.length; i += TRIANGLE) {
-    const keep = () => { for (let k = 0; k < TRIANGLE; k++) out.push(v[i + k]); };
-    if (v[i + 6] || !is(i, FOOTWAY)) { keep(); continue; }
-    const tri = [0, 7, 14].map((k): Point2 => [v[i + k] - ox, v[i + k + 1] - oz]);
-    const inside = intersection([tri], band), outside = difference([tri], band);
-    const areaOf = (rings: Point2[][]) => rings.reduce((s, r) => s + Math.abs(ClipperLib.Clipper.Area(toPath(r))), 0) / SCALE / SCALE;
-    // A hole dropped by the clip would break the area sum; such triangles stay whole.
-    if (!inside.length || Math.abs(areaOf(inside) + areaOf(outside) - areaOf([tri])) > .01 * areaOf([tri]) + SLIVER) { keep(); continue; }
-    const colour = vergeColour(...inside[0][0]);
-    if (!colour) { keep(); kept++; continue; }
-    const [a, b, c] = tri, d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]), winding = Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
-    const vertex = ([x, z]: Point2, paint: number[] | null) => {
-      const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (z - c[1])) / d, l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (z - c[1])) / d, w = [l1, l2, 1 - l1 - l2];
-      const at = (k: number) => w.reduce((s, wj, j) => s + wj * v[i + j * 7 + k], 0);
-      out.push(x + ox, z + oz, at(2), ...(paint ?? [at(3), at(4), at(5)]), 0);
-    };
-    for (const [rings, paint] of [[inside, colour], [outside, null]] as const) for (const ring of rings)
-      for (const t of THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(...p)), [])) {
-        const [p, q, r] = t.map(j => ring[j]), same = Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) === winding;
-        for (const point of same ? [p, q, r] : [p, r, q]) vertex(point, paint);
-      }
+    if (v[i + 6] || !is(i, FOOTWAY)) { pushTriangle(v, i, out); continue; }
+    if (!splitTriangle(v, i, square, city, out, p => vergeColour(...p) ?? (kept++, null))) { pushTriangle(v, i, out); continue; }
     repainted++;
   }
   return {vertices: Float32Array.from(out), report: `survey footway paint recoloured to the ground around it: ${repainted} triangles; ${kept} kept, with no other ground within ${VERGE_SAMPLES[VERGE_SAMPLES.length - 1]} m`};
+}
+
+export const squareOf = (scene: SceneData, city: CityDefinition): Point2[][] => {
+  const {centre: [cx, cz], half} = roadArea(scene, city);
+  return [[[cx - half, cz - half], [cx + half, cz - half], [cx + half, cz + half], [cx - half, cz + half]]];
+};
+
+export const pushTriangle = (v: Float32Array, i: number, out: number[]) => { for (let k = 0; k < TRIANGLE; k++) out.push(v[i + k]); };
+
+// Splits survey triangle i along a region (local frame). The part inside takes
+// the colour paintAt gives for a point in it, or is dropped when that is 'drop';
+// the rest keeps its colours. Pieces lie in the triangle's plane and are pushed
+// in its place, keeping heights, layers and the survey's order. Returns false,
+// pushing nothing, when nothing lies inside, paintAt gives no colour, or the
+// clip lost a hole (which would break the area sum).
+export function splitTriangle(v: Float32Array, i: number, region: Point2[][], city: CityDefinition, out: number[], paintAt: ((p: Point2) => number[] | null) | 'drop') {
+  const [ox, oz] = city.frame.origin, tri = [0, 7, 14].map((k): Point2 => [v[i + k] - ox, v[i + k + 1] - oz]);
+  const inside = intersection([tri], region), outside = difference([tri], region);
+  const areaOf = (rings: Point2[][]) => rings.reduce((s, r) => s + Math.abs(ClipperLib.Clipper.Area(toPath(r))), 0) / SCALE / SCALE;
+  if (!inside.length || Math.abs(areaOf(inside) + areaOf(outside) - areaOf([tri])) > .01 * areaOf([tri]) + SLIVER) return false;
+  const colour = paintAt === 'drop' ? null : paintAt(inside[0][0]);
+  if (paintAt !== 'drop' && !colour) return false;
+  const [a, b, c] = tri, d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]), winding = Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+  const vertex = ([x, z]: Point2, paint: number[] | null) => {
+    const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (z - c[1])) / d, l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (z - c[1])) / d, w = [l1, l2, 1 - l1 - l2];
+    const at = (k: number) => w.reduce((s, wj, j) => s + wj * v[i + j * 7 + k], 0);
+    out.push(x + ox, z + oz, at(2), ...(paint ?? [at(3), at(4), at(5)]), 0);
+  };
+  const parts: [Point2[][], number[] | null][] = paintAt === 'drop' ? [[outside, null]] : [[inside, colour], [outside, null]];
+  for (const [rings, paint] of parts) for (const ring of rings)
+    for (const t of THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(...p)), [])) {
+      const [p, q, r] = t.map(j => ring[j]), same = Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) === winding;
+      for (const point of same ? [p, q, r] : [p, r, q]) vertex(point, paint);
+    }
+  return true;
 }
 
 // The square, in the local frame, within which roads are built.

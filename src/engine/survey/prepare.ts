@@ -7,8 +7,10 @@ import {TRIANGLE, type CityDefinition, type GroundTriangle, type Polygon, type S
 const SITE_MARGIN = 15;
 
 // Overrides are built here only to learn their ground patches; the viewer
-// builds them again from the recorded site ground.
-export function prepareSurvey(vertices: Float32Array, data: SceneData, city: CityDefinition, heightAt?: HeightAt) {
+// builds them again from the recorded site ground. Small ground triangles take
+// surface textures only in sites and the textured regions, where the ground is
+// meshed finely on purpose.
+export function prepareSurvey(vertices: Float32Array, data: SceneData, city: CityDefinition, heightAt?: HeightAt, textured: Site[] = []) {
   const frame: WorldFrame = {origin: city.frame.origin, base: data.base};
   const building = (id: string) => {
     const b = data.buildings.find(b => b.id === id);
@@ -30,7 +32,7 @@ export function prepareSurvey(vertices: Float32Array, data: SceneData, city: Cit
     sites.push(site);
     skip.add(b.pick);
   }
-  const buckets = [...bucketSurvey(vertices, frame, skip, sites).values()];
+  const buckets = [...bucketSurvey(vertices, frame, skip, [...sites, ...textured]).values()];
   const draped = heightAt ? drapeGround(buckets, heightAt, sites) : null;
   return {buckets, siteGround, settled, draped, patches};
 }
