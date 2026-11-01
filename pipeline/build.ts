@@ -11,6 +11,7 @@ import {georeference, type OsmExtract} from './geo.ts';
 import {gradeRoads} from './grade.ts';
 import {blendSites, gridGround, seatBuildings} from './ground.ts';
 import {buildNav} from './nav.ts';
+import {applyTreeEdits, collectPlacements, loadSites} from './placements.ts';
 import {buildRoads, clearFootwayPaint, layRoads, moveTreesOffPaths} from './roads.ts';
 import {buildStairs} from './stairs.ts';
 import {moveTreesOffRoads} from './trees.ts';
@@ -33,6 +34,7 @@ const georef = georeference(osm, data, sillamae), geo = georef.geo;
 const {shapes, centrelines, report: roadReport} = buildRoads(osm, data, sillamae, georef, vertices);
 const heightAt = blendSites(gradeRoads(loadDtm(geo.toGrid), centrelines), vertices, data, sillamae);
 const treeReport = moveTreesOffRoads(vertices, data), pathTreeReport = moveTreesOffPaths(shapes, data, sillamae);
+const sites = loadSites(path.join(SOURCE, 'placements')), editReport = applyTreeEdits(data, sites);
 const {vertices: cleared, report: paintReport} = clearFootwayPaint(vertices, data, sillamae);
 const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, heightAt, data, sillamae);
 const {vertices: seated, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
@@ -41,6 +43,7 @@ const roads = layRoads(shapes, buckets, sillamae, data.base, patches, heightAt);
 const {stairs, report: stairReport} = buildStairs(osm, data, sillamae, georef, heightAt);
 const {nav, report} = buildNav(osm, data, sillamae, georef);
 const {zones, report: zoneReport} = buildZones(osm, data, sillamae, georef);
+const {placements, report: placementReport} = collectPlacements(sites, 'src/city/sillamae/assets', heightAt);
 
 // Bucket order is kept: it is the draw order of equal-depth survey meshes.
 const tiles = new Map<string, Uint8Array[]>(), manifest: SurveyManifest = {cell: CELL, tileCells: TILE_CELLS, tiles: [], buckets: []};
@@ -69,6 +72,7 @@ const world: WorldData = {...data, siteGround: siteGroundMm, geo, zones, stairs,
 fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
 fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
 fs.writeFileSync(path.join(OUT, 'nav.json'), JSON.stringify(nav));
+fs.writeFileSync(path.join(OUT, 'placements.json'), JSON.stringify(placements));
 
 const mb = (n: number) => (n / 1048576).toFixed(1) + ' MB';
 console.log(`georeference RMS ${geo.rms.toFixed(2)} m; ${report}`);
@@ -80,5 +84,7 @@ console.log(groundReport);
 console.log(seatReport);
 console.log(treeReport);
 console.log(pathTreeReport);
+console.log(editReport);
+console.log(placementReport);
 console.log(`ground on the 1 m terrain model: ${draped!.before} -> ${draped!.after} triangles; ${settled} buildings lowered onto it`);
 console.log(`${buckets.length} buckets in ${tiles.size} tiles, ${mb(bytes)} gzip; world.json ${mb(fs.statSync(path.join(OUT, 'world.json')).size)}; ${((performance.now() - started) / 1000).toFixed(1)} s`);

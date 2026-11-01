@@ -1,7 +1,7 @@
 import {MeshoptDecoder} from 'meshoptimizer/decoder';
 import * as THREE from 'three';
 import {expandBucket, type Detail, type Surface} from './survey/classify.ts';
-import type {GroundTriangle, SceneData, WorldFrame} from './types.ts';
+import type {GroundTriangle, Placement, SceneData, WorldFrame} from './types.ts';
 
 export interface Zone {
   id: number;
@@ -89,6 +89,8 @@ async function json<T>(url: string) {
 }
 
 export const loadNav = (root: string) => json<NavData>(root + 'nav.json');
+// Data built before the site editor existed has no placements file.
+export const loadPlacements = (root: string) => json<Placement[]>(root + 'placements.json').catch(() => []);
 
 export async function loadWorld(root: string) {
   const [world, survey] = await Promise.all([json<WorldData>(root + 'world.json'), json<SurveyManifest>(root + 'survey.json'), MeshoptDecoder.ready]);

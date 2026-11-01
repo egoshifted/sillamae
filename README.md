@@ -28,6 +28,8 @@ Roads cover the whole town (every building plus 30 m): `pipeline/roads.ts` build
 
 Every OpenStreetMap `steps` way becomes stairs: one flight per segment with treads, a solid base and side cheeks, its ends on the 1 m terrain model; width and step count come from OSM tags where mapped (2 of 56 ways), otherwise 2.5 m and 15 cm risers.
 
+Street detail added in the studio's site editor (`data/source/placements/`, one file per square) is built in too: tree edits change the tree list before trees are seated on the ground, and placed objects from the asset library go to `placements.json`, which the viewer draws in instanced batches per 120 m with near and far detail. See the [studio guide](src/studio/README.md).
+
 Buildings are grouped into blocks: areas enclosed by streets and the edge of the modelled town, found by flood-filling a 2 m street raster. Each building in `world.json` carries its block (`zone`); the F1 debug panel can colour buildings by block.
 
 Code layout:

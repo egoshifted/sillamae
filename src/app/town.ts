@@ -1,5 +1,6 @@
+import {library} from '../city/sillamae/assets/library.ts';
 import {sillamae} from '../city/sillamae/index.ts';
-import {decodeTile, fetchTile, loadWorld} from '../engine/data.ts';
+import {decodeTile, fetchTile, loadPlacements, loadWorld} from '../engine/data.ts';
 import {Engine} from '../engine/engine.ts';
 import {applyViewFromUrl} from './viewUrl.ts';
 
@@ -44,8 +45,11 @@ export function openTown(container: HTMLElement) {
 
 async function load(container: HTMLElement) {
   for (const o of sillamae.overrides) o.preload?.();
+  const placements = loadPlacements(DATA);
   const {world, survey} = await loadWorld(DATA);
   const engine = new Engine(container, {data: world, survey, city: sillamae});
+  // Only approved assets ship; the data build already dropped placements of drafts.
+  engine.addPlacements(await placements, new Map(library.map(a => [a.id, a])));
   applyViewFromUrl(engine);
   update({engine});
 

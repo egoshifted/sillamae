@@ -52,7 +52,7 @@ let selection = new Set<string>(); // 'p:<placement id>', or a tree key from tre
 const undo: string[] = [], redo: string[] = [], path: THREE.Vector3[] = [];
 const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), highlights = new THREE.Group(), preview = new THREE.Group();
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
-const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true};
+const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false};
 
 // Flat on the ground round the selection; dragging it turns the selection, as in The Sims.
 const ring = new THREE.Mesh(new THREE.RingGeometry(.86, 1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#f0a400', transparent: true, opacity: .85, depthTest: false, side: THREE.DoubleSide}));
@@ -403,7 +403,7 @@ function turn(by: number, start?: Map<string, {p: Point2; heading: number}>, cen
   for (const [key, {p, heading}] of from) {
     if (placementOf(key)?.attach === 'wall') continue;
     const dx = p[0] - ox - c.x, dz = p[1] - oz - c.z;
-    if (from.size > 1) moveTo(key, c.x + dx * cos + dz * sin + ox, c.z - dx * sin + dz * cos + oz);
+    if (from.size > 1 && !options.inPlace) moveTo(key, c.x + dx * cos + dz * sin + ox, c.z - dx * sin + dz * cos + oz);
     setHeading(key, heading + by);
   }
 }
@@ -643,7 +643,7 @@ const ICONS: Record<string, string> = {
   home: '<path d="M3 10l7-6 7 6M5 9v8h10V9"/>',
 };
 const TOOLS: [Tool, string, string][] = [
-  ['select', 'Select and move (V)', 'Click to select, Shift-click to add, Ctrl-click to toggle, drag empty ground for a box · drag to move · drag the orange ring to turn (Alt: free) · Q/E turn 15° (Shift 90°) · arrows nudge 10 cm (Shift 1 m) · Del removes · Ctrl+D duplicates · Ctrl+A selects all'],
+  ['select', 'Select and move (V)', 'Click to select, Shift-click to add, Ctrl-click to toggle, drag empty ground for a box · drag to move · drag the orange ring to turn (Alt: free), round the group centre or each in place · Q/E turn 15° (Shift 90°) · arrows nudge 10 cm (Shift 1 m) · Del removes · Ctrl+D duplicates · Ctrl+A selects all'],
   ['place', 'Place (A)', 'Pick an asset or tree on the left, then click the ground or a wall · Q/E turn before placing · Alt-click an object to pick up its asset · right-click or Esc stops'],
   ['path', 'Draw a row along a path (P)', 'Click points along the path · double-click or Enter places the row · Backspace removes the last point · Esc or right-click clears'],
   ['scatter', 'Scatter brush (B)', 'Drag over the ground to scatter the brush; nothing lands closer than the gap to its own kind · Alt-click picks up an object'],
@@ -702,6 +702,11 @@ function showOptions() {
     const spin = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.spin});
     spin.onchange = () => { options.spin = spin.checked; };
     parts.push(number('Radius m', 'radius', .5, .5), number('Gap m', 'gap', .25, .1), labelled('Random turn', spin));
+  }
+  else if (tool === 'select') {
+    const inPlace = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.inPlace});
+    inPlace.onchange = () => { options.inPlace = inPlace.checked; };
+    parts.push(labelled('Turn each in place', inPlace));
   }
   if (['place', 'path', 'scatter'].includes(tool)) parts.unshift(Object.assign(document.createElement('span'), {className: 'tip', textContent: brush ? `Brush: ${brush.kind === 'tree' ? `${brush.type === CONIFER ? 'conifer' : 'broadleaf'} tree` : brush.asset.name}` : 'Pick an asset or tree on the left'}));
   bar.replaceChildren(...parts);
@@ -969,6 +974,9 @@ async function open(square: Square) {
   if (missing.length) error.textContent = `Not shown, unknown assets: ${[...new Set(missing.map(p => p.asset))].join(', ')}`;
   site.placements = site.placements.filter(p => assetById.has(p.asset));
   const {scene, frame} = loaded, [ox, oz] = frame.origin;
+  // The built data holds this square's added trees from the last data build; they
+  // are drawn from the edits instead. Trees can only be added inside their square.
+  loaded.trees = loaded.trees.filter(t => !t.added || !inSquare(t.p[0] - ox, t.p[1] - oz));
   trees = new TreeLayer(scene, frame, new THREE.Vector3(square.centre[0] - ox, 0, square.centre[1] - oz));
   treesChanged = true;
   measure = new Measure(scene, element('labels'));

@@ -7,8 +7,9 @@ import {tileBounds, type NavData, type SurveyBucket, type SurveyManifest, type W
 import {navOverlay} from './nav-overlay.ts';
 import {createOutline} from './outline.ts';
 import {buildingPrisms, pickPrism} from './picking.ts';
+import {addPlacements} from './placements.ts';
 import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
-import type {Building, BuildingOverride, BuiltOverride, CityDefinition, Point2, WorldFrame} from './types.ts';
+import type {AssetDefinition, Building, BuildingOverride, BuiltOverride, CityDefinition, Placement, Point2, WorldFrame} from './types.ts';
 import {addRoads} from './roads.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
@@ -39,6 +40,7 @@ export class Engine {
   readonly #survey: ReturnType<typeof addSurveyLayer>;
   readonly #forest: ReturnType<typeof addTrees>;
   readonly #vegetation = new THREE.Group();
+  #placements: ReturnType<typeof addPlacements> | null = null;
   readonly #sun: ReturnType<typeof addSun>;
   readonly #shadowAnchors: THREE.Vector3[] = [];
   readonly #prisms: ReturnType<typeof buildingPrisms>;
@@ -119,6 +121,14 @@ export class Engine {
       if (o.detailShadows) this.#shadowAnchors.push(new THREE.Vector3(building.c[0] - ox, 6, building.c[1] - oz));
     }
     return Promise.all(ready);
+  }
+
+  // Objects placed in the studio; the city supplies its asset library, which the engine knows nothing about.
+  addPlacements(placements: Placement[], assets: ReadonlyMap<string, AssetDefinition>) {
+    if (this.#placements || !placements.length) return;
+    this.#placements = addPlacements(this.#scene, placements, assets, this.frame);
+    this.#renderer.shadowMap.needsUpdate = true;
+    this.#redraw = true;
   }
 
   // Without this, the first frame blocks for over a second while ANGLE links shaders.
@@ -336,6 +346,7 @@ export class Engine {
     }
     const camera = this.camera.ortho, target = this.camera.target;
     if (this.#forest.update(target, ppm)) this.#renderer.shadowMap.needsUpdate = true;
+    if (this.#placements?.update(target, ppm)) this.#renderer.shadowMap.needsUpdate = true;
     this.#sun.follow(camera, target, this.#shadowAnchors);
     this.camera.prepareRender();
     const started = performance.now();

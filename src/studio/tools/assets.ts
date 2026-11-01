@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import * as THREE from 'three';
-import type {AssetDefinition, AssetDetail, PlacementSite} from '../../engine/types.ts';
+import {sillamae} from '../../city/sillamae/index.ts';
+import type {WorldData} from '../../engine/data.ts';
+import type {AssetDefinition, AssetDetail, PlacementSite, Point2} from '../../engine/types.ts';
 import {option, repo} from './local.ts';
 
 // Checks the asset library, drafts and saved placements; see src/studio/ASSETS.md.
@@ -91,6 +93,35 @@ for (const {asset, draft} of loaded) {
 }
 for (const {asset, folder} of loaded) if (!selected || asset.id === selected) checkAsset(asset, folder);
 
+// The built town, when there is one, to check placements against its buildings and roads.
+const WORLD = path.join(repo, 'public/data/world.json');
+const world = fs.existsSync(WORLD) ? JSON.parse(fs.readFileSync(WORLD, 'utf8')) as WorldData : null;
+const WALL_REACH = 1; // metres a wall placement may sit from its building's outline
+const inRing = (ring: Point2[], x: number, z: number) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if ((ring[i][1] > z) !== (ring[j][1] > z) && x < (ring[j][0] - ring[i][0]) * (z - ring[i][1]) / (ring[j][1] - ring[i][1]) + ring[i][0]) inside = !inside;
+  return inside;
+};
+const edgeDistance = (ring: Point2[], x: number, z: number) => Math.min(...ring.map((a, i) => {
+  const b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dz = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1)));
+  return Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz);
+}));
+const indoors = (x: number, z: number) => world?.buildings.find(b => inRing(b.g, x, z));
+const [ox, oz] = sillamae.frame.origin;
+const carriageways = world?.roads.filter(r => r.kind === 'carriageway').map(r => r.ring.map(([x, , z]): Point2 => [x + ox, z + oz])) ?? [];
+function againstTown(name: string, id: string, attach: string, x: number, z: number, building?: string) {
+  if (!world) return;
+  if (attach === 'wall') {
+    const b = world.buildings.find(w => w.id === building);
+    if (!b) fail(name, `${id} hangs on building ${building}, which the built data no longer has`);
+    else if (edgeDistance(b.g, x, z) > WALL_REACH) fail(name, `${id} is ${edgeDistance(b.g, x, z).toFixed(1)} m from the walls of building ${building}`);
+    return;
+  }
+  const inside = indoors(x, z);
+  if (inside) fail(name, `${id} stands inside building ${inside.id}`);
+  else if (carriageways.some(r => inRing(r, x, z))) warnings.push(`${name}: ${id} stands on a carriageway`);
+}
+
 const byId = new Map(loaded.map(l => [l.asset.id, l]));
 let placed = 0;
 for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.endsWith('.json')) : []) {
@@ -108,6 +139,7 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     if (p.variant && !found.asset.variants.some(v => v.id === p.variant)) fail(name, `${p.id} uses unknown variant ${p.variant} of ${p.asset}`);
     if (!(p.p?.length === 3 && p.p.every(Number.isFinite) && Number.isFinite(p.heading))) fail(name, `${p.id} has an invalid position or heading`);
     if (p.attach === 'wall' && !p.building) fail(name, `${p.id} is on a wall but names no building`);
+    else if (p.p?.every(Number.isFinite)) againstTown(name, p.id, p.attach, p.p[0], p.p[1], p.building);
   }
   const point = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
   for (const r of site.trees?.remove ?? []) if (!point(r)) fail(name, `removed tree ${JSON.stringify(r)} is not an x/z pair`);
@@ -115,12 +147,13 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     if (ids.has(t.id)) fail(name, `tree id ${t.id} used twice`);
     ids.add(t.id);
     if (!point(t.p) || !Number.isFinite(t.z) || !(t.h >= 3) || !(t.r > 0) || !['Lehtpuu', 'Okaspuu'].includes(t.type)) fail(name, `tree ${t.id} needs x/z, ground height, a height of 3 m or more, a crown radius and a kind`);
+    else againstTown(name, 'tree ' + t.id, 'ground', t.p[0], t.p[1]);
   }
 }
 
 for (const w of warnings) console.warn('warning ' + w);
 const library = loaded.filter(l => !l.draft).length;
-console.log(`assets: ${library} in the library, ${loaded.length - library} drafts; ${placed} placements checked`);
+console.log(`assets: ${library} in the library, ${loaded.length - library} drafts; ${placed} placements checked${world ? ' against the built town' : '; build data (npm run data) to also check them against buildings and roads'}`);
 if (failures.length) {
   for (const f of failures) console.error('FAIL ' + f);
   process.exit(1);

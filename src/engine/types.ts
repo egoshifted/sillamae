@@ -28,6 +28,7 @@ export interface Tree {
   type: string; // Maa- ja Ruumiamet class: Lehtpuu (broadleaf) or Okaspuu (conifer)
   year: number;
   z: number; // ground height
+  added?: string; // SiteTree id of a tree added in the studio
 }
 
 // Digital terrain model grid; values are heights in decimetres.
