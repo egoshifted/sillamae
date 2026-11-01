@@ -6,7 +6,9 @@ import type {SurveyManifest, WorldData} from '../../engine/data.ts';
 import type {AssetDefinition, Placement, PlacementSite, Point2, SiteTree} from '../../engine/types.ts';
 import {city} from '../project.ts';
 import {Measure} from './measure.ts';
+import {createStage} from './stage.ts';
 import {TerrainEdit, type TerrainMode} from './terrain.ts';
+import {thumbnail} from './thumbnails.ts';
 import {loadSquare, type Square} from './scene.ts';
 import {BROADLEAF, CONIFER, pickTree, TreeLayer, treeGhost, treeItems, type TreeItem} from './trees.ts';
 import '../style.css';
@@ -885,14 +887,14 @@ function showPalette() {
   const keyOf = (a: AssetDefinition) => [a.id, a.name, a.category, ...a.tags].join(' ');
   const groups = new Map<string, HTMLElement[]>(), into = (name: string, row: HTMLElement) => groups.set(name, [...groups.get(name) ?? [], row]);
   for (const a of library) if (!a.retired && matches(keyOf(a)))
-    into(a.category, item(a.name, a.id, brush?.kind === 'asset' && brush.asset === a, () => setBrush(brush?.kind === 'asset' && brush.asset === a ? null : {kind: 'asset', asset: a, variant: a.variants[0].id})));
+    into(a.category, item(a.name, a.id, brush?.kind === 'asset' && brush.asset === a, () => setBrush(brush?.kind === 'asset' && brush.asset === a ? null : {kind: 'asset', asset: a, variant: a.variants[0].id}), thumbnail(a), () => openPreview(a)));
   for (const t of TREE_BRUSHES) if (t.brush.kind === 'tree' && matches(t.label + ' tree vegetation')) {
     const type = t.brush.type;
-    into('vegetation', item(t.label, `${t.brush.h} m tall`, brush?.kind === 'tree' && brush.type === type, () => setBrush(brush?.kind === 'tree' && brush.type === type ? null : {...t.brush})));
+    into('vegetation', item(t.label, `${t.brush.h} m tall`, brush?.kind === 'tree' && brush.type === type, () => setBrush(brush?.kind === 'tree' && brush.type === type ? null : {...t.brush}), TREE_PICTURES[type]));
   }
   const sections = [...groups.keys()].sort().map(name => group(name, groups.get(name)!, !!query));
   const pending = drafts.filter(a => matches(keyOf(a))).map(a => {
-    const row = item(a.name, a.id, brush?.kind === 'asset' && brush.asset === a, () => setBrush({kind: 'asset', asset: a, variant: a.variants[0].id}));
+    const row = item(a.name, a.id, brush?.kind === 'asset' && brush.asset === a, () => setBrush({kind: 'asset', asset: a, variant: a.variants[0].id}), thumbnail(a), () => openPreview(a));
     const actions = Object.assign(document.createElement('span'), {className: 'actions'});
     actions.append(button('Approve', () => action(() => review(a, 'approve'))), button('Reject…', () => action(() => review(a, 'reject'))));
     row.append(actions);
@@ -920,13 +922,75 @@ function group(name: string, rows: HTMLElement[], searching: boolean) {
 }
 const heading = (text: string) => Object.assign(document.createElement('h3'), {textContent: text});
 const button = (text: string, onclick: () => void) => Object.assign(document.createElement('button'), {textContent: text, type: 'button', onclick});
-function item(name: string, detail: string, active: boolean, onclick: () => void) {
-  const row = document.createElement('div');
+// A palette row: its picture opens the preview, its name picks it as the brush.
+function item(name: string, detail: string, active: boolean, onclick: () => void, picture: string, open?: () => void) {
+  const row = document.createElement('div'), label = document.createElement('div');
   row.className = 'asset' + (active ? ' active' : '');
-  row.append(button(name, onclick), Object.assign(document.createElement('small'), {textContent: detail}));
+  label.className = 'label';
+  label.append(button(name, onclick), Object.assign(document.createElement('small'), {textContent: detail}));
+  const thumb = button('', open ?? onclick);
+  thumb.className = 'thumb';
+  thumb.title = open ? `Preview ${name}` : name;
+  thumb.setAttribute('aria-label', thumb.title);
+  thumb.style.backgroundImage = `url("${picture}")`;
+  row.append(thumb, label);
   return row;
 }
+const svg = (body: string) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44"><rect width="44" height="44" fill="#e0e6d9"/>${body}</svg>`);
+const TREE_PICTURES: Record<string, string> = {
+  [BROADLEAF]: svg('<rect x="20.5" y="26" width="3" height="12" fill="#6b5846"/><ellipse cx="22" cy="19" rx="11" ry="12" fill="#7f9e48"/><ellipse cx="18" cy="16" rx="5" ry="5" fill="#91ad55"/>'),
+  [CONIFER]: svg('<rect x="20.5" y="32" width="3" height="7" fill="#6b5846"/><path d="M22 5 L32 33 H12 Z" fill="#56744b"/><path d="M22 5 L27 19 H17 Z" fill="#5f7c52"/>'),
+};
 element('filter').oninput = showPalette;
+
+// ---- Preview ---------------------------------------------------------------------
+
+let stage: ReturnType<typeof createStage> | null = null, previewing: AssetDefinition | null = null;
+const previewDialog = element<HTMLDialogElement>('preview');
+function openPreview(asset: AssetDefinition) {
+  previewing = asset;
+  stage ??= createStage(element<HTMLCanvasElement>('stage'));
+  const variant = element<HTMLSelectElement>('preview-variant'), compare = element<HTMLSelectElement>('preview-compare');
+  variant.replaceChildren(...asset.variants.map(v => new Option(v.label, v.id)));
+  compare.replaceChildren(new Option('Nothing', ''), ...library.filter(a => a !== asset && !a.retired).map(a => new Option(a.name, a.id)));
+  element('preview-name').textContent = asset.name;
+  element('preview-id').textContent = `${asset.id} · ${asset.category} · ${asset.attach}${drafts.includes(asset) ? ' · draft' : ''}`;
+  element('preview-review').hidden = !drafts.includes(asset);
+  previewDialog.showModal();
+  stage.resize(element('stage').clientWidth, element('stage').clientHeight);
+  showPreview();
+}
+function showPreview() {
+  if (!stage || !previewing) return;
+  const asset = previewing, variant = element<HTMLSelectElement>('preview-variant').value, detail = element<HTMLSelectElement>('preview-detail').value as 'near' | 'far';
+  const numbers = element('preview-numbers'), row = (term: string, value: string, bad = false) => [Object.assign(document.createElement('dt'), {textContent: term}), Object.assign(document.createElement('dd'), {textContent: value, className: bad ? 'bad' : ''})];
+  try {
+    const built = stage.place({asset, variant, detail, person: element<HTMLInputElement>('preview-person').checked, compare: assetById.get(element<HTMLSelectElement>('preview-compare').value)});
+    // The declared size is the near detail's; the far one may drop small parts.
+    const off = detail === 'near' && built.size.some((s, i) => Math.abs(s - asset.size[i]) > .03);
+    numbers.replaceChildren(
+      ...row('Built size', built.size.map(s => s.toFixed(2)).join(' × ') + ' m', off),
+      ...row('Declared', asset.size.join(' × ') + ' m'),
+      ...row('Triangles', `${built.triangles}${detail === 'near' ? ` of ${asset.triangles}` : ''}`, detail === 'near' && built.triangles > asset.triangles),
+      ...row('Variants', String(asset.variants.length)),
+      ...row('Tags', asset.tags.join(', ')),
+    );
+    stage.render();
+  } catch (e) {
+    numbers.replaceChildren(...row('Error', e instanceof Error ? e.message : String(e), true));
+  }
+}
+for (const id of ['preview-variant', 'preview-detail', 'preview-compare', 'preview-person']) element(id).onchange = showPreview;
+element('preview-spin').onchange = () => stage?.spin(element<HTMLInputElement>('preview-spin').checked);
+for (const b of previewDialog.querySelectorAll<HTMLButtonElement>('.views button')) b.onclick = () => stage?.view(Number(b.dataset.view), Number(b.dataset.up ?? 18));
+element('preview-close').onclick = () => previewDialog.close();
+previewDialog.onclose = () => { stage?.spin(false); element<HTMLInputElement>('preview-spin').checked = false; };
+element('preview-use').onclick = () => {
+  if (previewing) setBrush({kind: 'asset', asset: previewing, variant: element<HTMLSelectElement>('preview-variant').value});
+  previewDialog.close();
+};
+element('preview-approve').onclick = () => { if (previewing) { const a = previewing; previewDialog.close(); action(() => review(a, 'approve')); } };
+element('preview-reject').onclick = () => { if (previewing) { const a = previewing; previewDialog.close(); action(() => review(a, 'reject')); } };
 
 function showSelection() {
   const panel = element('selection'), keys = [...selection];

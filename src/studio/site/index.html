@@ -37,5 +37,22 @@
     <output id="picked"></output><button id="open" value="open">Open square</button><button value="cancel">Cancel</button></p>
   </form>
 </dialog>
+<dialog id="preview" aria-labelledby="preview-name">
+  <div class="preview">
+    <canvas id="stage" width="720" height="520"></canvas>
+    <div class="facts">
+      <h3 id="preview-name"></h3><small id="preview-id"></small>
+      <label>Variant <select id="preview-variant"></select></label>
+      <label>Detail <select id="preview-detail"><option value="near">Near</option><option value="far">Far (zoomed out)</option></select></label>
+      <label>Compare with <select id="preview-compare"></select></label>
+      <label><input id="preview-person" type="checkbox" checked>Person, 1.75 m</label>
+      <label><input id="preview-spin" type="checkbox">Turn</label>
+      <div class="views"><button type="button" data-view="-36">Front</button><button type="button" data-view="90">Side</button><button type="button" data-view="180">Back</button><button type="button" data-view="0" data-up="80">Above</button></div>
+      <dl id="preview-numbers"></dl>
+      <div id="preview-review" class="review"><button type="button" id="preview-approve">Approve into library</button><button type="button" id="preview-reject">Reject with notes…</button></div>
+      <div class="end"><button type="button" id="preview-use">Use as brush</button><button type="button" id="preview-close">Close</button></div>
+    </div>
+  </div>
+</dialog>
 <script type="module" src="./editor.ts"></script>
 </body></html>

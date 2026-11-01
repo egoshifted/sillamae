@@ -5,6 +5,7 @@
     "data": "node --max-old-space-size=8192 pipeline/build.ts",
     "osm": "node pipeline/fetch-osm.ts",
     "assets:check": "node src/studio/tools/assets.ts",
+    "assets:preview": "node src/studio/tools/asset-preview.ts",
     "roads:check": "node --max-old-space-size=8192 pipeline/check-roads.ts",
     "dev": "node --max-old-space-size=8192 pipeline/build.ts && vite",
     "check": "tsc -p .",
