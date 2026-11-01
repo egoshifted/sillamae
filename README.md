@@ -24,8 +24,6 @@ The build also georeferences the survey by matching building outlines with OpenS
 
 The survey ground is laid onto the 1 m terrain model of Maa- ja Ruumiamet (`data/source/dtm-1m.*`, heights in centimetres): every ground vertex moves by the difference between that model and the lowest survey ground layer, so the stacked ground layers keep their gaps, and edges along which the terrain bends are subdivided. Water, ground under water and the Kesk 1 site keep their heights; trees stand on the new ground.
 
-The survey ground draws roads as fixed-width strips along generalised centrelines. `data/source/road-corrections.json` replaces them area by area with centrelines and widths traced from the Maa- ja Ruumiamet orthophoto and checked against Street View: `pipeline/roads.ts` repaints the survey ground inside each corrected area, and roads marked as streets are built by `pipeline/streets.ts` as real carriageways with rounded junction corners, kerbs and road markings on the 1 m terrain model, with the survey ground cut out beneath them. The viewer draws them from `world.json` (`src/engine/streets.ts`).
-
 Every OpenStreetMap `steps` way becomes stairs: one flight per segment with treads, a solid base and side cheeks, its ends on the 1 m terrain model; width and step count come from OSM tags where mapped (2 of 56 ways), otherwise 2.5 m and 15 cm risers.
 
 Buildings are grouped into blocks: areas enclosed by streets and the edge of the modelled town, found by flood-filling a 2 m street raster. Each building in `world.json` carries its block (`zone`); the F1 debug panel can colour buildings by block.

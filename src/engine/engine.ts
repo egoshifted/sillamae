@@ -10,7 +10,6 @@ import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
 import type {Building, BuildingOverride, BuiltOverride, CityDefinition, WorldFrame} from './types.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
-import {addStreets} from './streets.ts';
 
 const DEFAULT_VIEW: CameraView = {offset: [-110, 110, 130], span: 120};
 const OUTSKIRTS = new THREE.Color('#8a8f86');
@@ -97,7 +96,6 @@ export class Engine {
     this.#scene.add(this.#vegetation);
     this.#forest = addTrees(this.#vegetation, data.trees, this.frame);
     addStairs(this.#scene, data.stairs);
-    addStreets(this.#scene, data.streets);
 
     this.#prisms = buildingPrisms(data.buildings, this.frame);
     this.focusBuilding(this.#building(city.defaultFocus));
