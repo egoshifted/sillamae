@@ -3,6 +3,7 @@ import {preloadSurfaces} from './surfaces.ts';
 import {orthogonalPlan} from './plan.ts';
 import {addSteppedApartment} from './model.ts';
 import {concat, readTriangle, splitPolygon, type SurveyVertex} from '../../../engine/survey/carve.ts';
+import {entranceDatum, lowered} from '../../../studio/assembly/seat.ts';
 import {TRIANGLE, type Building, type BuildingOverride, type Point2} from '../../../engine/types.ts';
 
 // Floor indices are zero-based (L1 = 0).
@@ -33,9 +34,16 @@ export const kesk1: BuildingOverride = {
   },
   preload: preloadSurfaces,
   build({scene, building, terrain, frame, ground, changed}) {
-    const siteGround = ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10);
-    const root = addSteppedApartment(scene, building, {...terrain, siteGround}, kesk1Design, frame);
-    const surroundings = createRearSurroundings(building, terrain, frame, siteGround);
+    // Kesk 1 and its rear access were drafted at a fixed 12.8 m; they stand on
+    // the ground at the entrances, built against ground (site triangles and
+    // the decimetre terrain grid) lowered by the difference and then raised.
+    const lift = (entranceDatum(ground, kesk1.entrances!(building)) ?? kesk1Design.foundationLevel) - kesk1Design.foundationLevel;
+    const siteGround = lowered(ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10), lift);
+    const grid = {...terrain, values: terrain.values.map(v => v - lift * 10)};
+    const root = addSteppedApartment(scene, building, {...grid, siteGround}, kesk1Design, frame);
+    const surroundings = createRearSurroundings(building, grid, frame, siteGround);
+    root.position.y += lift;
+    surroundings.position.y += lift;
     scene.add(surroundings);
     const dispose = root.userData.dispose;
     root.userData.dispose = () => { surroundings.userData.dispose(); dispose(); };
@@ -45,6 +53,7 @@ export const kesk1: BuildingOverride = {
   entrances: building => [facePoint(building, 6, .2394, 3), facePoint(building, 16, .5, 2.7)],
   view: {offset: [110, 80, 45], span: 65},
   detailShadows: true,
+  seatsOnGround: true,
 };
 
 function facePoint(building: Building, index: number, along: number, out: number): Point2 {

@@ -3,6 +3,8 @@ import type {Point2, Polygon} from '../../../engine/types.ts';
 type Vertex = number[];
 type Ring = Vertex[];
 type Plane = (p: Vertex) => number;
+// Metres from the walls: full grading to INNER (the lightwells' reach), none beyond OUTER.
+const INNER = 1, OUTER = 3;
 // Apply one height correction to every surface at a position; survey layer gaps must survive grading.
 function area(p: Ring){return p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-a[1]*b[0];},0)/2;}
 function clip(poly: Ring,fn: Plane,inside=true): Ring{const out: Ring=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=fn(a),db=fn(b),ai=inside?da>=-1e-8:da< -1e-8,bi=inside?db>=-1e-8:db< -1e-8;if(ai)out.push(a);if(ai!==bi){const t=da/(da-db);out.push(a.map((v,j)=>v+(b[j]-v)*t));}}const clean=out.filter((p,i)=>!i||Math.hypot(p[0]-out[i-1][0],p[1]-out[i-1][1])>1e-8);if(clean.length>1&&Math.hypot(clean[0][0]-clean.at(-1)![0],clean[0][1]-clean.at(-1)![1])<1e-8)clean.pop();return clean.length>=3&&Math.abs(area(clean))>1e-8?clean:[];}
@@ -17,10 +19,11 @@ export function prepareKesk5Ground(vertices: Float32Array,spec: {origin: Point2}
  // Index source planes by metre cell to preserve distinct underlying layers.
  const bins=new Map<string, Ring[]>();for(const item of source){const b=item.bounds;for(let x=Math.floor(b[0]);x<=Math.floor(b[2]);x++)for(let z=Math.floor(b[1]);z<=Math.floor(b[3]);z++){const k=x+','+z;if(!bins.has(k))bins.set(k,[]);bins.get(k)!.push(item.tri);}}
  function topAt(p: Vertex){let top=p[2];for(const t of bins.get(Math.floor(p[0])+','+Math.floor(p[1]))||[]){const signs=t.map((a,i)=>{const b=t[(i+1)%3];return (b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]);});if(!(signs.every(v=>v>=-1e-7)||signs.every(v=>v<=1e-7)))continue;top=Math.max(top,height(t,p));}return top;}
- const out: number[]=[];let overlapCount=0;function grade(p: Vertex){const d=Math.min(...plan.map((a,i)=>distance(p,a,plan[(i+1)%plan.length]))),t=Math.max(0,Math.min(1,(d-2.5)/4.5)),smooth=t*t*(3-2*t),q=[...p],correction=(flat-topAt(p))*(1-smooth);q[2]=p[2]+correction;return q;}
+ // Only ground above the datum is lowered, within reach of the lightwells; the foundation absorbs lower ground.
+ const out: number[]=[];let overlapCount=0;function grade(p: Vertex){const d=Math.min(...plan.map((a,i)=>distance(p,a,plan[(i+1)%plan.length]))),t=Math.max(0,Math.min(1,(d-INNER)/(OUTER-INNER))),smooth=t*t*(3-2*t),q=[...p],correction=Math.min(0,flat-topAt(p))*(1-smooth);q[2]=p[2]+correction;return q;}
  function emit(poly: Ring){let parts=[poly];for(const hole of holes){const h=bounds(hole);parts=parts.flatMap(part=>{const b=bounds(part);return b[2]<h[0]||b[0]>h[2]||b[3]<h[1]||b[1]>h[3]?[part]:subtract(part,hole);});}for(const part of parts)for(let k=1;k<part.length-1;k++){const tri=[part[0],part[k],part[k+1]];if(Math.abs(area(tri))<1e-8)continue;for(const p of tri)out.push(...world(grade(p)));}}
  for(let i=0;i<source.length;i++){const current=source[i],A=current.bounds;let parts=[current.tri];for(let j=0;j<source.length&&parts.length;j++){if(i===j)continue;const other=source[j],B=other.bounds;if(A[2]<B[0]+1e-7||B[2]<A[0]+1e-7||A[3]<B[1]+1e-7||B[3]<A[1]+1e-7)continue;const ring=area(other.tri)<0?[...other.tri].reverse():other.tri;parts=parts.flatMap(part=>{let overlap=part;for(let k=0;k<3&&overlap.length;k++){const a=ring[k],b=ring[(k+1)%3];overlap=clip(overlap,(p: Vertex)=>(b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]));}if(!overlap.length)return [part];const diffs=overlap.map(p=>height(other.tri,p)-p[2]);if(!diffs.every(d=>Math.abs(d)<1e-5)||j>i)return [part];overlapCount++;return subtract(part,overlap);});}
   for(const part of parts){const b=bounds(part),x0=Math.max(limits[0],Math.floor(b[0])),x1=Math.min(limits[2]-1,Math.floor(b[2])),z0=Math.max(limits[1],Math.floor(b[1])),z1=Math.min(limits[3]-1,Math.floor(b[3]));for(let x=x0;x<=x1;x++)for(let z=z0;z<=z1;z++){let cell=part;for(const f of [(p: Vertex)=>p[0]-x,(p: Vertex)=>x+1-p[0],(p: Vertex)=>p[1]-z,(p: Vertex)=>z+1-p[1]])cell=clip(cell,f);if(cell.length)emit(cell);}}
  }
- return {patch,vertices:new Float32Array(out),sourceTriangles:source.length,generatedTriangles:out.length/21,overlapCount,limits,flat,inner:2.5,outer:7};
+ return {patch,vertices:new Float32Array(out),sourceTriangles:source.length,generatedTriangles:out.length/21,overlapCount,limits,flat,inner:INNER,outer:OUTER};
 }
