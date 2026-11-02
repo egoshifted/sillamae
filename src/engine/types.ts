@@ -126,7 +126,7 @@ export interface SiteTree {
   type: string; // as Tree.type
 }
 
-export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed';
+export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed' | 'worn-grass';
 // An area drawn on the ground in the studio, laid like a footway.
 export interface SiteSurface {
   id: string;
@@ -143,9 +143,9 @@ export interface SiteLine {
   height?: number; // metres; each kind has its own default
 }
 
-export type RoadType = 'main' | 'residential' | 'service';
-// A street drawn in the studio. The data build adds it to the OpenStreetMap
-// streets, so it is laid, marked and joined at junctions like them.
+export type RoadType = 'main' | 'residential' | 'service' | 'sidewalk' | 'asphalt-path' | 'gravel-path' | 'worn-path';
+// Vehicle streets join the OSM network. Pedestrian paths retain their drawn
+// width and finish as terrain-following surfaces, without road grading.
 export interface SiteRoad {
   id: string;
   type: RoadType;
@@ -168,7 +168,16 @@ export interface PlacementSite {
   surfaces?: SiteSurface[];
   lines?: SiteLine[];
   roads?: SiteRoad[];
+  roadCuts?: RoadCut[];
   hidden?: string[]; // survey buildings (Building.id) left out of the build: sheds, kiosks, survey blobs
+}
+
+export interface RoadCut {
+  exposeGround?: boolean;
+  groundColour?: [number, number, number]; // linear RGB sampled from the surrounding unpaved ground
+  groundColours?: [number, number, number][];
+  ring: Point2[]; // source x/z in site files, local x/z in built world data
+  kind: 'carriageway' | 'footway';
 }
 
 export const TREE_MATCH = .75; // metres

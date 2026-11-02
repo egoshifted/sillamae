@@ -34,7 +34,7 @@ const VERGE_SAMPLES = [2.5, 4, 8];
 const SEEKS = [0, ...Array.from({length: SEEK / SCAN}, (_, k) => [(k + 1) * SCAN, -(k + 1) * SCAN]).flat()];
 
 type Feature = {geometry: {type: string; coordinates: any}; properties: Record<string, any>};
-export type RoadShape = {kind: RoadKind; ring: Point2[]; surface?: Finish};
+export type RoadShape = {kind: RoadKind; ring: Point2[]; surface?: Finish; studio?: string};
 
 // OSM surface tags to the finishes the viewer draws. Untagged and plain
 // "paved" paths are asphalt, as most here are on the ground.
@@ -296,7 +296,7 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
   // Surfaces are cut into cells: the viewer triangulates outlines only, and the
   // middle of a wide carriageway would otherwise sink below survey paint
   // sheets, which then shadow it.
-  const surfaces: RoadSurface[] = shapes.flatMap(s => difference([s.ring], sites).flatMap(ring => s.kind === 'marking' ? [ring] : cells(ring)).map((ring): RoadSurface => ({kind: s.kind, lift: 0, ring: densify(ring).map(([x, z]): [number, number, number] => [x, 0, z]), ...s.surface && {surface: s.surface}})));
+  const surfaces: RoadSurface[] = shapes.flatMap(s => difference([s.ring], sites).flatMap(ring => s.kind === 'marking' ? [ring] : cells(ring)).map((ring): RoadSurface => ({kind: s.kind, lift: 0, ...s.studio && {studio: s.studio}, ring: densify(ring).map(([x, z]): [number, number, number] => [x, 0, z]), ...s.surface && {surface: s.surface}})));
   // The point stands on the ground stack beneath it and takes from around it
   // only how thick the layers stack: neighbouring ground can lie at another
   // level altogether, as at the edge of the ground kept at its surveyed height

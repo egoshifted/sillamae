@@ -1,4 +1,4 @@
-import type {Point2, RoadType} from './types.ts';
+import type {Point2, RoadType, SurfaceFinish} from './types.ts';
 
 // Street types the studio draws, as OpenStreetMap tags osm2streets builds from.
 // osm2streets makes every driving lane 3 m, so the lanes give the width.
@@ -6,8 +6,34 @@ export const ROAD_TAGS: Record<RoadType, Record<string, string>> = {
   main: {highway: 'tertiary', lanes: '2', surface: 'asphalt'},
   residential: {highway: 'residential', lanes: '2', surface: 'asphalt'},
   service: {highway: 'service', lanes: '1', surface: 'asphalt'},
+  sidewalk: {highway: 'footway', surface: 'paving_stones'},
+  'asphalt-path': {highway: 'footway', surface: 'asphalt'},
+  'gravel-path': {highway: 'footway', surface: 'gravel'},
+  'worn-path': {highway: 'path', surface: 'ground'},
 };
-export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, service: 3.5}; // metres, for previews
+export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, service: 3.5, sidewalk: 2, 'asphalt-path': 1.8, 'gravel-path': 1.5, 'worn-path': .9};
+export const PATH_FINISH: Partial<Record<RoadType, SurfaceFinish>> = {sidewalk: 'paving', 'asphalt-path': 'asphalt', 'gravel-path': 'gravel', 'worn-path': 'worn-grass'};
+
+export function pathOutline(type: RoadType, points: Point2[]): Point2[] {
+  const half = ROAD_WIDTH[type] / 2;
+  if (type !== 'worn-path') return [...offsetLine(points, half), ...offsetLine(points, -half).reverse()];
+  const sampled: Point2[] = [];
+  let distance = 0;
+  const widths: number[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i], length = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(1, Math.ceil(length / .6));
+    for (let j = 0; j < steps; j++) {
+      const t = j / steps, d = distance + length * t;
+      sampled.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      widths.push(.84 + .12 * Math.sin(d * 2.1) + .04 * Math.sin(d * 5.3));
+    }
+    distance += length;
+  }
+  if (!sampled.length) return [];
+  sampled.push(points[points.length - 1]); widths.push(widths[widths.length - 1]);
+  const side = (sign: number) => offsetLine(sampled, sign * half).map((p, i): Point2 => [sampled[i][0] + (p[0] - sampled[i][0]) * widths[i], sampled[i][1] + (p[1] - sampled[i][1]) * widths[i]]);
+  return [...side(1), ...side(-1).reverse()];
+}
 export const FOOTWAY = {offset: 1.5, width: 2}; // metres beyond the carriageway edge, and wide
 // Metres within which a drawn road's end joins an existing street.
 export const SNAP = 8;

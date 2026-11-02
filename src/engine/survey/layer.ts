@@ -88,6 +88,21 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
 }
 `;
 
+export function restoredGroundMaterial(anisotropy: number) {
+  let seed = 17;
+  const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const material = new THREE.MeshStandardMaterial({vertexColors: true, roughness: .94, side: THREE.DoubleSide, map: surfaceTexture('grass', rng, anisotropy)});
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = 'attribute float lift;\nvarying vec3 vGround;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGround = position;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
+    shader.fragmentShader = 'varying vec3 vGround;\n' + GRASS_NOISE + shader.fragmentShader
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vGround.xz);');
+  };
+  material.customProgramCacheKey = () => 'restored-survey-ground';
+  return material;
+}
+
 interface Overlays {
   tints: THREE.DataTexture;
   relief: {value: number};

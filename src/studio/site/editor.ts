@@ -3,10 +3,11 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {assetById, drafts, library} from '../../city/sillamae/assets/library.ts';
 import type {SurveyManifest, WorldData} from '../../engine/data.ts';
+import {contains, roadSection} from '../../engine/road-demolition.ts';
 import {LINE_HEIGHT} from '../../engine/lines.ts';
-import {nearestOn, ROAD_WIDTH, smoothLine, SNAP} from '../../engine/streets.ts';
-import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
-import {centroid, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
+import {nearestOn, PATH_FINISH, ROAD_WIDTH, smoothLine, SNAP} from '../../engine/streets.ts';
+import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
+import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
 import {Measure} from './measure.ts';
 import {createStage} from './stage.ts';
@@ -44,7 +45,7 @@ controls.addEventListener('change', () => render());
 
 type Loaded = Awaited<ReturnType<typeof loadSquare>>;
 type Brush = {kind: 'asset'; asset: AssetDefinition; variant: string} | {kind: 'tree'; type: string; h: number; r: number};
-type Tool = 'select' | 'place' | 'path' | 'scatter' | 'terrain' | 'area' | 'line' | 'road' | 'hide' | 'measure' | 'orbit' | 'pan';
+type Tool = 'select' | 'place' | 'path' | 'scatter' | 'terrain' | 'area' | 'line' | 'road' | 'hide' | 'bulldoze' | 'measure' | 'orbit' | 'pan';
 type Start = {p: Point2; heading: number; points?: Point2[]};
 type Gesture =
   | {kind: 'move'; before: string; anchor: THREE.Vector3; start: Map<string, Point2>; moved: boolean; wall?: string}
@@ -52,6 +53,7 @@ type Gesture =
   | {kind: 'marquee'; x: number; y: number; additive: boolean}
   | {kind: 'scatter'; before: string; count: number}
   | {kind: 'terrain'; before: string; last: THREE.Vector3; target: number | null}
+  | {kind: 'bulldoze'; before: string; x: number; y: number}
   | {kind: 'click'};
 
 let loaded: Loaded | undefined, site: PlacementSite | undefined, sun: THREE.DirectionalLight | undefined, trees: TreeLayer | undefined, measure: Measure | undefined;
@@ -172,7 +174,7 @@ function toggleHidden(id: string) {
 
 // The placed object or tree under the pointer, nearest first.
 function itemAt(clientX: number, clientY: number) {
-  const caster = raycaster(clientX, clientY), hit = caster.intersectObject(placed, true)[0], tree = pickTree(caster.ray, treeList(), loaded!.frame);
+  const caster = raycaster(clientX, clientY), hit = caster.intersectObject(placed, true)[0], tree = trees?.group.visible ? pickTree(caster.ray, treeList(), loaded!.frame) : null;
   if (hit && (!tree || hit.distance <= tree.distance)) {
     let root = hit.object;
     while (root.parent && root.parent !== placed) root = root.parent;
@@ -331,7 +333,9 @@ function sync(live = false) {
     detailsChanged = false;
     if (details) disposeGroup(details);
     const heights = loaded!.heights, height = (x: number, z: number) => { const h = heights.at(x, z); return h > -Infinity ? h : 0; };
-    details = detailPreview(site!.surfaces ?? [], site!.lines ?? [], site!.roads ?? [], loaded!.frame.origin, height, renderer.capabilities.getMaxAnisotropy());
+    const cuts = (site!.roadCuts ?? []).map(c => ({...c, exposeGround: true, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}));
+    loaded!.setRoadCuts(cuts, shift);
+    details = detailPreview(site!.surfaces ?? [], site!.lines ?? [], site!.roads ?? [], loaded!.frame.origin, height, renderer.capabilities.getMaxAnisotropy(), heights.surface, [...loaded!.otherCuts, ...cuts]);
     loaded!.scene.add(details);
   }
   for (const key of [...selection]) if (!placementOf(key) && !treeOf(key, list) && !pointsOf(key)) selection.delete(key);
@@ -371,7 +375,7 @@ function placeRing(list: TreeItem[]) {
   ring.rotation.y = selection.size === 1 ? headingOf([...selection][0]) : 0;
 }
 
-const snapshot = () => JSON.stringify({placements: site!.placements, trees: edits(), terrain: terrain?.saved() ?? null, surfaces: site!.surfaces ?? [], lines: site!.lines ?? [], roads: site!.roads ?? [], hidden: site!.hidden ?? []});
+const snapshot = () => JSON.stringify({placements: site!.placements, trees: edits(), terrain: terrain?.saved() ?? null, surfaces: site!.surfaces ?? [], lines: site!.lines ?? [], roads: site!.roads ?? [], roadCuts: site!.roadCuts ?? [], hidden: site!.hidden ?? []});
 function commit(before: string) {
   if (before === snapshot()) return sync();
   undo.push(before);
@@ -411,6 +415,7 @@ function restore(state: string) {
   site!.surfaces = restored.surfaces;
   site!.lines = restored.lines;
   site!.roads = restored.roads;
+  site!.roadCuts = restored.roadCuts;
   const hiddenBefore = JSON.stringify(site!.hidden ?? []);
   site!.hidden = restored.hidden;
   if (hiddenBefore !== JSON.stringify(restored.hidden)) reshape();
@@ -448,6 +453,7 @@ function reshape(box?: {minX: number; maxX: number; minZ: number; maxZ: number})
     if (touched) { position.needsUpdate = true; reshaped.add(g); }
   }
   heights.reshape(shift, box);
+  detailsChanged = true;
   render();
 }
 // After a stroke: lighting normals and bounds once, not on every touch of the brush.
@@ -566,21 +572,21 @@ function updatePreview() {
   if (roadDraft) { disposeGroup(roadDraft); roadDraft = null; }
   if (tool === 'road' && points.length >= 2) {
     const [ox, oz] = loaded!.frame.origin, heights = loaded!.heights;
-    roadDraft = detailPreview([], [], [draftRoad(roadEnds(points).map((p): Point2 => [p.x + ox, p.z + oz]))], loaded!.frame.origin, (x, z) => { const h = heights.at(x, z); return h > -Infinity ? h : 0; }, 1);
+    roadDraft = detailPreview([], [], [draftRoad(roadEnds(points).map((p): Point2 => [p.x + ox, p.z + oz]))], loaded!.frame.origin, (x, z) => { const h = heights.at(x, z); return h > -Infinity ? h : 0; }, 1, heights.surface);
     preview.add(roadDraft);
   }
   render();
 }
 // The first point at its snap; the last is the pointer's (already snapped) or the last click's snap.
 const roadEnds = (points: THREE.Vector3[]) => points.map((p, i) => i === 0 ? roadSnaps[0] ?? p : i === points.length - 1 && i < path.length ? roadSnaps[i] ?? p : p);
-const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, points: options.curved ? smoothLine(points) : points, ...options.footways && {footways: true}});
+const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, points: options.curved ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
 // A road point within reach of another drawn road's end, or of a street, moves onto it;
 // the data build joins it there. Local frame.
 function snapRoad(at: THREE.Vector3) {
   const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
-  const ends = (site!.roads ?? []).flatMap(r => [r.points[0], r.points[r.points.length - 1]]).filter(([px, pz]) => Math.hypot(px - x, pz - z) <= SNAP);
+  const ends = (site!.roads ?? []).flatMap(r => [r.points[0], r.points[r.points.length - 1]]).filter(([px, pz]) => Math.hypot(px - x, pz - z) <= (PATH_FINISH[options.roadType] ? 1 : SNAP));
   const end = ends.sort((a, b) => Math.hypot(a[0] - x, a[1] - z) - Math.hypot(b[0] - x, b[1] - z))[0];
-  const point = end ?? nearestOn(streetLines, x, z)?.point;
+  const point = end ?? nearestOn(streetLines, x, z, PATH_FINISH[options.roadType] ? 1 : SNAP)?.point;
   if (!point) return {at, snapped: false};
   const local = new THREE.Vector3(point[0] - ox, 0, point[1] - oz);
   local.y = loaded!.heights.at(local.x, local.z);
@@ -626,11 +632,13 @@ function scatter(centre: THREE.Vector3) {
   return added;
 }
 function showBrushRing(at: THREE.Vector3 | null) {
-  brushRing.visible = (tool === 'scatter' || tool === 'terrain') && !!at;
+  brushRing.visible = (tool === 'scatter' || tool === 'terrain' || tool === 'bulldoze') && !!at;
   if (!at) return;
+  brushRing.material.color.set(tool === 'bulldoze' ? '#c53a27' : '#233e36');
+  const radius = tool === 'bulldoze' ? 1 : options.radius;
   const points: THREE.Vector3[] = [];
   for (let k = 0; k < 48; k++) {
-    const a = k / 48 * Math.PI * 2, x = at.x + Math.sin(a) * options.radius, z = at.z + Math.cos(a) * options.radius, h = loaded!.heights.at(x, z);
+    const a = k / 48 * Math.PI * 2, x = at.x + Math.sin(a) * radius, z = at.z + Math.cos(a) * radius, h = loaded!.heights.at(x, z);
     points.push(new THREE.Vector3(x, (h > -Infinity ? h : at.y) + .1, z));
   }
   brushRing.geometry.dispose();
@@ -662,7 +670,9 @@ function turn(by: number, start?: Map<string, Start>, centre?: THREE.Vector3) {
 }
 function remove() {
   if (!selection.size) return;
-  edit(() => {
+  edit(removeSelection);
+}
+function removeSelection() {
     const list = treeList();
     for (const key of selection) {
       if (key.startsWith('p:')) site!.placements = site!.placements.filter(p => 'p:' + p.id !== key);
@@ -674,7 +684,6 @@ function remove() {
     }
     treesChanged = true;
     selection.clear();
-  });
 }
 // Copies sit a metre to the camera's right, selected, as Photoshop duplicates a layer.
 function duplicate() {
@@ -730,11 +739,125 @@ function eyedrop(clientX: number, clientY: number) {
 
 // ---- Pointer ---------------------------------------------------------------------
 
+type DemolitionTarget = {key: string} | {building: string} | {cut: RoadCut};
+function demolitionTarget(clientX: number, clientY: number): DemolitionTarget | undefined {
+  const at = ground(clientX, clientY);
+  if (!at || !inSquare(at.x, at.z)) return;
+  const key = itemAt(clientX, clientY);
+  if (key && !key.startsWith('road:')) {
+    const anchor = anchorOf(key);
+    if (anchor && inSquare(anchor.at.x, anchor.at.z)) return {key};
+    return;
+  }
+  const id = buildingAt(clientX, clientY);
+  if (id && !city.overrides.some(o => o.id === id) && !site!.hidden?.includes(id)) {
+    return {building: id};
+  }
+  const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
+  const drawn = (site!.roads ?? []).flatMap(r => roadShapes(r, r.points).map(s => ({...s, points: r.points})));
+  const footprints = [...drawn.reverse(), ...loaded!.roadFootprints];
+  const hit = footprints.find(r => r.kind !== 'marking' && contains(r.ring, x, z));
+  if (!hit || hit.kind === 'marking') return;
+  const cuts = site!.roadCuts ?? [];
+  if (cuts.some(c => c.kind === hit.kind && contains(c.ring, x, z)) || loaded!.otherCuts.some(c => c.kind === hit.kind && contains(c.ring, at.x, at.z))) return;
+  const lines = 'points' in hit ? [hit.points as Point2[]] : streetLines;
+  const near = nearestOn(lines, x, z, 20);
+  let direction: Point2;
+  if (near) {
+    const a = lines[near.line][near.segment], b = lines[near.line][near.segment + 1];
+    direction = [b[0] - a[0], b[1] - a[1]];
+  } else {
+    const edges = hit.ring.map((a, i): Point2 => { const b = hit.ring[(i + 1) % hit.ring.length]; return [b[0] - a[0], b[1] - a[1]]; });
+    direction = edges.sort((a, b) => Math.hypot(...b) - Math.hypot(...a))[0];
+  }
+  const length = Math.hypot(...direction);
+  if (length < 1e-6) return;
+  const ux = direction[0] / length, uz = direction[1] / length, intervals: Point2[] = [];
+  for (const shape of footprints.filter(s => s.kind === hit.kind)) {
+    const cross: number[] = [];
+    for (let i = 0; i < shape.ring.length; i++) {
+      const a = shape.ring[i], b = shape.ring[(i + 1) % shape.ring.length];
+      const da = (a[0] - x) * ux + (a[1] - z) * uz, db = (b[0] - x) * ux + (b[1] - z) * uz;
+      if ((da >= 0) === (db >= 0)) continue;
+      const t = da / (da - db);
+      cross.push(-(a[0] + t * (b[0] - a[0]) - x) * uz + (a[1] + t * (b[1] - a[1]) - z) * ux);
+    }
+    cross.sort((a, b) => a - b);
+    for (let i = 1; i < cross.length; i += 2) intervals.push([cross[i - 1], cross[i]]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged: Point2[] = [];
+  for (const interval of intervals) {
+    const previous = merged[merged.length - 1];
+    if (previous && interval[0] <= previous[1] + .08) previous[1] = Math.max(previous[1], interval[1]);
+    else merged.push([...interval]);
+  }
+  const span = merged.find(([a, b]) => a <= 0 && b >= 0);
+  if (!span) return;
+  const [left, right] = span;
+  const cut: RoadCut = {kind: hit.kind, ring: roadSection([x, z], direction, -left + .04, right + .04), groundColour: loaded!.groundColour.at(at.x, at.z)};
+  cut.exposeGround = [cut.ring, cut.ring.map(p => [(p[0] + x) / 2, (p[1] + z) / 2] as Point2), [[x, z]]].flat().every(([px, pz]) => loaded!.groundColour.naturalAt(px - ox, pz - oz));
+  if (cut.groundColour) cut.groundColours = cut.ring.map(([px, pz], i) => {
+    const side = i < 2 ? -1 : 1;
+    return loaded!.groundColour.at(px - ox - uz * side * 1.2, pz - oz + ux * side * 1.2) ?? cut.groundColour!;
+  });
+  return {cut};
+}
+
+function bulldoze(clientX: number, clientY: number) {
+  const target = demolitionTarget(clientX, clientY);
+  if (!target) return;
+  if ('key' in target) { selection = new Set([target.key]); removeSelection(); }
+  else if ('building' in target) { (site!.hidden ??= []).push(target.building); reshape(); }
+  else { (site!.roadCuts ??= []).push(target.cut); detailsChanged = true; }
+  hoverBox.visible = demolitionPreview.visible = false;
+}
+
+const demolitionPreview = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({color: '#ed402d', transparent: true, opacity: .4, depthTest: false, depthWrite: false, side: THREE.DoubleSide}));
+demolitionPreview.visible = false;
+demolitionPreview.renderOrder = 998;
+function showDemolition(clientX: number, clientY: number) {
+  hoverBox.visible = demolitionPreview.visible = false;
+  const target = demolitionTarget(clientX, clientY);
+  if (!target) return render();
+  const [ox, oz] = loaded!.frame.origin;
+  if ('building' in target) return showHover(target.building);
+  if ('key' in target) {
+    const object = target.key.startsWith('p:') ? objects.get(target.key.slice(2)) : undefined;
+    const tree = treeOf(target.key)?.tree, points = pointsOf(target.key), anchor = anchorOf(target.key);
+    if (object) hoverBox.box.setFromObject(object);
+    else if (tree) hoverBox.box.set(new THREE.Vector3(tree.p[0] - ox - tree.r, tree.z - loaded!.frame.base, tree.p[1] - oz - tree.r), new THREE.Vector3(tree.p[0] - ox + tree.r, tree.z - loaded!.frame.base + tree.h, tree.p[1] - oz + tree.r));
+    else if (points && anchor) {
+      hoverBox.box.makeEmpty();
+      for (const [x, z] of points) hoverBox.box.expandByPoint(new THREE.Vector3(x - ox, anchor.at.y, z - oz)).expandByPoint(new THREE.Vector3(x - ox, anchor.at.y + anchor.height + .1, z - oz));
+    }
+    hoverBox.visible = true;
+  } else {
+    const ring = target.cut.ring.map(([x, z]): Point2 => [x - ox, z - oz]);
+    const vertices = THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(...p)), []).flatMap(t => t.flatMap(i => { const [x, z] = ring[i]; return [x, loaded!.heights.at(x, z) + .1, z]; }));
+    demolitionPreview.geometry.dispose();
+    demolitionPreview.geometry = new THREE.BufferGeometry();
+    demolitionPreview.geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    demolitionPreview.visible = true;
+  }
+  render();
+}
+renderer.domElement.addEventListener('pointerleave', () => { hoverBox.visible = demolitionPreview.visible = false; render(); });
+
+renderer.domElement.addEventListener('pointercancel', () => {
+  if (gesture?.kind === 'bulldoze') { const before = gesture.before; gesture = null; pointer.down = false; commit(before); }
+});
+
 const marquee = element('marquee');
 renderer.domElement.addEventListener('pointerdown', event => {
   if (event.button !== 0 || !loaded || !site || space || tool === 'orbit' || tool === 'pan') return;
   Object.assign(pointer, {downX: event.clientX, downY: event.clientY, down: true});
   if (event.altKey && ['place', 'path', 'scatter'].includes(tool)) { eyedrop(event.clientX, event.clientY); pointer.down = false; return; }
+  if (tool === 'bulldoze') {
+    gesture = {kind: 'bulldoze', before: snapshot(), x: event.clientX, y: event.clientY};
+    renderer.domElement.setPointerCapture(event.pointerId);
+    bulldoze(event.clientX, event.clientY); sync(true); return;
+  }
   if (tool === 'terrain') {
     const at = ground(event.clientX, event.clientY);
     if (!at) { pointer.down = false; return; }
@@ -782,8 +905,9 @@ renderer.domElement.addEventListener('pointermove', event => {
     pointer.last = snap?.at ?? at;
     updatePreview();
   }
+  if (tool === 'bulldoze') showDemolition(event.clientX, event.clientY);
   if (tool === 'hide') showHover(buildingAt(event.clientX, event.clientY));
-  if (tool === 'scatter' || tool === 'terrain') { showBrushRing(at); render(); }
+  if (tool === 'scatter' || tool === 'terrain' || tool === 'bulldoze') { showBrushRing(at); render(); }
   if (tool === 'place' && ghost && brush) {
     const spot = spotFor(brush, event.clientX, event.clientY);
     ghost.visible = !!spot;
@@ -792,7 +916,12 @@ renderer.domElement.addEventListener('pointermove', event => {
   }
   if (!gesture || !pointer.down) return;
   const moved = Math.hypot(event.clientX - pointer.downX, event.clientY - pointer.downY) >= CLICK;
-  if (gesture.kind === 'scatter' && at) { gesture.count += scatter(at); sync(true); }
+  if (gesture.kind === 'bulldoze') {
+    const g = gesture, steps = Math.max(1, Math.ceil(Math.hypot(event.clientX - g.x, event.clientY - g.y) / 3));
+    for (let i = 1; i <= steps; i++) bulldoze(g.x + (event.clientX - g.x) * i / steps, g.y + (event.clientY - g.y) * i / steps);
+    g.x = event.clientX; g.y = event.clientY; sync(true);
+  }
+  else if (gesture.kind === 'scatter' && at) { gesture.count += scatter(at); sync(true); }
   // Touches are spaced a third of the brush apart, so a stroke's effect does not depend on the pointer's speed.
   else if (gesture.kind === 'terrain' && at && Math.hypot(at.x - gesture.last.x, at.z - gesture.last.z) >= options.radius / 3) { gesture.last = at; dab(at, gesture.target); }
   else if (gesture.kind === 'marquee' && moved) {
@@ -837,7 +966,7 @@ addEventListener('pointerup', event => {
   gesture = null;
   if (!g || !site) return;
   if (g.kind === 'terrain') settle();
-  if (g.kind === 'move' || g.kind === 'rotate' || g.kind === 'scatter' || g.kind === 'terrain') return commit(g.before);
+  if (g.kind === 'move' || g.kind === 'rotate' || g.kind === 'scatter' || g.kind === 'terrain' || g.kind === 'bulldoze') return commit(g.before);
   if (g.kind === 'marquee') {
     marquee.hidden = true;
     if (!g.additive) selection.clear();
@@ -883,7 +1012,7 @@ renderer.domElement.addEventListener('contextmenu', event => {
 
 // ---- Keys ------------------------------------------------------------------------
 
-const TOOL_KEYS: Record<string, Tool> = {v: 'select', a: 'place', p: 'path', b: 'scatter', u: 'terrain', l: 'area', k: 'line', w: 'road', x: 'hide', i: 'measure', r: 'orbit', h: 'pan'};
+const TOOL_KEYS: Record<string, Tool> = {v: 'select', a: 'place', p: 'path', b: 'scatter', u: 'terrain', l: 'area', k: 'line', w: 'road', x: 'hide', d: 'bulldoze', i: 'measure', r: 'orbit', h: 'pan'};
 addEventListener('keydown', event => {
   if (!site || (event.target as HTMLElement).closest('input, select, textarea, dialog')) return;
   const key = event.key.toLowerCase(), ctrl = event.ctrlKey || event.metaKey, by = event.shiftKey ? 10 : 1;
@@ -929,6 +1058,7 @@ const ICONS: Record<string, string> = {
   area: '<path d="M3 6l6-3 8 4-2 9-10 1z"/><path d="M6 9l6 5M8 6l6 5" stroke-width="1"/>',
   line: '<path d="M2 15h16M2 11h16"/><path d="M4 8v9M10 8v9M16 8v9"/>',
   road: '<path d="M6 18L8 2M14 18L12 2"/><path d="M10 4v2.5M10 9v2.5M10 14v2.5"/>',
+  bulldoze: '<path d="M2 15h12v3H2zM4 14V8h7v6M6 8V4h5v4M14 13l4-3v8h-4z"/>',
   hide: '<path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z"/><circle cx="10" cy="10" r="2.2"/><path d="M3 17L17 3"/>',
   measure: '<path d="M2.5 13.5l11-11 4 4-11 11z"/><path d="M6 10l1.5 1.5M8.5 7.5l1.5 1.5M11 5l1.5 1.5"/>',
   orbit: '<ellipse cx="10" cy="10" rx="8" ry="3.5"/><path d="M15 4.5l2.5 2-3 1"/><circle cx="10" cy="10" r="1.6"/>',
@@ -947,6 +1077,7 @@ const TOOLS: [Tool, string, string][] = [
   ['area', 'Draw a ground surface (L)', 'Click the corners of an area of paving, asphalt, gravel, lawn or flowerbed · double-click or Enter closes it · Backspace removes the last corner · drawn over footways; select it to move, turn or change its finish'],
   ['line', 'Draw a fence, hedge, wall or kerb (K)', 'Click points along it · double-click or Enter finishes · it follows the ground · select it to move, turn or change its kind and height'],
   ['road', 'Draw a road (W)', 'Click along the road · ends near a street or another drawn road snap to it (orange ring) and join it as a junction · double-click or Enter finishes · Curved rounds the corners · the preview is close; the data build lays the real road with its junctions, markings and graded ground'],
+  ['bulldoze', 'Bulldozer (D)', 'Click objects or trees to remove them · click a road or footway to clear a 2 m section · hold and drag to clear continuously · each stroke is one Undo step · Save keeps the demolition'],
   ['hide', 'Hide survey objects (X)', 'Click a survey building, shed or kiosk to leave it out of the town; click again, or use the list, to bring it back · refined buildings cannot be hidden'],
   ['measure', 'Measure (I)', 'Click points along the ground for lengths on plan, height changes and slope · double-click or Enter ends · Esc clears'],
   ['orbit', 'Orbit view (R)', 'Drag to orbit · in any tool, hold Space or drag with the middle button to orbit, right-drag to pan, scroll to zoom'],
@@ -973,7 +1104,7 @@ function setTool(next: Tool) {
   if (next !== tool) path.length = roadSnaps.length = 0;
   tool = next;
   if (ghost) ghost.visible = false;
-  hoverBox.visible = false;
+  hoverBox.visible = demolitionPreview.visible = false;
   snapMark.visible = false;
   showBrushRing(null);
   updatePreview();
@@ -1031,7 +1162,7 @@ function showOptions() {
       box.onchange = () => { options[key] = box.checked; updatePreview(); };
       return labelled(label, box);
     };
-    parts.push(labelled('Type', typeSelect(options.roadType, v => { options.roadType = v; updatePreview(); })), tick('Footways', 'footways'), tick('Curved', 'curved'));
+    parts.push(labelled('Type', typeSelect(options.roadType, v => { options.roadType = v; showOptions(); updatePreview(); })), ...(!PATH_FINISH[options.roadType] ? [tick('Footways', 'footways')] : []), tick('Curved', 'curved'));
     if (!streetLines.length) parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Build data (npm run data) to snap to streets'}));
   }
   else if (tool === 'hide') {
@@ -1053,7 +1184,7 @@ function showOptions() {
   if (['place', 'path', 'scatter'].includes(tool)) parts.unshift(Object.assign(document.createElement('span'), {className: 'tip', textContent: brush ? `Brush: ${brush.kind === 'tree' ? `${brush.type === CONIFER ? 'conifer' : 'broadleaf'} tree` : brush.asset.name}` : 'Pick an asset or tree on the left'}));
   bar.replaceChildren(...parts);
 }
-const FINISHES: [SurfaceFinish, string][] = [['paving', 'Paving'], ['asphalt', 'Asphalt'], ['gravel', 'Gravel'], ['grass', 'Lawn'], ['flowerbed', 'Flowerbed']];
+const FINISHES: [SurfaceFinish, string][] = [['paving', 'Paving'], ['asphalt', 'Asphalt'], ['gravel', 'Gravel'], ['grass', 'Lawn'], ['flowerbed', 'Flowerbed'], ['worn-grass', 'Worn grass / earth']];
 const KINDS: [LineKind, string][] = [['fence', 'Fence'], ['hedge', 'Hedge'], ['wall', 'Low wall'], ['kerb', 'Kerb']];
 function finishSelect(value: SurfaceFinish, onchange: (v: SurfaceFinish) => void) {
   const s = document.createElement('select');
@@ -1062,7 +1193,7 @@ function finishSelect(value: SurfaceFinish, onchange: (v: SurfaceFinish) => void
   s.onchange = () => onchange(s.value as SurfaceFinish);
   return s;
 }
-const ROAD_TYPES: [RoadType, string][] = [['residential', 'Residential street'], ['main', 'Main road'], ['service', 'Service lane']];
+const ROAD_TYPES: [RoadType, string][] = [['residential', 'Residential street'], ['main', 'Main road'], ['service', 'Service lane'], ['sidewalk', 'Paved sidewalk'], ['asphalt-path', 'Asphalt footpath'], ['gravel-path', 'Gravel path'], ['worn-path', 'Worn-grass path']];
 function typeSelect(value: RoadType, onchange: (v: RoadType) => void) {
   const s = document.createElement('select');
   for (const [v, t] of ROAD_TYPES) s.add(new Option(t, v));
@@ -1251,7 +1382,7 @@ function showSelection() {
     footways.onchange = () => edit(() => { if (footways.checked) r.footways = true; else delete r.footways; detailsChanged = true; });
     const length = r.points.reduce((s, p, i) => i ? s + Math.hypot(p[0] - r.points[i - 1][0], p[1] - r.points[i - 1][1]) : 0, 0);
     panel.replaceChildren(heading(ROAD_TYPES.find(t => t[0] === r.type)![1]), Object.assign(document.createElement('small'), {textContent: `${r.id} · ${length.toFixed(1)} m long · ${ROAD_WIDTH[r.type]} m wide`}),
-      labelled('Type', typeSelect(r.type, v => edit(() => { r.type = v; detailsChanged = true; }))), labelled('Footways', footways), ...tools);
+      labelled('Type', typeSelect(r.type, v => edit(() => { r.type = v; if (PATH_FINISH[v]) delete r.footways; detailsChanged = true; }))), ...(!PATH_FINISH[r.type] ? [labelled('Footways', footways)] : []), ...tools);
     return;
   }
   if (l) {
@@ -1288,7 +1419,7 @@ function showSelection() {
 function showStatus() {
   if (!site || !loaded) return;
   const previews = site.placements.filter(p => drafts.some(d => d.id === p.asset)).length, e = edits();
-  const extras = [site.surfaces?.length && `${site.surfaces.length} surfaces`, site.lines?.length && `${site.lines.length} lines`, site.roads?.length && `${site.roads.length} roads`, site.hidden?.length && `${site.hidden.length} hidden`].filter(Boolean).map(s => ' · ' + s).join('');
+  const extras = [site.surfaces?.length && `${site.surfaces.length} surfaces`, site.lines?.length && `${site.lines.length} lines`, site.roads?.length && `${site.roads.length} roads`, site.hidden?.length && `${site.hidden.length} hidden`, site.roadCuts?.length && `${site.roadCuts.length} road cuts`].filter(Boolean).map(s => ' · ' + s).join('');
   status.textContent = `${site.placements.length} objects${previews ? ` (${previews} draft previews, not saved)` : ''} · trees +${e.add.length} −${e.remove.length}${extras}${dirty ? ' · unsaved changes' : ''} · ${renderer.info.render.triangles.toLocaleString()} triangles · ${renderer.info.render.calls} draws`;
   element<HTMLButtonElement>('undo').disabled = !undo.length;
   element<HTMLButtonElement>('redo').disabled = !redo.length;
@@ -1301,7 +1432,7 @@ async function save() {
   if (!site) return;
   const kept: PlacementSite = {...site, placements: site.placements.filter(p => !drafts.some(d => d.id === p.asset)), trees: edits()};
   if (!kept.trees!.add.length && !kept.trees!.remove.length) delete kept.trees;
-  for (const key of ['surfaces', 'lines', 'roads', 'hidden'] as const) if (!kept[key]?.length) delete kept[key];
+  for (const key of ['surfaces', 'lines', 'roads', 'roadCuts', 'hidden'] as const) if (!kept[key]?.length) delete kept[key];
   const deltas = terrain?.saved();
   if (deltas) kept.terrain = {deltas}; else delete kept.terrain;
   const response = await fetch('/__studio/sites/' + site.id, {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(kept)});
@@ -1444,7 +1575,7 @@ async function open(square: Square) {
   trees = new TreeLayer(scene, frame, new THREE.Vector3(square.centre[0] - ox, 0, square.centre[1] - oz));
   treesChanged = true;
   measure = new Measure(scene, element('labels'));
-  scene.add(placed, highlights, preview, ring, brushRing, hoverBox, snapMark);
+  scene.add(placed, highlights, preview, ring, brushRing, hoverBox, snapMark, demolitionPreview);
   streetLines = await fetch('/data/streets.json').then(r => r.ok ? r.json() : []).catch(() => []);
   detailsChanged = true;
   scene.add(new THREE.HemisphereLight('#e6efff', '#73775c', 1.1));

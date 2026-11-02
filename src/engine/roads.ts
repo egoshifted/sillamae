@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import type {Finish, RoadKind, RoadSurface} from './data.ts';
+import type {RoadCut} from './types.ts';
+import {demolishRoads} from './road-demolition.ts';
+import {restoredGroundMaterial} from './survey/layer.ts';
 
 const LOOK: Record<Exclude<RoadKind, 'footway'>, [string, number]> = {carriageway: ['#5f625f', .95], marking: ['#e4e4dc', .8]};
 // Footway finishes, matched to Street View on Kesk: worn asphalt a little
@@ -11,9 +14,11 @@ const FINISH: Record<Finish, {tile: number; roughness: number; paint: (x: Canvas
   gravel: {tile: 2, roughness: 1, paint: gravel},
   grass: {tile: 3, roughness: 1, paint: lawn},
   flowerbed: {tile: 2, roughness: 1, paint: flowerbed},
+  'worn-grass': {tile: 2, roughness: 1, paint: wornGrass},
 };
 
-export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1) {
+export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1, cuts: RoadCut[] = []) {
+  surfaces = demolishRoads(surfaces, cuts);
   const group = new THREE.Group();
   group.name = 'roads';
   const add = (own: RoadSurface[], material: THREE.MeshStandardMaterial, tile?: number) => {
@@ -24,12 +29,14 @@ export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy
   };
   for (const kind of Object.keys(LOOK) as (keyof typeof LOOK)[]) add(surfaces.filter(s => s.kind === kind), lifted(...LOOK[kind]));
   for (const [finish, {tile, roughness, paint}] of Object.entries(FINISH) as [Finish, typeof FINISH[Finish]][]) {
-    const own = surfaces.filter(s => s.kind === 'footway' && (s.surface ?? 'asphalt') === finish);
+    const own = surfaces.filter(s => !s.groundColour && s.kind === 'footway' && (s.surface ?? 'asphalt') === finish);
     if (!own.length) continue;
     const material = lifted('#ffffff', roughness);
     material.map = finishTexture(paint, anisotropy);
     add(own, material, tile);
   }
+  const restored = surfaces.filter(s => s.groundColour);
+  if (restored.length) add(restored, restoredGroundMaterial(anisotropy), 2);
   scene.add(group);
   return group;
 }
@@ -53,13 +60,13 @@ const FLAT = 1e-3; // square metres of ground a triangle must cover
 
 // Texture coordinates are ground metres over the tile, so finishes run on across polygon edges.
 function surfaceGeometry(surfaces: RoadSurface[], tile?: number) {
-  const position: number[] = [], lift: number[] = [], uv: number[] = [];
-  for (const {ring, lift: l} of surfaces) {
+  const position: number[] = [], lift: number[] = [], uv: number[] = [], colour: number[] = [];
+  for (const {ring, lift: l, groundColour, groundColours} of surfaces) {
     for (const t of triangulate(ring)) {
       const [a, b, c] = t.map(i => ring[i]);
       // Upward faces wind clockwise in (x, z).
       const up = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]) < 0;
-      for (const p of up ? [a, b, c] : [a, c, b]) { position.push(...p); lift.push(l); if (tile) uv.push(p[0] / tile, p[2] / tile); }
+      for (const k of up ? t : [t[0], t[2], t[1]]) { const p = ring[k]; position.push(...p); lift.push(l); if (tile) uv.push(p[0] / tile, p[2] / tile); if (groundColour) colour.push(...(groundColours?.[k] ?? groundColour)); }
     }
   }
   // Outline-only triangulation leaves long slivers; facet normals would shade their slight tilts as streaks.
@@ -68,10 +75,23 @@ function surfaceGeometry(surfaces: RoadSurface[], tile?: number) {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(Array.from({length: position.length / 3}, () => [0, 1, 0]).flat(), 3));
   g.setAttribute('lift', new THREE.Float32BufferAttribute(lift, 1));
   if (tile) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (colour.length) { g.setAttribute('color', new THREE.Float32BufferAttribute(colour, 3)); g.computeVertexNormals(); }
   return g;
 }
 
 const SIZE = 512;
+
+function wornGrass(x: CanvasRenderingContext2D, rng: () => number) {
+  x.fillStyle = '#8b8062'; x.fillRect(0, 0, SIZE, SIZE);
+  for (let i = 0; i < 90; i++) blob(x, rng() * SIZE, rng() * SIZE, 8 + rng() * 40, 5 + rng() * 25, i % 3 ? '#b1a080' : '#706c50', .12);
+  speckle(x, rng, 32000, 125, 45, 1.3, .2);
+  for (let i = 0; i < 650; i++) {
+    x.strokeStyle = i % 2 ? '#747b51' : '#92966a'; x.globalAlpha = .5;
+    const px = rng() * SIZE, py = rng() * SIZE;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + (rng() - .5) * 6, py - 2 - rng() * 7); x.stroke();
+  }
+  x.globalAlpha = 1;
+}
 
 function finishTexture(paint: typeof FINISH[Finish]['paint'], anisotropy: number) {
   const canvas = document.createElement('canvas');

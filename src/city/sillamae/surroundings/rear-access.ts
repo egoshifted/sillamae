@@ -42,7 +42,6 @@ export function createRearSurroundings(building: Building,terrain: TerrainGrid,f
  // pavement edge independently instead of cutting below the uphill edge.
  const walkStart=platformEnd,stepStart=19,stepEnd=21.5,end=22.25,low=Math.max(...[21,21.25,21.5].flatMap(x=>[5.5,6.5,7.5].map(d=>ground(x,d))))+.015,upper=low+.75;
  const level=(x: number)=>upper*(x-walkStart)/(stepStart-walkStart);
- patch(walkStart,stepStart,5.5,7.5,x=>level(x));
  for(let j=0;j<5;j++)patch(stepStart+j*.5,stepStart+(j+1)*.5,5.5,7.5,()=>upper-(j+1)*.15);
  patch(stepEnd,end,5.5,7.5,(x,d)=>low+(ground(end,d)+.003-low)*(x-stepEnd)/(end-stepEnd));
  // Local grass bank from the earlier study. Feather both ends into the DTM;

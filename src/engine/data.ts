@@ -1,7 +1,7 @@
 import {MeshoptDecoder} from 'meshoptimizer/decoder';
 import * as THREE from 'three';
 import {expandBucket, type Detail, type Surface} from './survey/classify.ts';
-import type {GroundTriangle, LineKind, Placement, SceneData, SurfaceFinish, WorldFrame} from './types.ts';
+import type {GroundTriangle, LineKind, Placement, RoadCut, SceneData, SurfaceFinish, WorldFrame} from './types.ts';
 
 export interface Zone {
   id: number;
@@ -26,6 +26,8 @@ export type Finish = SurfaceFinish;
 // One road polygon, ring in the local frame (x, height, z); lift is its depth
 // lift in metres above the survey layers it covers. Footways carry a finish.
 export interface RoadSurface {
+  groundColour?: [number, number, number];
+  groundColours?: [number, number, number][];
   kind: RoadKind;
   lift: number;
   ring: [number, number, number][];
@@ -34,6 +36,7 @@ export interface RoadSurface {
 }
 
 export interface WorldData extends SceneData {
+  roadCuts?: (RoadCut & {site: string})[];
   zones: Zone[];
   stairs: Stair[];
   roads: RoadSurface[];

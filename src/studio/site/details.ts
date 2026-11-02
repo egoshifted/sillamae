@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import type {RoadSurface} from '../../engine/data.ts';
 import {LINE_HEIGHT, lineMeshes, standLine} from '../../engine/lines.ts';
 import {addRoads} from '../../engine/roads.ts';
-import {FOOTWAY, offsetLine, ROAD_TAGS, ROAD_WIDTH} from '../../engine/streets.ts';
-import type {Point2, SiteLine, SiteRoad, SiteSurface, SurfaceFinish} from '../../engine/types.ts';
+import {FOOTWAY, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH} from '../../engine/streets.ts';
+import type {Point2, RoadCut, SiteLine, SiteRoad, SiteSurface, SurfaceFinish} from '../../engine/types.ts';
 import {usePhysicalDepth} from '../depth.ts';
+import type {GroundSurface} from './ground-surface.ts';
 
 const CELL = 3; // metres; as the data build, areas are cut into cells so their middles follow the ground
 const RISE = .03; // metres over the ground the preview draws at
@@ -45,6 +46,10 @@ const MARK = {dash: 3, gap: 6, width: .12}; // metres, a centre line's dashes
 // dashed centre line on two-lane roads, footways beside it. osm2streets shapes
 // the real one, with its junctions, when the data is built.
 export function roadShapes(road: SiteRoad, points: Point2[]): Shape[] {
+  points = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-6);
+  if (points.length < 2) return [];
+  const finish = PATH_FINISH[road.type];
+  if (finish) return [{kind: 'footway', surface: finish, ring: pathOutline(road.type, points), rise: RISE}];
   const half = ROAD_WIDTH[road.type] / 2, band = (a: Point2[], b: Point2[]) => [...a, ...[...b].reverse()];
   const shapes: Shape[] = [{kind: 'carriageway', ring: band(offsetLine(points, half), offsetLine(points, -half)), rise: RISE + .01}];
   if (road.footways) for (const side of [1, -1]) {
@@ -66,13 +71,20 @@ export function roadShapes(road: SiteRoad, points: Point2[]): Shape[] {
 }
 
 // The preview of the square's areas, roads and lines, in the local frame, rebuilt whole after each change.
-export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads: SiteRoad[], origin: Point2, height: (x: number, z: number) => number, anisotropy: number) {
+export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads: SiteRoad[], origin: Point2, height: (x: number, z: number) => number, anisotropy: number, ground?: GroundSurface, cuts: RoadCut[] = []) {
   const [ox, oz] = origin, group = new THREE.Group(), scratch = new THREE.Scene();
   const local = (ring: Point2[]) => ring.map(([x, z]): Point2 => [x - ox, z - oz]);
   const shapes: Shape[] = [...roads.flatMap(r => roadShapes(r, local(r.points))), ...surfaces.map(s => ({kind: 'footway' as const, surface: s.finish, ring: local(s.ring), rise: RISE + .02}))];
   const laid: RoadSurface[] = [];
   const lay = (ring: Point2[], s: Shape) => laid.push({kind: s.kind, lift: 0, ...s.surface && {surface: s.surface}, ring: densify(ring).map(([px, pz]): [number, number, number] => [px, height(px, pz) + s.rise, pz])});
   for (const s of shapes) {
+    if (ground) {
+      const rings = ground.drape(s.ring, s.rise);
+      if (rings.length) {
+        for (const ring of rings) laid.push({kind: s.kind, lift: 0, ...s.surface && {surface: s.surface}, ring});
+        continue;
+      }
+    }
     if (s.kind === 'marking') { lay(s.ring, s); continue; }
     const xs = s.ring.map(p => p[0]), zs = s.ring.map(p => p[1]);
     for (let x = Math.floor(Math.min(...xs) / CELL) * CELL; x < Math.max(...xs); x += CELL)
@@ -81,7 +93,7 @@ export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads:
         if (cell.length >= 3 && area(cell) >= .01) lay(cell, s);
       }
   }
-  if (laid.length) group.add(addRoads(scratch, laid, anisotropy));
+  if (laid.length) group.add(addRoads(scratch, laid, anisotropy, cuts));
   if (lines.length) group.add(lineMeshes(lines.map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], points: standLine(local(l.points), height)})), {lifted: false}));
   usePhysicalDepth(group);
   return group;

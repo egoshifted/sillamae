@@ -14,6 +14,7 @@ import type {AssetDefinition, Building, BuildingOverride, BuiltOverride, CityDef
 import {addRoads} from './roads.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
+import {restoreGround} from './survey/restore-ground.ts';
 
 const DEFAULT_VIEW: CameraView = {offset: [-110, 110, 130], span: 120};
 const OUTSKIRTS = new THREE.Color('#8a8f86');
@@ -104,7 +105,7 @@ export class Engine {
     this.#scene.add(this.#vegetation);
     this.#forest = addTrees(this.#vegetation, data.trees.filter(t => within(t.p)), this.frame);
     addStairs(this.#scene, data.stairs);
-    addRoads(this.#scene, data.roads, renderer.capabilities.getMaxAnisotropy());
+    addRoads(this.#scene, data.roads, renderer.capabilities.getMaxAnisotropy(), data.roadCuts?.map(c => ({...c, exposeGround: true})));
 
     this.#prisms = buildingPrisms(this.buildings, this.frame);
     this.focusBuilding(this.#building(city.defaultFocus));
@@ -178,7 +179,10 @@ export class Engine {
   }
 
   addSurvey(buckets: SurveyBucket[]) {
-    for (const bucket of buckets) this.#survey.fill(bucket);
+    for (const bucket of buckets) {
+      restoreGround(bucket.position, bucket.color, bucket.building, this.#data.roadCuts ?? []);
+      this.#survey.fill(bucket);
+    }
     const camera = this.camera.ortho;
     camera.updateMatrixWorld();
     const visible = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));

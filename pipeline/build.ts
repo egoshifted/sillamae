@@ -87,7 +87,8 @@ async function build() {
     // Site ground comes from Float32 survey data; millimetres keep it exact enough and halve world.json.
     const mm = (v: number) => Math.round(v * 1000) / 1000;
     const siteGroundMm = Object.fromEntries(Object.entries(siteGround).map(([id, triangles]) => [id, triangles.map(t => t.map(mm))]));
-    const world: WorldData = {...data, siteGround: siteGroundMm, geo, zones, stairs, roads};
+    const roadCuts = sites.flatMap(s => (s.roadCuts ?? []).map(c => ({...c, site: s.id, ring: c.ring.map(([x, z]): [number, number] => [x - sillamae.frame.origin[0], z - sillamae.frame.origin[1]])})));
+    const world: WorldData = {...data, siteGround: siteGroundMm, geo, zones, stairs, roads, roadCuts};
     fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
     fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
     fs.writeFileSync(path.join(OUT, 'world.json.gz'), zlib.gzipSync(Buffer.from(JSON.stringify(world)), {level: 9}));

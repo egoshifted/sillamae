@@ -58,13 +58,19 @@ export function pickTree(ray: THREE.Ray, items: TreeItem[], frame: WorldFrame) {
   const [ox, oz] = frame.origin;
   let best: {item: TreeItem; distance: number} | null = null;
   const {origin: o, direction: d} = ray, a = d.x * d.x + d.z * d.z;
-  if (a < 1e-9) return null;
   for (const item of items) {
     const t = item.tree, cx = t.p[0] - ox, cz = t.p[1] - oz, r = Math.max(1, t.r), y0 = t.z - frame.base;
     const fx = o.x - cx, fz = o.z - cz, b = 2 * (fx * d.x + fz * d.z), c = fx * fx + fz * fz - r * r, disc = b * b - 4 * a * c;
-    if (disc < 0) continue;
-    const s = (-b - Math.sqrt(disc)) / (2 * a), y = o.y + d.y * s;
-    if (s > 0 && y >= y0 && y <= y0 + t.h && (!best || s < best.distance)) best = {item, distance: s};
+    const candidates: number[] = [];
+    if (a > 1e-9 && disc >= 0) for (const s of [(-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a)]) {
+      const y = o.y + d.y * s;
+      if (y >= y0 && y <= y0 + t.h) candidates.push(s);
+    }
+    if (Math.abs(d.y) > 1e-9) for (const y of [y0, y0 + t.h]) {
+      const s = (y - o.y) / d.y;
+      if ((fx + d.x * s) ** 2 + (fz + d.z * s) ** 2 <= r * r) candidates.push(s);
+    }
+    for (const s of candidates) if (s > 0 && (!best || s < best.distance)) best = {item, distance: s};
   }
   return best;
 }

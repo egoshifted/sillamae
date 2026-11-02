@@ -4,9 +4,13 @@ import {clippingPlanes} from '../../engine/extent.ts';
 import {addRoads, triangulate} from '../../engine/roads.ts';
 import {addStairs} from '../../engine/stairs.ts';
 import {addSurveyLayer, surveyMaterials} from '../../engine/survey/layer.ts';
-import type {Point2} from '../../engine/types.ts';
+import {disposeGroup} from './details.ts';
+import type {Point2, RoadCut} from '../../engine/types.ts';
 import {usePhysicalDepth} from '../depth.ts';
 import {city} from '../project.ts';
+import {GroundSurface} from './ground-surface.ts';
+import {GroundColour} from '../../engine/survey/ground-colour.ts';
+import {restoreGround} from '../../engine/survey/restore-ground.ts';
 
 export interface Square {
   centre: Point2; // source x/z
@@ -21,6 +25,7 @@ const STEP = .25;
 // Highest ground or road surface on a grid over the square, for snapping and for
 // a ray to stop on: raycasting the town's million-triangle tiles per mouse move is too slow.
 export class HeightField {
+  readonly surface = new GroundSurface();
   readonly heights: Float32Array;
   readonly nx: number;
   readonly nz: number;
@@ -41,6 +46,7 @@ export class HeightField {
   add(a: THREE.Vector3Like, b: THREE.Vector3Like, c: THREE.Vector3Like) {
     const i0 = Math.max(0, Math.ceil((Math.min(a.x, b.x, c.x) - this.minX) / STEP)), i1 = Math.min(this.nx - 1, Math.floor((Math.max(a.x, b.x, c.x) - this.minX) / STEP));
     const j0 = Math.max(0, Math.ceil((Math.min(a.z, b.z, c.z) - this.minZ) / STEP)), j1 = Math.min(this.nz - 1, Math.floor((Math.max(a.z, b.z, c.z) - this.minZ) / STEP));
+    this.surface.add(a, b, c);
     if (i0 > i1 || j0 > j1) return;
     const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
     if (Math.abs(d) < 1e-9) return;
@@ -58,6 +64,7 @@ export class HeightField {
   #base: Float32Array | null = null;
   // Each sample becomes its loaded height plus shift(x, z), within the box if one is given.
   reshape(shift: (x: number, z: number) => number, box?: {minX: number; maxX: number; minZ: number; maxZ: number}) {
+    this.surface.reshape(shift, box);
     const base = this.#base ??= this.heights.slice();
     const i0 = box ? Math.max(0, Math.floor((box.minX - this.minX) / STEP)) : 0, i1 = box ? Math.min(this.nx - 1, Math.ceil((box.maxX - this.minX) / STEP)) : this.nx - 1;
     const j0 = box ? Math.max(0, Math.floor((box.minZ - this.minZ) / STEP)) : 0, j1 = box ? Math.min(this.nz - 1, Math.ceil((box.maxZ - this.minZ) / STEP)) : this.nz - 1;
@@ -110,6 +117,7 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
   const box = {minX: cx - ox - half, maxX: cx - ox + half, minZ: cz - oz - half, maxZ: cz - oz + half};
   const inside = (x: number, z: number) => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
   const scene = new THREE.Scene(), heights = new HeightField(box.minX, box.minZ, half * 2);
+  const groundColour = new GroundColour(world.roads.filter(r => r.ring.some(([x, , z]) => inside(x, z))).map(r => r.ring.map(([x, , z]): Point2 => [x, z])));
   const buildings = Math.max(...world.buildings.map(b => b.pick)) + 1;
   const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildings, world.base);
   const layer = addSurveyLayer(scene, survey.buckets, materials);
@@ -124,6 +132,8 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
     progress(`Loading ground ${n + 1} of ${tiles.length}…`);
     for (const bucket of decodeTile(survey, name, await fetchTile('/data/', name), frame)) {
       layer.fill(bucket);
+      const kind = survey.buckets[bucket.index].kind;
+      if (kind === 'grass' || kind === 'clay') groundColour.add(bucket);
       const water = survey.buckets[bucket.index].kind === 'water', p = bucket.position;
       for (let i = 0; i < p.length; i += 9) {
         a.fromArray(p, i); b.fromArray(p, i + 3); c.fromArray(p, i + 6);
@@ -139,8 +149,11 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
   progress('Roads, trees and buildings…');
   // The square's own drawn roads come from the data build too; the editor previews those instead.
   const id = `${cx}_${cz}_${square.size}`;
-  const roads = world.roads.filter(r => r.studio !== id && r.ring.some(([x, , z]) => inside(x, z)));
-  const roadGroup = addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy());
+  const roads = world.roads.filter(r => r.studio !== id && r.ring.some(([x, , z]) => inside(x, z))).flatMap(r => {
+    const rings = heights.surface.drape(r.ring.map(([x, , z]): Point2 => [x, z]), r.kind === 'marking' ? .05 : .02);
+    return rings.length ? rings.map(ring => ({...r, ring, lift: 0})) : [r];
+  });
+  let roadGroup = addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy());
   for (const r of roads) for (const t of triangulate(r.ring)) {
     const [p, q, s] = t.map(k => r.ring[k]);
     heights.add({x: p[0], y: p[1], z: p[2]}, {x: q[0], y: q[1], z: q[2]}, {x: s[0], y: s[1], z: s[2]});
@@ -183,8 +196,27 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
     const g = o.geometry as THREE.BufferGeometry;
     if (g.attributes.layer && g.attributes.position && o.material !== materials.near.water) shapeable.push({mesh: o, picks: g.attributes.building as THREE.BufferAttribute});
   });
-  roadGroup.traverse(o => { if (o instanceof THREE.Mesh) shapeable.push({mesh: o}); });
+
   shapeable.push({mesh: wallMesh, picks: wallGeometry.attributes.pick as THREE.BufferAttribute});
   const centres = new Map(world.buildings.map(b => [b.pick, [b.c[0] - ox, b.c[1] - oz] as Point2]));
-  return {scene, heights, wallMesh, refined, trees, byPick, box, frame, indoors, shapeable, centres};
+  const otherCuts = (world.roadCuts ?? []).filter(c => c.site !== id).map(c => ({...c, exposeGround: true}));
+  const groundColours = new Map<THREE.BufferAttribute, {original: Float32Array; position: THREE.BufferAttribute; buildings: THREE.BufferAttribute}>();
+  scene.traverse(o => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const {color, position, building} = o.geometry.attributes;
+    if (color && position && building && !groundColours.has(color as THREE.BufferAttribute)) groundColours.set(color as THREE.BufferAttribute, {original: (color.array as Float32Array).slice(), position: position as THREE.BufferAttribute, buildings: building as THREE.BufferAttribute});
+  });
+  function setRoadCuts(cuts: RoadCut[], shift: (x: number, z: number) => number) {
+    const allCuts = [...otherCuts, ...cuts].map(c => ({...c, exposeGround: true}));
+    for (const [colour, {original, position, buildings}] of groundColours) {
+      (colour.array as Float32Array).set(original);
+      restoreGround(position.array, colour.array as Float32Array, buildings.array, allCuts);
+      colour.needsUpdate = true;
+    }
+    disposeGroup(roadGroup);
+    roadGroup = addRoads(scene, roads.map(r => ({...r, ring: r.ring.map(([x, y, z]): [number, number, number] => [x, y + shift(x, z), z])})), renderer.capabilities.getMaxAnisotropy(), allCuts);
+    usePhysicalDepth(roadGroup);
+  }
+  const roadFootprints = world.roads.filter(r => r.studio !== id && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({kind: r.kind, ring: r.ring.map(([x, , z]): Point2 => [x + ox, z + oz])}));
+  return {scene, heights, wallMesh, refined, trees, byPick, box, frame, indoors, shapeable, centres, setRoadCuts, otherCuts, roadFootprints, groundColour};
 }

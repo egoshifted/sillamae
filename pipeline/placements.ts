@@ -4,7 +4,7 @@ import type {BuiltLine, RoadSurface} from '../src/engine/data.ts';
 import {LINE_HEIGHT, standLine} from '../src/engine/lines.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TREE_MATCH, TRIANGLE, type CityDefinition, type Placement, type PlacementSite, type Point2, type SceneData} from '../src/engine/types.ts';
-import {DRIVEN, FOOTWAY, nearestOn, offsetLine, ROAD_TAGS, ROAD_WIDTH, SNAP} from '../src/engine/streets.ts';
+import {DRIVEN, FOOTWAY, nearestOn, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, SNAP} from '../src/engine/streets.ts';
 import type {Georeference, OsmExtract} from './geo.ts';
 import type {RoadShape} from './roads.ts';
 
@@ -51,7 +51,7 @@ export function dropHidden(v: Float32Array, scene: SceneData, sites: PlacementSi
 // Areas drawn in the studio, as footways in the local frame for the road layer to lay.
 export function studioSurfaces(sites: PlacementSite[], city: CityDefinition): RoadShape[] {
   const [ox, oz] = city.frame.origin;
-  return sites.flatMap(s => (s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})));
+  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], studio: s.id, ring: pathOutline(r.type, r.points.map(([x, z]): Point2 => [x - ox, z - oz]))}))]);
 }
 
 // Lines drawn in the studio, stood on the built terrain in the local frame.
@@ -69,7 +69,7 @@ export function studioLines(sites: PlacementSite[], city: CityDefinition, height
 // drawn roads that meet share a node, so osm2streets builds the junctions.
 // Footways are separate paths beside the carriageway, as most here are mapped.
 export function addStudioRoads(osm: OsmExtract, sites: PlacementSite[], {local, lonLat}: Georeference, city: CityDefinition) {
-  const roads = sites.flatMap(s => s.roads ?? []);
+  const roads = sites.flatMap(s => (s.roads ?? []).filter(r => !PATH_FINISH[r.type]));
   if (!roads.length) return {osm, report: 'studio roads: 0'};
   const [ox, oz] = city.frame.origin, toLonLat = ([x, z]: Point2) => lonLat([x + ox, z + oz]);
   const highways = osm.highways.map(w => ({...w, nodes: [...w.nodes], points: [...w.points]}));
@@ -112,11 +112,12 @@ export function addStudioRoads(osm: OsmExtract, sites: PlacementSite[], {local, 
 // Marks the laid road surfaces that belong to drawn roads with their square,
 // by distance from the road's course, junction pieces at their ends included.
 export function markStudioRoads(surfaces: RoadSurface[], sites: PlacementSite[], city: CityDefinition) {
-  const [ox, oz] = city.frame.origin, courses = sites.flatMap(s => (s.roads ?? []).map(r => ({site: s.id, points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), half: ROAD_WIDTH[r.type] / 2, footways: !!r.footways})));
+  const [ox, oz] = city.frame.origin, courses = sites.flatMap(s => (s.roads ?? []).filter(r => !PATH_FINISH[r.type]).map(r => ({site: s.id, points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), half: ROAD_WIDTH[r.type] / 2, footways: !!r.footways})));
   if (!courses.length) return;
   // A cell's centre lies within half its 3 m size of its own band; streets beyond stay the town's.
   const SLACK = .75;
   for (const s of surfaces) {
+    if (s.studio) continue;
     const cx = s.ring.reduce((t, p) => t + p[0], 0) / s.ring.length, cz = s.ring.reduce((t, p) => t + p[2], 0) / s.ring.length;
     const owner = courses.find(c => {
       const hit = nearestOn([c.points], cx, cz, c.half + FOOTWAY.offset + FOOTWAY.width + SLACK);
