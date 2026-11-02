@@ -128,7 +128,7 @@ if (relief > 0. && vBuilding < .5) {
 }
 
 // buildings: one more than the highest building number. base: absolute height of local y = 0.
-export function surveyMaterials(anisotropy: number, buildings: number, base: number) {
+export function surveyMaterials(anisotropy: number, buildings: number, base: number, flat = false) {
   const tints = new THREE.DataTexture(new Uint8Array(buildings * 4), buildings, 1);
   tints.needsUpdate = true;
   const overlays: Overlays = {tints, relief: {value: 0}, reliefRange: {value: new THREE.Vector2(0, 1)}, base};
@@ -139,11 +139,12 @@ export function surveyMaterials(anisotropy: number, buildings: number, base: num
     const t = textures[kind] = surfaceTexture(kind, rng, anisotropy);
     near[kind] = tintable(new THREE.MeshStandardMaterial({
       vertexColors: true, side: THREE.DoubleSide, shadowSide: THREE.FrontSide,
+      flatShading: flat,
       map: MAPPED(kind) ? t : null, bumpMap: BUMPED(kind) ? t : null, bumpScale: kind === 'plaster' ? .025 : .065,
       roughness: kind === 'glass' ? .3 : .94, metalness: kind === 'glass' ? .12 : 0,
     }), overlays);
   }
-  const far = Object.fromEntries(SURFACES.map(k => [k, tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, map: null}), overlays)])) as Record<Surface, THREE.MeshLambertMaterial>;
+  const far = Object.fromEntries(SURFACES.map(k => [k, tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, map: null, flatShading: flat}), overlays)])) as Record<Surface, THREE.MeshLambertMaterial>;
   return {
     near, far, tints, overlays,
     setTextures(enabled: boolean) {
@@ -175,7 +176,7 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
     groups[b.detail].add(mesh);
     return mesh;
   });
-  const overview = new THREE.Group(), overviewMaterial = tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide}), materials.overlays);
+  const overview = new THREE.Group(), overviewMaterial = tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, flatShading: materials.near.grass.flatShading}), materials.overlays);
   const cells = new Map<string, {mesh: THREE.Mesh; parts: number[]; loaded: Map<number, SurveyBucket>}>();
   buckets.forEach((b, index) => {
     if (b.detail !== 'base') return;
@@ -195,12 +196,14 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
     // A cell never spans two tiles.
     fill(bucket: SurveyBucket) {
       const geo = meshes[bucket.index].geometry;
+      if (bucket.indices) geo.setIndex(new THREE.BufferAttribute(bucket.indices, 1));
       geo.setAttribute('position', new THREE.BufferAttribute(bucket.position, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(bucket.color, 3));
       geo.setAttribute('uv', new THREE.BufferAttribute(bucket.uv, 2));
       geo.setAttribute('building', new THREE.BufferAttribute(bucket.building, 1));
       geo.setAttribute('layer', new THREE.BufferAttribute(bucket.layer, 1));
       if (bucket.normal) geo.setAttribute('normal', new THREE.BufferAttribute(bucket.normal, 3)); else geo.computeVertexNormals();
+      bucket.normal ??= geo.getAttribute('normal').array as Float32Array;
       if (bucket.bounds) geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(...bucket.bounds.slice(0, 3)), bucket.bounds[3]); else geo.computeBoundingSphere();
       meshes[bucket.index].visible = true;
       const meta = buckets[bucket.index], cell = meta.detail === 'base' && cells.get(meta.cell);
@@ -213,6 +216,29 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
       merged.setAttribute('building', new THREE.BufferAttribute(concatUint16(parts.map(b => b.building)), 1));
       merged.setAttribute('layer', new THREE.BufferAttribute(concatBytes(parts.map(b => b.layer)), 1));
       if (parts.every(b => b.normal)) merged.setAttribute('normal', new THREE.BufferAttribute(concat(parts.map(b => b.normal!)), 3)); else merged.computeVertexNormals();
+      if (materials.near.grass.flatShading) {
+        merged.setAttribute('uv', new THREE.BufferAttribute(concat(parts.map(b => b.uv)), 2));
+        const indices = new Uint32Array(parts.reduce((n, b) => n + (b.indices?.length ?? b.building.length), 0));
+        let vertex = 0, corner = 0;
+        for (const part of parts) {
+          const count = part.indices?.length ?? part.building.length;
+          for (let j = 0; j < count; j++) indices[corner + j] = vertex + (part.indices?.[j] ?? j);
+          vertex += part.building.length; corner += count;
+        }
+        merged.setIndex(new THREE.BufferAttribute(indices, 1));
+        corner = 0;
+        // Sharing BufferAttribute objects also shares GPU buffers. A separate
+        // overview copy doubles terrain memory as soon as the camera zooms out.
+        for (const part of parts) {
+          const mesh = meshes[part.index], shared = new THREE.BufferGeometry();
+          for (const [name, attribute] of Object.entries(merged.attributes)) shared.setAttribute(name, attribute);
+          shared.setIndex(merged.index);
+          const count = part.indices?.length ?? part.building.length;
+          shared.setDrawRange(corner, count); corner += count;
+          shared.boundingSphere = mesh.geometry.boundingSphere;
+          mesh.geometry.dispose(); mesh.geometry = shared;
+        }
+      }
       merged.computeBoundingSphere();
       cell.mesh.visible = true;
       cell.loaded.clear();

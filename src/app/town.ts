@@ -69,7 +69,8 @@ async function load(container: HTMLElement) {
 
   const progress = {...state.progress, total: survey.tiles.length}, root = document.documentElement;
   const report = () => update({progress: {...progress}});
-  const loader = tileLoader(survey, engine.frame);
+  const mobile = matchMedia('(pointer: coarse)').matches, parallel = mobile ? 1 : PARALLEL;
+  const loader = tileLoader(survey, engine.frame, mobile ? 1 : 2, mobile);
   const loaded = new Set<string>(), water = new Set(survey.buckets.filter(b => b.kind === 'water').map(b => b.tile));
   visibleTilesReady = () => {
     const radius = shadowCoverage(engine.camera.ortho, engine.camera.target);
@@ -89,9 +90,12 @@ async function load(container: HTMLElement) {
   // The view's tiles download while Kesk 1 builds and the shaders compile;
   // the rest waits so it does not share the connection with them.
   try {
-    const downloads = Promise.all(near.map(async t => ({name: t.name, buckets: await loader.load(DATA, t.name)})));
+    let at = 0;
+    const downloads = Promise.all(Array.from({length: parallel}, async () => {
+      for (let t = near[at++]; t; t = near[at++]) add(t.name, await loader.load(DATA, t.name));
+    }));
     const painted = engine.addRefinedBuildings(), compiled = engine.compile();
-    for (const {name, buckets} of await downloads) add(name, buckets);
+    await downloads;
     await Promise.all([painted, compiled]);
     engine.start();
     Object.assign(progress, {viewReady: true, firstView: performance.now()});
@@ -103,7 +107,7 @@ async function load(container: HTMLElement) {
       if (tile) remaining.delete(tile.name);
       return tile;
     };
-    await Promise.all(Array.from({length: PARALLEL}, async () => {
+    await Promise.all(Array.from({length: parallel}, async () => {
       for (let t = next(); t; t = next()) {
         add(t.name, await loader.load(DATA, t.name));
       }
