@@ -9,12 +9,19 @@ An agent only ever writes **drafts**. The owner approves a draft in the site edi
 | Location | What |
 | --- | --- |
 | `src/city/sillamae/assets/<id>/asset.ts` | Approved library assets. The folder name is the asset id. |
-| `src/city/sillamae/asset-drafts/<id>/asset.ts` | Drafts waiting for review, with their `request.md` and any `REVIEW.md`. |
+| `src/city/sillamae/asset-drafts/<id>/asset.ts` | Draft implementation only; per-asset records live outside the checkout. |
 | `src/city/sillamae/assets/palette.ts` | Shared materials and geometry helpers. Use these before making your own. |
 | `src/city/sillamae/assets/library.ts` | The index the studio reads: every library and draft folder, validated. |
 | `src/engine/types.ts` | `AssetDefinition` and `Placement`: the contract. |
 | `data/source/placements/<site>.json` | What the owner placed in each studio square. Do not edit by hand. |
-| [templates/asset-request.md](templates/asset-request.md) | The request the owner fills in. |
+| [templates/asset-request.md](templates/asset-request.md) | Reusable blank template; filled requests stay local. |
+| `<local-review-root>/<id>/` (outside every checkout) | Filled requests, sources, reviews, approvals, logs, reference images and preview evidence. |
+
+## Local-only records
+
+Before generating an asset, choose a review directory outside every repository checkout, grouped by asset id. Store filled `request.md`, `REVIEW.md`, approval notes, source/reference notes, logs, screenshots, captures and other evidence there. Do not commit these records, even after approval. Only implementation files, required runtime resources and reusable workflow documentation/templates belong in the repository. Asset implementations must not depend on local records or contain personal filesystem paths.
+
+If a tool writes a review record inside an asset folder, move it into the external review directory before staging or approving the asset; preserve existing notes. The ignore rules are a safeguard, not the storage location. Before each commit, inspect the staged file list and remove any per-asset request, review, log or evidence files, keeping a local copy.
 
 ## Asset ids
 
@@ -52,14 +59,14 @@ Each `asset.ts` exports `const asset: AssetDefinition`:
 
 1. **Read the request** (`templates/asset-request.md`, filled in by the owner) and any photos. If the owner gave only a sentence, ask for what the template marks as needed before starting.
 2. **Check the library** for an existing asset or variant that fits. Report near matches to the owner instead of silently making a duplicate.
-3. **Research**: real dimensions and construction from the photos, Street View around Sillamäe, manufacturer sheets or standards. Note sources in the draft's `request.md`.
-4. **Create** `src/city/sillamae/asset-drafts/<id>/` with `asset.ts` and the request saved as `request.md`. Follow the contract above and the code style in AGENTS.md (no narrating comments; comment only non-obvious reasons).
+3. **Research**: real dimensions and construction from the photos, Street View around Sillamäe, manufacturer sheets or standards. Note sources in `<local-review-root>/<id>/request.md`, outside the checkout.
+4. **Create** `src/city/sillamae/asset-drafts/<id>/` with `asset.ts` and any required implementation resources only. Save the filled request in the external review directory. Follow the contract above and the code style in AGENTS.md (no narrating comments; comment only non-obvious reasons).
 5. **Check**: `npm run assets:check` (or `-- --id <id>` while iterating) and `npm run check`. Fix every failure. The check covers the id, building every variant at both details, size against the declared size, budget, base or back on its contact plane, and saved placements.
 6. **Look at it**: with the dev server running, `npm run assets:preview -- --id <id> --out <empty folder outside the checkout>` saves every variant from the front, side, back and above, the far detail, and the asset beside a library asset (`--compare <id>`, default the bench), each with a 1.75 m person for scale. Open the pictures and compare them with the references; fix what does not match. It needs a browser: `npx playwright install chromium` once, or set `STUDIO_BROWSER` to an installed Chrome or Edge. Pass `--url` if the dev server is not on `http://127.0.0.1:5173`.
 7. **Hand over** to the owner: the id, what it is, variants, triangle counts, sources, and anything you were unsure of. The owner opens the site editor (`/src/studio/site/`), clicks the draft's picture under **Drafts to review** to open its preview (variants, near and far detail, a person and any library asset for scale, measured size and triangles), places it in a square if they want to see it in context, then approves or rejects it with notes.
-8. **After a rejection**, read `asset-drafts/<id>/REVIEW.md`, fix, re-run the checks and hand over again. Keep the notes; append, never delete.
+8. **After a rejection**, read `<local-review-root>/<id>/REVIEW.md`, fix, re-run the checks and hand over again. If the site editor generated `asset-drafts/<id>/REVIEW.md`, move its contents into that local record first. Keep the notes; append, never delete.
 
-Commit drafts and approvals like any other change. Do not commit photos that are not yours to share; keep links in `request.md` instead.
+Commit draft implementations and approved asset code like any other change. Keep requests, review/approval records, source links, logs, reference photographs and validation evidence local-only, outside the checkout. Inspect `git diff --cached --name-only` before committing. Do not stage these records or force-add ignored evidence.
 
 ## What makes a good asset here
 

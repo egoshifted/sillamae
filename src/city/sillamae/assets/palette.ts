@@ -17,6 +17,11 @@ export const palette = {
   wood: () => material('wood', '#8a6a48', .85),
   darkMetal: () => material('dark-metal', '#3d4240', .6, .4),
   galvanised: () => material('galvanised', '#9ea3a2', .45, .6),
+  glass: () => {
+    const m = material('shelter-glass', '#b4cac9', .18);
+    m.transparent = true; m.opacity = .2; m.depthWrite = false;
+    return m;
+  },
   lamp: () => material('lamp', '#f3efdc', .3),
   paint: (color: string) => material('paint-' + color, color, .6, .2),
 };

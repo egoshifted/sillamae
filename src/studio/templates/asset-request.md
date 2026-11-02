@@ -1,6 +1,6 @@
 # Asset request
 
-Copy this file, fill it in and give it to an agent with: "Generate the asset described in this request, following src/studio/ASSETS.md."
+Copy this file to `<local-review-root>/<id>/request.md` outside the repository (never into an asset folder), fill it in and give it to an agent with: "Generate the asset described in this request, following src/studio/ASSETS.md."
 
 **Id** (needed; check it is free in `src/city/sillamae/assets/` and `asset-drafts/`): `category-object-01`
 
