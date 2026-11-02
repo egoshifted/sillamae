@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type {RoadSurface} from '../../engine/data.ts';
 import {LINE_HEIGHT, lineMeshes, standLine} from '../../engine/lines.ts';
 import {addRoads} from '../../engine/roads.ts';
-import {FOOTWAY, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH} from '../../engine/streets.ts';
+import {FOOTWAY, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth} from '../../engine/streets.ts';
 import type {Point2, RoadCut, SiteLine, SiteRoad, SiteSurface, SurfaceFinish} from '../../engine/types.ts';
 import {usePhysicalDepth} from '../depth.ts';
 import type {GroundSurface} from './ground-surface.ts';
@@ -39,7 +39,7 @@ function densify(ring: Point2[], step = 1) {
   });
 }
 
-type Shape = {kind: RoadSurface['kind']; ring: Point2[]; surface?: SurfaceFinish; kerbed?: boolean; rise: number};
+type Shape = {kind: RoadSurface['kind']; ring: Point2[]; surface?: SurfaceFinish; kerbed?: boolean; tileLayout?: RoadSurface['tileLayout']; rise: number};
 const MARK = {dash: 3, gap: 6, width: .12}; // metres, a centre line's dashes
 
 // A drawn road as the data build will roughly make it: a carriageway band, a
@@ -49,7 +49,7 @@ export function roadShapes(road: SiteRoad, points: Point2[]): Shape[] {
   points = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-6);
   if (points.length < 2) return [];
   const finish = PATH_FINISH[road.type];
-  if (finish) return [{kind: 'footway', surface: finish, ...road.type === 'kerbed-path' && {kerbed: true}, ring: pathOutline(road.type, points), rise: RISE}];
+  if (finish) return [{kind: 'footway', surface: finish, ...road.type === 'tiled-path' && {tileLayout: {points, width: roadWidth(road)}}, ...road.type === 'kerbed-path' && {kerbed: true}, ring: pathOutline(road.type, points, road.tiles), rise: RISE}];
   const half = ROAD_WIDTH[road.type] / 2, band = (a: Point2[], b: Point2[]) => [...a, ...[...b].reverse()];
   const shapes: Shape[] = [{kind: 'carriageway', ring: band(offsetLine(points, half), offsetLine(points, -half)), rise: RISE + .01}];
   if (road.footways) for (const side of [1, -1]) {
@@ -76,12 +76,12 @@ export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads:
   const local = (ring: Point2[]) => ring.map(([x, z]): Point2 => [x - ox, z - oz]);
   const shapes: Shape[] = [...roads.flatMap(r => roadShapes(r, local(r.points))), ...surfaces.map(s => ({kind: 'footway' as const, surface: s.finish, ring: local(s.ring), rise: RISE + .02}))];
   const laid: RoadSurface[] = [];
-  const lay = (ring: Point2[], s: Shape) => laid.push({kind: s.kind, lift: 0, ...s.kerbed && {kerbed: true}, ...s.surface && {surface: s.surface}, ring: densify(ring).map(([px, pz]): [number, number, number] => [px, height(px, pz) + s.rise, pz])});
+  const lay = (ring: Point2[], s: Shape) => laid.push({kind: s.kind, lift: 0, ...s.tileLayout && {tileLayout: s.tileLayout}, ...s.kerbed && {kerbed: true}, ...s.surface && {surface: s.surface}, ring: densify(ring).map(([px, pz]): [number, number, number] => [px, height(px, pz) + s.rise, pz])});
   for (const s of shapes) {
     if (ground) {
       const rings = ground.drape(s.ring, s.rise);
       if (rings.length) {
-        for (const ring of rings) laid.push({kind: s.kind, lift: 0, ...s.kerbed && {kerbed: true}, ...s.surface && {surface: s.surface}, ring});
+        for (const ring of rings) laid.push({kind: s.kind, lift: 0, ...s.tileLayout && {tileLayout: s.tileLayout}, ...s.kerbed && {kerbed: true}, ...s.surface && {surface: s.surface}, ring});
         continue;
       }
     }

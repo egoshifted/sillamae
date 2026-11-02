@@ -1,0 +1,109 @@
+{
+ "version": 1,
+ "id": "214_572_50",
+ "square": {
+  "centre": [
+   214,
+   572
+  ],
+  "size": 50
+ },
+ "placements": [
+  {
+   "id": "pmvzdhqf09a4",
+   "asset": "bench-slatted-01",
+   "p": [
+    222.438,
+    567.014,
+    12.71
+   ],
+   "heading": 1.1971,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzdi4xqlkt",
+   "asset": "bench-slatted-01",
+   "p": [
+    216.78,
+    581.683,
+    12.45
+   ],
+   "heading": 1.2468,
+   "attach": "ground"
+  }
+ ],
+ "roads": [
+  {
+   "id": "rmvzddt580rl",
+   "type": "kerbed-path",
+   "points": [
+    [
+     229.348,
+     553.398
+    ],
+    [
+     215.027,
+     590.047
+    ],
+    [
+     214.773,
+     591.335
+    ],
+    [
+     214.777,
+     592.726
+    ],
+    [
+     215.234,
+     594.065
+    ],
+    [
+     216.387,
+     596.966
+    ]
+   ]
+  },
+  {
+   "id": "rmvzdeds4bqa",
+   "type": "asphalt-path",
+   "points": [
+    [
+     211.338,
+     572.165
+    ],
+    [
+     220.344,
+     575.534
+    ]
+   ]
+  },
+  {
+   "id": "rmvzdei8u8lv",
+   "type": "asphalt-path",
+   "points": [
+    [
+     211.825,
+     570.409
+    ],
+    [
+     220.528,
+     573.928
+    ]
+   ]
+  },
+  {
+   "id": "rmvzdenav8v5",
+   "type": "asphalt-path",
+   "points": [
+    [
+     212.832,
+     568.886
+    ],
+    [
+     221.123,
+     572.426
+    ]
+   ]
+  }
+ ]
+}

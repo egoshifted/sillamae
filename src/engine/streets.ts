@@ -1,4 +1,4 @@
-import type {Point2, RoadType, SurfaceFinish} from './types.ts';
+import type {Point2, RoadType, SiteRoad, SurfaceFinish} from './types.ts';
 
 // Street types the studio draws, as OpenStreetMap tags osm2streets builds from.
 // osm2streets makes every driving lane 3 m, so the lanes give the width.
@@ -10,13 +10,16 @@ export const ROAD_TAGS: Record<RoadType, Record<string, string>> = {
   'kerbed-path': {highway: 'footway', surface: 'asphalt'},
   'asphalt-path': {highway: 'footway', surface: 'asphalt'},
   'gravel-path': {highway: 'footway', surface: 'gravel'},
+  'tiled-path': {highway: 'footway', surface: 'concrete:plates'},
   'worn-path': {highway: 'path', surface: 'ground'},
 };
-export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, service: 3.5, sidewalk: 2, 'kerbed-path': 2, 'asphalt-path': 1.8, 'gravel-path': 1.5, 'worn-path': .9};
-export const PATH_FINISH: Partial<Record<RoadType, SurfaceFinish>> = {sidewalk: 'paving', 'kerbed-path': 'asphalt', 'asphalt-path': 'asphalt', 'gravel-path': 'gravel', 'worn-path': 'worn-grass'};
+export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, service: 3.5, sidewalk: 2, 'kerbed-path': 2, 'asphalt-path': 1.8, 'gravel-path': 1.5, 'worn-path': .9, 'tiled-path': 2};
+export const PATH_FINISH: Partial<Record<RoadType, SurfaceFinish>> = {sidewalk: 'paving', 'kerbed-path': 'asphalt', 'asphalt-path': 'asphalt', 'gravel-path': 'gravel', 'worn-path': 'worn-grass', 'tiled-path': 'worn-paving'};
 
-export function pathOutline(type: RoadType, points: Point2[]): Point2[] {
-  const half = ROAD_WIDTH[type] / 2;
+export const tileCount = (tiles = 4) => Math.max(1, Math.min(6, Math.round(Number.isFinite(tiles) ? tiles : 4)));
+export const roadWidth = (road: Pick<SiteRoad, 'type' | 'tiles'>) => road.type === 'tiled-path' ? tileCount(road.tiles) * .5 : ROAD_WIDTH[road.type];
+export function pathOutline(type: RoadType, points: Point2[], tiles?: number): Point2[] {
+  const half = roadWidth({type, tiles}) / 2;
   if (type !== 'worn-path') return [...offsetLine(points, half), ...offsetLine(points, -half).reverse()];
   const sampled: Point2[] = [];
   let distance = 0;
@@ -81,4 +84,17 @@ export function smoothLine(points: Point2[], step = 3): Point2[] {
     }
   }
   return out;
+}
+
+export function pathCoordinates(points: Point2[], width: number, x: number, z: number): Point2 {
+  let best = Infinity, travelled = 0, result: Point2 = [x, z];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i], dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+    if (length < 1e-6) continue;
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / length ** 2));
+    const distance = Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz);
+    if (distance < best) { best = distance; result = [((x - a[0]) * -dz + (z - a[1]) * dx) / length + width / 2, travelled + t * length]; }
+    travelled += length;
+  }
+  return result;
 }

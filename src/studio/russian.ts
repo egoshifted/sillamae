@@ -1,4 +1,20 @@
 export const russian: Record<string, string> = {
+  'Atlas season': 'Сезон атласа', 'Spring foliage': 'Весенняя листва', 'Autumn foliage': 'Осенняя листва', 'Winter branches': 'Зимние ветви',
+  'Wheeled rubbish bin': 'Мусорный контейнер на колёсах',
+  'Cylindrical waste bin': 'Цилиндрический контейнер',
+  'Cylindrical bio bin': 'Цилиндрический биоконтейнер',
+  'Rounded leafy bush': 'Округлый лиственный куст',
+  'Low spreading shrub': 'Низкий раскидистый кустарник',
+  'Residential zone sign': 'Знак «Жилая зона»',
+  'Dark grey': 'Тёмно-серый',
+  'Green': 'Зелёный',
+  'General waste': 'Общие отходы',
+  'Paper': 'Бумага',
+  'Bio waste': 'Биоотходы',
+  'Summer foliage': 'Летняя листва',
+  'Blue sign': 'Синий знак',
+  'signs': 'знаки',
+  'Worn tiled path': 'Дорожка из старых плит', 'Width (tiles)': 'Ширина (плит)',
   'Drag either endpoint to extend the road or path. Esc cancels; Undo restores the previous length.': 'Тяните за конечную точку, чтобы продлить дорогу или дорожку. Esc — отменить действие; «Отменить» — вернуть прежнюю длину.',
   'Atlas building studio': 'Атлас — студия зданий', 'Atlas site editor': 'Атлас — редактор участка', 'Asset preview': 'Просмотр объекта',
   'Building studio': 'Студия зданий', 'Site editor': 'Редактор участка', 'Open atlas': 'Открыть атлас', 'Workflow': 'Порядок работы', 'Asset guide': 'Руководство по объектам',
@@ -54,6 +70,7 @@ export const russian: Record<string, string> = {
 };
 
 export const russianTemplates: [string, string][] = [
+  ['{0} ({1} m)', '{0} ({1} м)'],
   ['Square {0} m at {1} · {2}.json', 'Участок {0} м, центр: {1} · {2}.json'],
   ['Loading ground {0} of {1}…', 'Загрузка грунта: {0} из {1}…'],
   ['{0} objects ({1} draft previews, not saved)', 'Объектов: {0} (черновиков: {1}, не сохраняются)'],

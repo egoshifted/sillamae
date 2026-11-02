@@ -7,7 +7,7 @@ import type {SurveyManifest, WorldData} from '../../engine/data.ts';
 import {snapToRoadEdge} from '../../engine/road-kerbs.ts';
 import {demolishRoads, contains, roadSection} from '../../engine/road-demolition.ts';
 import {LINE_HEIGHT} from '../../engine/lines.ts';
-import {nearestOn, PATH_FINISH, ROAD_WIDTH, smoothLine, SNAP} from '../../engine/streets.ts';
+import {nearestOn, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SNAP} from '../../engine/streets.ts';
 import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
 import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
@@ -78,7 +78,7 @@ const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), h
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
 const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true, shape: 'raise' as TerrainMode, lift: .2, blend: .4,
   finish: 'paving' as SurfaceFinish, lineKind: 'fence' as LineKind, lineHeight: LINE_HEIGHT.fence,
-  roadType: 'residential' as RoadType, snapFootpath: true, footways: true, curved: true};
+  roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true};
 // The town's streets in source x/z, for drawn roads to join; from the data build.
 let streetLines: Point2[][] = [];
 // Where a road point will join a street or another drawn road's end, while drawing.
@@ -203,7 +203,7 @@ function itemAt(clientX: number, clientY: number) {
   const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
   const line = (site!.lines ?? []).map(l => ({l, d: distanceToLine(l.points, x, z)})).filter(e => e.d < .6).sort((a, b) => a.d - b.d)[0];
   if (line) return 'line:' + line.l.id;
-  const road = (site!.roads ?? []).map(r => ({r, d: distanceToLine(r.points, x, z) - ROAD_WIDTH[r.type] / 2})).filter(e => e.d < .3).sort((a, b) => a.d - b.d)[0];
+  const road = (site!.roads ?? []).map(r => ({r, d: distanceToLine(r.points, x, z) - roadWidth(r) / 2})).filter(e => e.d < .3).sort((a, b) => a.d - b.d)[0];
   if (road) return 'road:' + road.r.id;
   const area = [...site!.surfaces ?? []].reverse().find(s => inRing(s.ring, x, z));
   return area ? 'area:' + area.id : null;
@@ -628,7 +628,7 @@ function updatePreview() {
 }
 // The first point at its snap; the last is the pointer's (already snapped) or the last click's snap.
 const roadEnds = (points: THREE.Vector3[]) => points.map((p, i) => options.roadType === 'kerbed-path' ? roadSnaps[i] ?? p : i === 0 ? roadSnaps[0] ?? p : i === points.length - 1 && i < path.length ? roadSnaps[i] ?? p : p);
-const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, points: options.curved && !(options.roadType === 'kerbed-path' && options.snapFootpath) ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
+const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, ...options.roadType === 'tiled-path' && {tiles: options.tiles}, points: options.curved && !(options.roadType === 'kerbed-path' && options.snapFootpath) ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
 // A road point within reach of another drawn road's end, or of a street, moves onto it;
 // the data build joins it there. Local frame.
 function roadContext() {
@@ -769,7 +769,7 @@ function duplicate() {
         list.push({...structuredClone(a ?? l ?? r!), id});
         const [cx, cz] = centroid(pointsOf(copyKey)!);
         // A copied road sits beside the original, a road's width over.
-        const by = r ? ROAD_WIDTH[r.type] + 1 : 1;
+        const by = r ? roadWidth(r) + 1 : 1;
         if (moveTo(copyKey, cx + right.x * by, cz + right.z * by)) copies.add(copyKey); else list.pop();
         detailsChanged = true;
       } else if (p) {
@@ -1277,6 +1277,7 @@ function showOptions() {
       return labelled(label, box);
     };
     parts.push(labelled('Type', typeSelect(options.roadType, v => { options.roadType = v; showOptions(); updatePreview(); })), ...(!PATH_FINISH[options.roadType] ? [tick('Footways', 'footways')] : []), ...(options.roadType === 'kerbed-path' ? [tick('Snap to road', 'snapFootpath')] : []), ...(options.roadType === 'kerbed-path' && options.snapFootpath ? [] : [tick('Curved', 'curved')]));
+    if (options.roadType === 'tiled-path') parts.push(labelled('Width (tiles)', tilesSelect(options.tiles, v => { options.tiles = v; updatePreview(); })));
     if (options.roadType === 'kerbed-path') parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Click along the road edge; kerbs appear only where the path meets a road.'}));
     if (!streetLines.length) parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Build data (npm run data) to snap to streets'}));
   }
@@ -1308,7 +1309,12 @@ function finishSelect(value: SurfaceFinish, onchange: (v: SurfaceFinish) => void
   s.onchange = () => onchange(s.value as SurfaceFinish);
   return s;
 }
-const ROAD_TYPES: [RoadType, string][] = [['residential', 'Residential street'], ['main', 'Main road'], ['service', 'Service lane'], ['sidewalk', 'Paved sidewalk'], ['asphalt-path', 'Asphalt footpath'], ['kerbed-path', 'Kerbed asphalt footpath'], ['gravel-path', 'Gravel path'], ['worn-path', 'Worn-grass path']];
+const ROAD_TYPES: [RoadType, string][] = [['residential', 'Residential street'], ['main', 'Main road'], ['service', 'Service lane'], ['sidewalk', 'Paved sidewalk'], ['asphalt-path', 'Asphalt footpath'], ['kerbed-path', 'Kerbed asphalt footpath'], ['gravel-path', 'Gravel path'], ['worn-path', 'Worn-grass path'], ['tiled-path', 'Worn tiled path']];
+function tilesSelect(value: number | undefined, onchange: (v: number) => void) {
+  const s = document.createElement('select');
+  for (let n = 1; n <= 6; n++) s.add(new Option(n + ' (' + n * .5 + ' m)', String(n)));
+  s.value = String(tileCount(value)); s.onchange = () => onchange(Number(s.value)); return s;
+}
 function typeSelect(value: RoadType, onchange: (v: RoadType) => void) {
   const s = document.createElement('select');
   for (const [v, t] of ROAD_TYPES) s.add(new Option(t, v));
@@ -1496,8 +1502,8 @@ function showSelection() {
     const footways = Object.assign(document.createElement('input'), {type: 'checkbox', checked: !!r.footways});
     footways.onchange = () => edit(() => { if (footways.checked) r.footways = true; else delete r.footways; detailsChanged = true; });
     const length = r.points.reduce((s, p, i) => i ? s + Math.hypot(p[0] - r.points[i - 1][0], p[1] - r.points[i - 1][1]) : 0, 0);
-    panel.replaceChildren(heading(ROAD_TYPES.find(t => t[0] === r.type)![1]), Object.assign(document.createElement('p'), {textContent: 'Drag either endpoint to extend the road or path. Esc cancels; Undo restores the previous length.'}), Object.assign(document.createElement('small'), {textContent: `${r.id} · ${length.toFixed(1)} m long · ${ROAD_WIDTH[r.type]} m wide`}),
-      labelled('Type', typeSelect(r.type, v => edit(() => { r.type = v; if (PATH_FINISH[v]) delete r.footways; detailsChanged = true; }))), ...(!PATH_FINISH[r.type] ? [labelled('Footways', footways)] : []), ...tools);
+    panel.replaceChildren(heading(ROAD_TYPES.find(t => t[0] === r.type)![1]), Object.assign(document.createElement('p'), {textContent: 'Drag either endpoint to extend the road or path. Esc cancels; Undo restores the previous length.'}), Object.assign(document.createElement('small'), {textContent: `${r.id} · ${length.toFixed(1)} m long · ${roadWidth(r)} m wide`}),
+      labelled('Type', typeSelect(r.type, v => edit(() => { r.type = v; if (PATH_FINISH[v]) delete r.footways; detailsChanged = true; }))), ...(r.type === 'tiled-path' ? [labelled('Width (tiles)', tilesSelect(r.tiles, v => edit(() => { r.tiles = v; detailsChanged = true; })))] : []), ...(!PATH_FINISH[r.type] ? [labelled('Footways', footways)] : []), ...tools);
     return;
   }
   if (l) {

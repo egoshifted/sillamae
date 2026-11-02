@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {studioSurfaces, addStudioRoads} from './placements.ts';
 import {roadShapes} from '../src/studio/site/details.ts';
-import {PATH_FINISH, ROAD_WIDTH} from '../src/engine/streets.ts';
+import {PATH_FINISH, ROAD_WIDTH, pathCoordinates} from '../src/engine/streets.ts';
 import type {CityDefinition, PlacementSite, RoadType} from '../src/engine/types.ts';
 import type {Georeference} from './geo.ts';
 
 const city = {frame: {origin: [100, 200]}} as CityDefinition;
-const types: RoadType[] = ['sidewalk', 'asphalt-path', 'gravel-path', 'worn-path', 'kerbed-path'];
+const types: RoadType[] = ['sidewalk', 'asphalt-path', 'gravel-path', 'worn-path', 'kerbed-path', 'tiled-path'];
 const site: PlacementSite = {version: 1, id: '110_210_50', square: {centre: [110, 210], size: 50}, placements: [],
   roads: types.map((type, i) => ({id: String(i), type, points: [[100, 200], [100, 210]], footways: true}))};
 
@@ -41,4 +41,18 @@ test('worn paths have repeatable irregular edges without changing the clicked co
   const road = site.roads![3], first = roadShapes(road, [[0, 0], [0, 10]])[0];
   assert.deepEqual(first, roadShapes(road, [[0, 0], [0, 10]])[0]);
   assert.ok(new Set(first.ring.map(p => Math.abs(p[0]).toFixed(3))).size > 5);
+});
+
+
+test('worn tiled paths preserve all six tile widths and aligned layout through save and build', () => {
+  for (let tiles = 1; tiles <= 6; tiles++) {
+    const road = {id: 'tiles', type: 'tiled-path' as const, tiles, points: [[100, 200], [100, 210]] as [number, number][]};
+    const saved = JSON.parse(JSON.stringify({...site, roads: [road]}));
+    const built = studioSurfaces([saved], city)[0], preview = roadShapes(road, [[0, 0], [0, 10]])[0];
+    assert.equal(Math.max(...built.ring.map(p => p[0])) - Math.min(...built.ring.map(p => p[0])), tiles * .5);
+    assert.deepEqual(built.tileLayout, preview.tileLayout);
+    assert.equal(built.surface, 'worn-paving');
+    assert.deepEqual(pathCoordinates([[0, 0], [0, 10]], tiles * .5, tiles * .25, 1), [0, 1]);
+    assert.deepEqual(pathCoordinates([[0, 0], [10, 0]], tiles * .5, 1, -tiles * .25), [0, 1]);
+  }
 });

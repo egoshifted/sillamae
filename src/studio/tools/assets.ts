@@ -151,7 +151,7 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
   for (const s of site.surfaces ?? []) {
     if (ids.has(s.id)) fail(name, `id ${s.id} used twice`);
     ids.add(s.id);
-    if (!['asphalt', 'paving', 'gravel', 'grass', 'flowerbed', 'worn-grass'].includes(s.finish) || !Array.isArray(s.ring) || s.ring.length < 3 || !s.ring.every(pair)) fail(name, `surface ${s.id} needs a finish and at least three x/z corners`);
+    if (!['asphalt', 'paving', 'gravel', 'grass', 'flowerbed', 'worn-grass', 'worn-paving'].includes(s.finish) || !Array.isArray(s.ring) || s.ring.length < 3 || !s.ring.every(pair)) fail(name, `surface ${s.id} needs a finish and at least three x/z corners`);
   }
   for (const l of site.lines ?? []) {
     if (ids.has(l.id)) fail(name, `id ${l.id} used twice`);
@@ -161,7 +161,8 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
   for (const r of site.roads ?? []) {
     if (ids.has(r.id)) fail(name, `id ${r.id} used twice`);
     ids.add(r.id);
-    if (!['main', 'residential', 'service', 'sidewalk', 'kerbed-path', 'asphalt-path', 'gravel-path', 'worn-path'].includes(r.type) || !Array.isArray(r.points) || r.points.length < 2 || !r.points.every(pair)) fail(name, `road ${r.id} needs a type and at least two x/z points`);
+    if (r.tiles !== undefined && (!Number.isInteger(r.tiles) || r.tiles < 1 || r.tiles > 6)) fail(name, `road ${r.id} needs 1–6 tiles across`);
+    if (!['main', 'residential', 'service', 'sidewalk', 'kerbed-path', 'asphalt-path', 'gravel-path', 'worn-path', 'tiled-path'].includes(r.type) || !Array.isArray(r.points) || r.points.length < 2 || !r.points.every(pair)) fail(name, `road ${r.id} needs a type and at least two x/z points`);
   }
   for (const c of site.roadCuts ?? []) {
     if (!['carriageway', 'footway'].includes(c.kind) || !Array.isArray(c.ring) || c.ring.length !== 4 || !c.ring.every(pair)) fail(name, 'road demolition needs a kind and four x/z corners');
