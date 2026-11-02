@@ -126,7 +126,7 @@ export interface SiteTree {
   type: string; // as Tree.type
 }
 
-export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed' | 'worn-grass';
+export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed' | 'worn-grass' | 'worn-paving';
 // An area drawn on the ground in the studio, laid like a footway.
 export interface SiteSurface {
   id: string;
@@ -143,13 +143,14 @@ export interface SiteLine {
   height?: number; // metres; each kind has its own default
 }
 
-export type RoadType = 'main' | 'residential' | 'service' | 'sidewalk' | 'asphalt-path' | 'kerbed-path' | 'gravel-path' | 'worn-path';
+export type RoadType = 'main' | 'residential' | 'service' | 'sidewalk' | 'asphalt-path' | 'kerbed-path' | 'gravel-path' | 'worn-path' | 'tiled-path';
 // Vehicle streets join the OSM network. Pedestrian paths retain their drawn
 // width and finish as terrain-following surfaces, without road grading.
 export interface SiteRoad {
   id: string;
   type: RoadType;
   points: Point2[]; // source x/z along its centre
+  tiles?: number; // worn tiled paths: 1–6 slabs across, each 0.5 m
   footways?: boolean; // a path along each side
 }
 

@@ -50,7 +50,7 @@ function foliageTexture() {
 }
 
 // Normals point out of the crown volume rather than along each card; per-card normals light a crown as noise.
-function crownGeometry(conifer: boolean, aspect: number, level: number) {
+export function crownGeometry(conifer: boolean, aspect: number, level: number) {
   let seed = 1009 + Math.round(aspect * 100) + (conifer ? 61 : 0) + level * 7;
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const count = CARDS[+conifer][level], size = CARD_SIZE[+conifer][level], half = conifer ? .5 : 0;
@@ -118,7 +118,11 @@ attribute float turn;
 varying float vTurned;
 varying float vAutumnHue;
 void autumnLeaf() {
+  #ifdef USE_INSTANCING
   vec2 at = instanceMatrix[3].xz;
+  #else
+  vec2 at = modelMatrix[3].xz;
+  #endif
   float share = fract(sin(dot(at, vec2(12.9898, 78.233))) * 43758.5453);
   share = share < .15 ? mix(.45, .85, share / .15) : .05 + .3 * pow((share - .15) / .85, 2.);
   vTurned = 1. - smoothstep(share - .05, share + .05, turn);
@@ -137,18 +141,19 @@ vec3 autumnColour(vec3 green) {
 `;
 
 // Mipmapping averages leaf alpha down, so the far level needs a lower cut-off or its crowns dissolve into specks.
-function foliageMaterials() {
+export function foliageMaterials(season: 'atlas' | 'spring' | 'summer' | 'autumn' = 'atlas') {
   const map = foliageTexture();
   const leaf = (alphaTest: number) => {
     const material = new THREE.MeshLambertMaterial({vertexColors: true, map, alphaTest, alphaToCoverage: true, side: THREE.DoubleSide});
     // Back faces keep the crown's volume normal; the default flip would light the far side of each card from inside.
     material.onBeforeCompile = shader => {
-      shader.vertexShader = AUTUMN_VERTEX + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nautumnLeaf();');
+      const vertex = season === 'atlas' ? AUTUMN_VERTEX : AUTUMN_VERTEX.replace('vTurned = 1. - smoothstep(share - .05, share + .05, turn);', season === 'autumn' ? 'vTurned = 1. - smoothstep(.7, .9, turn);' : 'vTurned = 0.;');
+      shader.vertexShader = vertex + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nautumnLeaf();');
       shader.fragmentShader = AUTUMN_FRAGMENT + shader.fragmentShader
         .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = autumnColour(diffuseColor.rgb);');
     };
-    material.customProgramCacheKey = () => 'tree-leaf-cards-v2';
+    material.customProgramCacheKey = () => 'tree-leaf-cards-v3-' + season;
     return material;
   };
   const depth = (alphaTest: number) => new THREE.MeshDepthMaterial({depthPacking: THREE.RGBADepthPacking, map, alphaTest, side: THREE.DoubleSide});

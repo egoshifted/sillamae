@@ -52,3 +52,19 @@ export function rod(from: THREE.Vector3Tuple, to: THREE.Vector3Tuple, radius: nu
     .translate(a.x + direction.x * length / 2, a.y + direction.y * length / 2, a.z + direction.z * length / 2);
 }
 export const cylinder =(top: number, bottom: number, h: number, segments: number, x = 0, y = h / 2, z = 0) => new THREE.CylinderGeometry(top, bottom, h, segments).translate(x, y, z);
+
+export function graphic(key: string, draw: (ctx: CanvasRenderingContext2D) => void) {
+  const id = 'graphic-' + key;
+  let m = cache.get(id);
+  if (!m) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 256;
+    draw(canvas.getContext('2d')!);
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.MeshStandardMaterial({map, roughness: .85});
+    cache.set(id, m);
+  }
+  return m;
+}
+export const organic = (color: string) => material('organic-' + color, color, .95);

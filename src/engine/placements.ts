@@ -15,10 +15,11 @@ function liftedMaterial(material: THREE.Material) {
   let m = lifted.get(material);
   if (!m) {
     m = material.clone();
-    m.onBeforeCompile = shader => {
+    m.onBeforeCompile = (shader, renderer) => {
+      material.onBeforeCompile(shader, renderer);
       shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * ${DEPTH_LIFT}.;`);
     };
-    m.customProgramCacheKey = () => 'placement-lift';
+    m.customProgramCacheKey = () => 'placement-lift:' + material.customProgramCacheKey();
     lifted.set(material, m);
   }
   return m;
@@ -69,6 +70,7 @@ export function addPlacements(parent: THREE.Object3D, placements: Placement[], a
             placed.compose(position.set(p.p[0] - ox, p.p[2] - frame.base, p.p[1] - oz), turn.setFromAxisAngle(up, p.heading), one);
             mesh.setMatrixAt(i, placed.multiply(o.matrixWorld));
           });
+          mesh.customDepthMaterial = o.customDepthMaterial;
           mesh.computeBoundingSphere();
           mesh.castShadow = detail === 'near';
           mesh.receiveShadow = true;

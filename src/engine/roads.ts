@@ -1,3 +1,4 @@
+import {pathCoordinates} from './streets.ts';
 import * as THREE from 'three';
 import {roadKerbs} from './road-kerbs.ts';
 import {lineMeshes} from './lines.ts';
@@ -11,6 +12,7 @@ const LOOK: Record<Exclude<RoadKind, 'footway'>, [string, number]> = {carriagewa
 // lighter and warmer than the carriageway, with darker patched repairs.
 // tile is the ground size of one texture repeat, in metres.
 const FINISH: Record<Finish, {tile: number; roughness: number; paint: (x: CanvasRenderingContext2D, rng: () => number) => void}> = {
+  'worn-paving': {tile: 2, roughness: 1, paint: wornPaving},
   asphalt: {tile: 6, roughness: .97, paint: asphalt},
   paving: {tile: 1, roughness: .9, paint: paving},
   gravel: {tile: 2, roughness: 1, paint: gravel},
@@ -65,12 +67,12 @@ const FLAT = 1e-3; // square metres of ground a triangle must cover
 // Texture coordinates are ground metres over the tile, so finishes run on across polygon edges.
 function surfaceGeometry(surfaces: RoadSurface[], tile?: number) {
   const position: number[] = [], lift: number[] = [], uv: number[] = [], colour: number[] = [];
-  for (const {ring, lift: l, groundColour, groundColours} of surfaces) {
+  for (const {ring, lift: l, groundColour, groundColours, tileLayout} of surfaces) {
     for (const t of triangulate(ring)) {
       const [a, b, c] = t.map(i => ring[i]);
       // Upward faces wind clockwise in (x, z).
       const up = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]) < 0;
-      for (const k of up ? t : [t[0], t[2], t[1]]) { const p = ring[k]; position.push(...p); lift.push(l); if (tile) uv.push(p[0] / tile, p[2] / tile); if (groundColour) colour.push(...(groundColours?.[k] ?? groundColour)); }
+      for (const k of up ? t : [t[0], t[2], t[1]]) { const p = ring[k]; position.push(...p); lift.push(l); if (tile) { const coords = tileLayout ? pathCoordinates(tileLayout.points, tileLayout.width, p[0], p[2]) : [p[0], p[2]]; uv.push(coords[0] / tile, coords[1] / tile); } if (groundColour) colour.push(...(groundColours?.[k] ?? groundColour)); }
     }
   }
   // Outline-only triangulation leaves long slivers; facet normals would shade their slight tilts as streaks.
@@ -212,4 +214,30 @@ function gravel(x: CanvasRenderingContext2D, rng: () => number) {
     x.fillRect(rng() * SIZE, rng() * SIZE, 1 + rng() * 2.5, 1 + rng() * 2.5);
   }
   x.globalAlpha = 1;
+}
+
+function wornPaving(x: CanvasRenderingContext2D, rng: () => number) {
+  x.fillStyle = '#566344'; x.fillRect(0, 0, SIZE, SIZE);
+  speckle(x, rng, 22000, 81, 44, 1.7, .35);
+  const slab = SIZE / 4;
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) {
+    const px = col * slab, py = row * slab, gap = 3 + rng() * 2, tone = 126 + Math.floor(rng() * 30);
+    x.save(); x.beginPath();
+    x.moveTo(px + gap + rng() * 3, py + gap); x.lineTo(px + slab - gap, py + gap + rng() * 3);
+    x.lineTo(px + slab - gap - rng() * 3, py + slab - gap); x.lineTo(px + gap, py + slab - gap - rng() * 3); x.closePath(); x.clip();
+    x.fillStyle = 'rgb(' + tone + ',' + (tone - 3) + ',' + (tone - 13) + ')'; x.fillRect(px, py, slab, slab);
+    for (let i = 0; i < 100; i++) {
+      x.globalAlpha = .08; x.fillStyle = i % 2 ? '#514c40' : '#d2cbb4';
+      x.beginPath(); x.ellipse(px + rng() * slab, py + rng() * slab, 3 + rng() * 14, 2 + rng() * 9, rng() * Math.PI, 0, Math.PI * 2); x.fill();
+    }
+    x.globalAlpha = .4;
+    for (let i = 0; i < 1800; i++) { const v = 95 + Math.floor(rng() * 90); x.fillStyle = 'rgb(' + v + ',' + v + ',' + (v - 8) + ')'; x.fillRect(px + rng() * slab, py + rng() * slab, .7, .7); }
+    if (rng() < .35) { x.strokeStyle = '#686453'; x.lineWidth = .7; x.beginPath(); x.moveTo(px + gap, py + slab * .4); x.lineTo(px + slab * .35, py + slab * .48); x.lineTo(px + slab * .5, py + slab * .7); x.stroke(); }
+    x.restore();
+    for (let i = 0; i < 35; i++) {
+      const horizontal = i % 2, a = px + (horizontal ? rng() * slab : rng() * gap), b = py + (horizontal ? rng() * gap : rng() * slab);
+      x.strokeStyle = i % 3 ? '#68794c' : '#89925a'; x.lineWidth = .8;
+      x.beginPath(); x.moveTo(a, b); x.lineTo(a + (rng() - .5) * 7, b - rng() * 6); x.stroke();
+    }
+  }
 }

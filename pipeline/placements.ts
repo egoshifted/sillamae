@@ -4,7 +4,7 @@ import type {BuiltLine, RoadSurface} from '../src/engine/data.ts';
 import {LINE_HEIGHT, standLine} from '../src/engine/lines.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TREE_MATCH, TRIANGLE, type CityDefinition, type Placement, type PlacementSite, type Point2, type SceneData} from '../src/engine/types.ts';
-import {DRIVEN, FOOTWAY, nearestOn, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, SNAP} from '../src/engine/streets.ts';
+import {DRIVEN, FOOTWAY, nearestOn, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth, SNAP} from '../src/engine/streets.ts';
 import type {Georeference, OsmExtract} from './geo.ts';
 import type {RoadShape} from './roads.ts';
 
@@ -51,7 +51,7 @@ export function dropHidden(v: Float32Array, scene: SceneData, sites: PlacementSi
 // Areas drawn in the studio, as footways in the local frame for the road layer to lay.
 export function studioSurfaces(sites: PlacementSite[], city: CityDefinition): RoadShape[] {
   const [ox, oz] = city.frame.origin;
-  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], ...r.type === 'kerbed-path' && {kerbed: true}, studio: s.id, ring: pathOutline(r.type, r.points.map(([x, z]): Point2 => [x - ox, z - oz]))}))]);
+  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], ...r.type === 'tiled-path' && {tileLayout: {points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), width: roadWidth(r)}}, ...r.type === 'kerbed-path' && {kerbed: true}, studio: s.id, ring: pathOutline(r.type, r.points.map(([x, z]): Point2 => [x - ox, z - oz]), r.tiles)}))]);
 }
 
 // Lines drawn in the studio, stood on the built terrain in the local frame.
