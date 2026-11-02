@@ -64,7 +64,9 @@ export function lineMeshes(lines: BuiltLine[], {lifted = true, depthLift = DEPTH
       material.customProgramCacheKey = () => 'line-lift:' + depthLift;
     }
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = mesh.receiveShadow = true;
+    // A kerb's shadow is finer than the shadow map resolves; it renders as a blotchy band along the road.
+    mesh.castShadow = kind !== 'kerb';
+    mesh.receiveShadow = true;
     mesh.name = kind;
     group.add(mesh);
   }

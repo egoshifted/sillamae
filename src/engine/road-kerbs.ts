@@ -3,6 +3,10 @@ import type {Point2} from './types.ts';
 import {contains} from './road-demolition.ts';
 
 const CELL = 5;
+const SLIVER = .05; // metres
+// Metres beyond a path edge to look for the road. A path drawn straight beside a curving
+// road leaves a strip of a few centimetres to decimetres that still wants its kerb.
+const REACH = [.08, .35];
 function coverage(rings: Point2[][]) {
   const cells = new Map<string, Point2[][]>();
   for (const ring of rings) {
@@ -38,20 +42,24 @@ export function roadKerbs(surfaces: RoadSurface[], context: RoadSurface[] = []):
   if (!paths.length) return [];
   const flat = (s: RoadSurface): Point2[] => s.ring.map(([x, , z]) => [x, z]);
   const inPath = coverage(paths.map(flat)), inRoad = coverage([...surfaces, ...context].filter(s => s.kind === 'carriageway').map(flat));
-  const lines: (BuiltLine & {lift: number})[] = [];
+  // Where surfaces overlap, as a path draped over stacked survey layers does, only the top copy keeps its kerb.
+  const top = new Map<string, BuiltLine & {lift: number}>();
   for (const {ring, lift} of paths) for (let i = 0; i < ring.length; i++) {
     const a = ring[i], b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dz = b[2] - a[2], length = Math.hypot(dx, dz);
-    if (length < 1e-5) continue;
+    // Draping leaves centimetre slivers where fragments meet the outline; their sides cannot be told apart.
+    if (length < SLIVER) continue;
     const nx = -dz / length, nz = dx / length, count = Math.ceil(length / .25);
     for (let k = 0; k < count; k++) {
       const t = (k + .5) / count, x = a[0] + t * dx, z = a[2] + t * dz;
       const left = inPath(x + nx * .02, z + nz * .02), right = inPath(x - nx * .02, z - nz * .02);
       if (left === right) continue;
       const side = left ? -1 : 1;
-      if (!inRoad(x + side * nx * .08, z + side * nz * .08)) continue;
+      if (!REACH.some(d => inRoad(x + side * nx * d, z + side * nz * d))) continue;
       const at = (t: number): [number, number, number] => [a[0] + t * dx - side * nx * .075, a[1] + t * (b[1] - a[1]), a[2] + t * dz - side * nz * .075];
-      lines.push({lift, kind: 'kerb', height: .12, points: [at(k / count), at((k + 1) / count)]});
+      const line = {lift, kind: 'kerb' as const, height: .12, points: [at(k / count), at((k + 1) / count)]}, key = `${Math.round(x * 50)},${Math.round(z * 50)}`;
+      const kept = top.get(key);
+      if (!kept || line.points[0][1] + line.points[1][1] > kept.points[0][1] + kept.points[1][1]) top.set(key, line);
     }
   }
-  return lines;
+  return [...top.values()];
 }

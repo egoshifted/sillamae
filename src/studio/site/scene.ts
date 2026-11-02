@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import {decodeTile, fetchTile, tileBounds, type SurveyManifest, type WorldData} from '../../engine/data.ts';
+import {decodeTile, fetchTile, tileBounds, type RoadSurface, type SurveyManifest, type WorldData} from '../../engine/data.ts';
 import {clippingPlanes} from '../../engine/extent.ts';
 import {addRoads, triangulate} from '../../engine/roads.ts';
 import {addStairs} from '../../engine/stairs.ts';
 import {addSurveyLayer, surveyMaterials} from '../../engine/survey/layer.ts';
-import {disposeGroup} from './details.ts';
+import {densify, disposeGroup} from './details.ts';
 import type {Point2, RoadCut} from '../../engine/types.ts';
 import {usePhysicalDepth} from '../depth.ts';
 import {city} from '../project.ts';
@@ -153,7 +153,12 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
     const rings = heights.surface.drape(r.ring.map(([x, , z]): Point2 => [x, z]), r.kind === 'marking' ? .05 : .02);
     return rings.length ? rings.map(ring => ({...r, ring, lift: 0})) : [r];
   });
-  let roadGroup = addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy());
+  // Kerbs follow the built outlines on the top ground; the draped fragments would break them up.
+  const kerbsFrom = world.roads.filter(r => r.studio !== id && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({...r, lift: 0, ring: (r.kerbed ? densify(r.ring.map(([x, , z]): Point2 => [x, z]), .25) : r.ring.map(([x, , z]): Point2 => [x, z])).map(([x, z]): [number, number, number] => {
+    const h = heights.at(x, z);
+    return [x, (h > -Infinity ? h : 0) + .02, z];
+  })}));
+  let roadGroup = addRoads(scene, roads, renderer.capabilities.getMaxAnisotropy(), [], [], kerbsFrom);
   for (const r of roads) for (const t of triangulate(r.ring)) {
     const [p, q, s] = t.map(k => r.ring[k]);
     heights.add({x: p[0], y: p[1], z: p[2]}, {x: q[0], y: q[1], z: q[2]}, {x: s[0], y: s[1], z: s[2]});
@@ -214,7 +219,8 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
       colour.needsUpdate = true;
     }
     disposeGroup(roadGroup);
-    roadGroup = addRoads(scene, roads.map(r => ({...r, ring: r.ring.map(([x, y, z]): [number, number, number] => [x, y + shift(x, z), z])})), renderer.capabilities.getMaxAnisotropy(), allCuts);
+    const shifted = (surfaces: RoadSurface[]) => surfaces.map(r => ({...r, ring: r.ring.map(([x, y, z]): [number, number, number] => [x, y + shift(x, z), z])}));
+    roadGroup = addRoads(scene, shifted(roads), renderer.capabilities.getMaxAnisotropy(), allCuts, [], shifted(kerbsFrom));
     usePhysicalDepth(roadGroup);
   }
   const roadFootprints = world.roads.filter(r => r.studio !== id && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({kind: r.kind, ring: r.ring.map(([x, , z]): Point2 => [x + ox, z + oz])}));

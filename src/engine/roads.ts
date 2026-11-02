@@ -21,7 +21,9 @@ const FINISH: Record<Finish, {tile: number; roughness: number; paint: (x: Canvas
   'worn-grass': {tile: 2, roughness: 1, paint: wornGrass},
 };
 
-export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1, cuts: RoadCut[] = [], context: RoadSurface[] = []) {
+// kerbsFrom, when given, are the surfaces kerbs follow instead of the drawn ones: the
+// studio drapes paths into overlapping fragments that cannot carry one continuous kerb.
+export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1, cuts: RoadCut[] = [], context: RoadSurface[] = [], kerbsFrom?: RoadSurface[]) {
   surfaces = demolishRoads(surfaces, cuts);
   const group = new THREE.Group();
   group.name = 'roads';
@@ -41,7 +43,7 @@ export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy
   }
   const restored = surfaces.filter(s => s.groundColour);
   if (restored.length) add(restored, restoredGroundMaterial(anisotropy), 2);
-  const kerbs = roadKerbs(surfaces, demolishRoads(context, cuts));
+  const kerbs = roadKerbs(kerbsFrom ? demolishRoads(kerbsFrom, cuts) : surfaces, demolishRoads(context, cuts));
   for (const lift of new Set(kerbs.map(k => k.lift))) group.add(lineMeshes(kerbs.filter(k => k.lift === lift), {lifted: lift > 0, depthLift: lift + .03}));
   scene.add(group);
   return group;
@@ -60,9 +62,14 @@ function lifted(color: string, roughness: number) {
 // The data build lays markings on these same triangles. Rings carry collinear
 // points (edges are split so heights follow the ground), and a triangle joining
 // three of them covers no ground: where their heights differ it stands up as a wall.
+// Thinness, not area, tells them apart: draped fragments are often under 10 cm² yet
+// solid, and dropping them leaves triangles of grass showing through the road.
 export const triangulate = (ring: RoadSurface['ring']) => THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(p[0], p[2])), [])
-  .filter(([a, b, c]) => Math.abs((ring[b][0] - ring[a][0]) * (ring[c][2] - ring[a][2]) - (ring[b][2] - ring[a][2]) * (ring[c][0] - ring[a][0])) / 2 >= FLAT);
-const FLAT = 1e-3; // square metres of ground a triangle must cover
+  .filter(t => {
+    const [a, b, c] = t.map(i => ring[i]), area = Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / 2;
+    return 2 * area / Math.max(Math.hypot(b[0] - a[0], b[2] - a[2]), Math.hypot(c[0] - b[0], c[2] - b[2]), Math.hypot(a[0] - c[0], a[2] - c[2])) >= FLAT;
+  });
+const FLAT = .002; // metres a triangle must span across its longest side; rounded source points stray up to half a millimetre
 
 // Texture coordinates are ground metres over the tile, so finishes run on across polygon edges.
 function surfaceGeometry(surfaces: RoadSurface[], tile?: number) {
