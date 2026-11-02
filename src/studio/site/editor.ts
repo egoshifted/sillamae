@@ -11,6 +11,7 @@ import {nearestOn, PATH_FINISH, ROAD_WIDTH, smoothLine, SNAP} from '../../engine
 import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
 import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
+import {extendRoad, insideEndpointMarker, nearestRoadEnd, roadBoundary} from './road-edit.ts';
 import {Measure} from './measure.ts';
 import {createStage} from './stage.ts';
 import {TerrainEdit, type TerrainMode} from './terrain.ts';
@@ -52,6 +53,7 @@ type Tool = 'select' | 'place' | 'path' | 'scatter' | 'terrain' | 'area' | 'line
 type Start = {p: Point2; heading: number; points?: Point2[]};
 type Gesture =
   | {kind: 'move'; before: string; anchor: THREE.Vector3; start: Map<string, Point2>; moved: boolean; wall?: string}
+  | {kind: 'extend'; before: string; id: string; end: 0 | 1; points: Point2[]; anchor: THREE.Vector3; moved: boolean}
   | {kind: 'rotate'; before: string; centre: THREE.Vector3; from: number; start: Map<string, Start>; moved: boolean}
   | {kind: 'marquee'; x: number; y: number; additive: boolean}
   | {kind: 'scatter'; before: string; count: number}
@@ -80,7 +82,8 @@ const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spi
 // The town's streets in source x/z, for drawn roads to join; from the data build.
 let streetLines: Point2[][] = [];
 // Where a road point will join a street or another drawn road's end, while drawing.
-const snapMark = new THREE.Mesh(new THREE.RingGeometry(.6, .9, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#e07b00', depthTest: false, side: THREE.DoubleSide}));
+const ENDPOINT_RADIUS = .9;
+const snapMark = new THREE.Mesh(new THREE.RingGeometry(.6, ENDPOINT_RADIUS, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#e07b00', depthTest: false, side: THREE.DoubleSide}));
 snapMark.renderOrder = 999;
 snapMark.visible = false;
 let roadDraft: THREE.Group | null = null;
@@ -91,12 +94,22 @@ const ring = new THREE.Mesh(new THREE.RingGeometry(.86, 1, 64).rotateX(-Math.PI 
 ring.add(new THREE.Mesh(new THREE.CircleGeometry(.09, 16).rotateX(-Math.PI / 2).translate(0, 0, .93), new THREE.MeshBasicMaterial({color: '#233e36', depthTest: false})));
 ring.renderOrder = ring.children[0].renderOrder = 998;
 ring.visible = false;
+const endpoints = new THREE.Group();
+for (const end of [0, 1]) {
+  const handle = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({color: '#f0a400', depthTest: false}));
+  handle.userData.end = end; handle.renderOrder = 1000; endpoints.add(handle);
+}
+endpoints.visible = false;
 const brushRing = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: '#233e36', depthTest: false}));
 brushRing.renderOrder = 997;
 brushRing.visible = false;
 
 function render() {
   if (!loaded) return;
+  if (endpoints.visible) {
+    const height = Math.max(1, renderer.domElement.getBoundingClientRect().height);
+    for (const handle of endpoints.children) handle.scale.setScalar(14 * handle.position.distanceTo(camera.position) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height);
+  }
   renderer.render(loaded.scene, camera);
   const {width, height} = renderer.domElement.getBoundingClientRect();
   measure?.labels(camera, width, height);
@@ -342,8 +355,31 @@ function sync(live = false) {
     loaded!.scene.add(details);
   }
   for (const key of [...selection]) if (!placementOf(key) && !treeOf(key, list) && !pointsOf(key)) selection.delete(key);
+  highlights.traverse(o => {
+    if (o instanceof THREE.LineSegments || o instanceof THREE.Line) {
+      o.geometry.dispose();
+      for (const material of Array.isArray(o.material) ? o.material : [o.material]) material.dispose();
+    }
+  });
   highlights.clear();
   for (const key of selection) {
+    const road = roadOf(key);
+    if (road) {
+      const cuts = [...loaded!.otherCuts, ...(site!.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}))].map(c => ({...c, exposeGround: true}));
+      const surfaces = roadShapes(road, road.points.map(([x, z]): Point2 => [x - ox, z - oz])).filter(s => s.kind !== 'marking').map(s => ({...s, lift: 0, ring: s.ring.map(([x, z]): [number, number, number] => [x, 0, z])}));
+      const edges = roadBoundary(demolishRoads(surfaces, cuts).map(s => s.ring.map(([x, , z]): Point2 => [x, z])));
+      const vertices: number[] = [];
+      for (const [a, b] of edges) {
+        const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / .5));
+        for (let i = 0; i < n; i++) for (const t of [i / n, (i + 1) / n]) {
+          const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+          vertices.push(x, loaded!.heights.at(x, z) + .1, z);
+        }
+      }
+      const outline = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)), new THREE.LineBasicMaterial({color: '#f0a400', depthTest: false}));
+      outline.renderOrder = 998; highlights.add(outline);
+      continue;
+    }
     const points = pointsOf(key);
     if (points) {
       const a = anchorOf(key, list)!, box = new THREE.Box3();
@@ -363,7 +399,15 @@ function sync(live = false) {
 }
 function placeRing(list: TreeItem[]) {
   const entries = [...selection].map(key => ({key, a: anchorOf(key, list)})).filter(e => e.a !== null).map(e => ({key: e.key, at: e.a!.at}));
-  ring.visible = tool === 'select' && entries.length > 0 && entries.some(e => placementOf(e.key)?.attach !== 'wall');
+  endpoints.visible = selection.size === 1 && !!roadOf([...selection][0]) && (tool === 'select' || tool === 'road') && !path.length;
+  if (endpoints.visible) {
+    const road = roadOf([...selection][0])!, [ox, oz] = loaded!.frame.origin;
+    endpoints.children.forEach((handle, i) => {
+      const [x, z] = road.points[i ? road.points.length - 1 : 0];
+      handle.position.set(x - ox, loaded!.heights.at(x - ox, z - oz) + .15, z - oz);
+    });
+  }
+  ring.visible = !entries.some(e => roadOf(e.key)) && tool === 'select' && entries.length > 0 && entries.some(e => placementOf(e.key)?.attach !== 'wall');
   if (!ring.visible) return;
   const centre = entries.reduce((s, e) => s.add(e.at), new THREE.Vector3()).divideScalar(entries.length);
   // Clear of each item's footprint, so the ring can be grabbed beside it rather than through it.
@@ -560,6 +604,7 @@ const drawing = (t: Tool) => t === 'path' || t === 'area' || t === 'line' || t =
 function updatePreview() {
   preview.clear();
   if (!drawing(tool) || (tool === 'path' && (!brush || !ghost))) return render();
+  if (path.length) endpoints.visible = false;
   const points = pointer.last && path.length ? [...path, pointer.last] : [...path];
   if (tool === 'area' && points.length > 2) points.push(points[0]);
   if (tool === 'path') for (const s of pathSpots(points)) {
@@ -569,7 +614,8 @@ function updatePreview() {
     g.rotation.set(0, s.heading, 0);
     preview.add(g);
   }
-  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => p.clone().setY(p.y + .08))), new THREE.LineBasicMaterial({color: '#233e36', depthTest: false}));
+  const course = tool === 'road' ? roadEnds(points) : points;
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(course.map(p => p.clone().setY(p.y + .08))), new THREE.LineBasicMaterial({color: '#233e36', depthTest: false}));
   line.renderOrder = 997;
   preview.add(line);
   if (roadDraft) { disposeGroup(roadDraft); roadDraft = null; }
@@ -591,24 +637,30 @@ function roadContext() {
   const cuts = [...loaded!.otherCuts, ...(site!.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}))].map(c => ({...c, exposeGround: true}));
   return demolishRoads(shapes.map(s => ({kind: s.kind, lift: 0, ring: s.ring.map(([x, z]): [number, number, number] => [x - ox, 0, z - oz])})), cuts);
 }
-function snapRoad(at: THREE.Vector3) {
+function snapRoad(at: THREE.Vector3, type = options.roadType, exclude?: string, cursor?: Point2) {
   const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
-  if (options.roadType === 'kerbed-path') {
-    if (!options.snapFootpath) return {at, snapped: false};
+  const ray = cursor && raycaster(...cursor).ray;
+  const ends = nearestRoadEnd(site!.roads ?? [], [x, z], type, exclude, site!.roadCuts, ([px, pz]) => {
+    const centre = new THREE.Vector3(px - ox, loaded!.heights.at(px - ox, pz - oz) + .1, pz - oz);
+    return !!ray && Number.isFinite(centre.y) && insideEndpointMarker(ray, centre, ENDPOINT_RADIUS);
+  });
+  let point = ends;
+  if (!point && type === 'kerbed-path' && options.snapFootpath) {
     const rings = roadContext().filter(r => r.kind === 'carriageway').map(r => r.ring.map(([x, , z]): Point2 => [x, z]));
-    const point = snapToRoadEdge(rings, [at.x, at.z], ROAD_WIDTH[options.roadType] / 2);
-    if (!point) return {at, snapped: false};
-    const y = loaded!.heights.at(...point);
-    return y > -Infinity ? {at: new THREE.Vector3(point[0], y, point[1]), snapped: true} : {at, snapped: false};
-  }
-  const ends = (site!.roads ?? []).flatMap(r => [r.points[0], r.points[r.points.length - 1]]).filter(([px, pz]) => Math.hypot(px - x, pz - z) <= (PATH_FINISH[options.roadType] ? 1 : SNAP));
-  const end = ends.sort((a, b) => Math.hypot(a[0] - x, a[1] - z) - Math.hypot(b[0] - x, b[1] - z))[0];
-  const point = end ?? nearestOn(streetLines, x, z, PATH_FINISH[options.roadType] ? 1 : SNAP)?.point;
+    const edge = snapToRoadEdge(rings, [at.x, at.z], ROAD_WIDTH[type] / 2);
+    if (edge) point = [edge[0] + ox, edge[1] + oz];
+  } else if (!point && type !== 'kerbed-path') point = nearestOn(streetLines, x, z, PATH_FINISH[type] ? 1 : SNAP)?.point;
   if (!point) return {at, snapped: false};
   const local = new THREE.Vector3(point[0] - ox, 0, point[1] - oz);
   local.y = loaded!.heights.at(local.x, local.z);
   return local.y > -Infinity ? {at: local, snapped: true} : {at, snapped: false};
 }
+function endpointAt(x: number, y: number): 0 | 1 | undefined {
+  if (!endpoints.visible) return;
+  const hit = raycaster(x, y).intersectObjects(endpoints.children, false)[0];
+  return hit?.object.userData.end;
+}
+
 function finishDrawing() {
   const [ox, oz] = loaded!.frame.origin, points = path.map((p): Point2 => [round(p.x + ox), round(p.z + oz)]);
   if (tool === 'path' && brush && path.length >= 2) {
@@ -628,6 +680,7 @@ function finishDrawing() {
     edit(() => { (site!.roads ??= []).push(road); detailsChanged = true; selection = new Set(['road:' + road.id]); });
   } else return;
   path.length = roadSnaps.length = 0;
+  placeRing(treeList());
   updatePreview();
 }
 
@@ -888,6 +941,15 @@ renderer.domElement.addEventListener('pointerdown', event => {
     sync(true);
     return;
   }
+  const end = endpointAt(event.clientX, event.clientY);
+  if (end !== undefined) {
+    const road = roadOf([...selection][0])!, at = ground(event.clientX, event.clientY);
+    if (at) {
+      gesture = {kind: 'extend', before: snapshot(), id: road.id, end, points: road.points.map(p => [...p]), anchor: at, moved: false};
+      renderer.domElement.setPointerCapture(event.pointerId);
+      return;
+    }
+  }
   if (tool !== 'select') { gesture = {kind: 'click'}; return; }
   const caster = raycaster(event.clientX, event.clientY);
   if (ring.visible && caster.intersectObject(ring, true).length) {
@@ -915,8 +977,8 @@ renderer.domElement.addEventListener('pointermove', event => {
   const [ox, oz] = loaded.frame.origin;
   element('cursor').textContent = at ? `x ${(at.x + ox).toFixed(2)} · z ${(at.z + oz).toFixed(2)} · ground ${(at.y + loaded.frame.base).toFixed(2)} m` : '';
   if (tool === 'measure') { measure!.hover(at); render(); }
-  if (drawing(tool)) {
-    const snap = tool === 'road' && at ? snapRoad(at) : null;
+  if (drawing(tool) && gesture?.kind !== 'extend') {
+    const snap = tool === 'road' && at ? snapRoad(at, options.roadType, undefined, [event.clientX, event.clientY]) : null;
     snapMark.visible = !!snap?.snapped;
     if (snap?.snapped) snapMark.position.copy(snap.at).setY(snap.at.y + .1);
     pointer.last = snap?.at ?? at;
@@ -931,9 +993,26 @@ renderer.domElement.addEventListener('pointermove', event => {
     if (spot) { ghost.position.copy(spot.point); ghost.rotation.set(0, spot.heading ?? placeHeading, 0); }
     render();
   }
-  if (!gesture || !pointer.down) return;
+  if (!gesture || !pointer.down) {
+    if (tool === 'select' || tool === 'road') renderer.domElement.style.cursor = endpointAt(event.clientX, event.clientY) !== undefined ? 'grab' : tool === 'road' ? 'crosshair' : 'default';
+    return;
+  }
   const moved = Math.hypot(event.clientX - pointer.downX, event.clientY - pointer.downY) >= CLICK;
-  if (gesture.kind === 'bulldoze') {
+  if (gesture.kind === 'extend' && at && (moved || gesture.moved)) {
+    const g = gesture, road = site.roads!.find(r => r.id === g.id)!;
+    const start = g.points[g.end ? g.points.length - 1 : 0];
+    const target = at.clone().add(new THREE.Vector3(start[0] - ox - g.anchor.x, 0, start[1] - oz - g.anchor.z));
+    if (element<HTMLInputElement>('grid').checked) { target.x = Math.round(target.x / GRID) * GRID; target.z = Math.round(target.z / GRID) * GRID; }
+    const snap = snapRoad(target, road.type, road.id, [event.clientX, event.clientY]);
+    if (!inSquare(snap.at.x, snap.at.z)) return;
+    g.moved = true;
+    road.points = extendRoad(g.points, g.end, [round(snap.at.x + ox), round(snap.at.z + oz)]);
+    detailsChanged = true; snapMark.visible = snap.snapped;
+    if (snap.snapped) snapMark.position.copy(snap.at).setY(snap.at.y + .1);
+    renderer.domElement.style.cursor = 'grabbing';
+    sync(true);
+  }
+  else if (gesture.kind === 'bulldoze') {
     const g = gesture, steps = Math.max(1, Math.ceil(Math.hypot(event.clientX - g.x, event.clientY - g.y) / 3));
     for (let i = 1; i <= steps; i++) bulldoze(g.x + (event.clientX - g.x) * i / steps, g.y + (event.clientY - g.y) * i / steps);
     g.x = event.clientX; g.y = event.clientY; sync(true);
@@ -982,6 +1061,16 @@ addEventListener('pointerup', event => {
   const g = gesture, click = Math.hypot(event.clientX - pointer.downX, event.clientY - pointer.downY) < CLICK, onCanvas = event.target === renderer.domElement;
   gesture = null;
   if (!g || !site) return;
+  if (g.kind === 'extend') {
+    snapMark.visible = false; renderer.domElement.style.cursor = 'grab';
+    if (!g.moved && tool === 'road') {
+      const [ox, oz] = loaded!.frame.origin, [x, z] = g.points[g.end ? g.points.length - 1 : 0];
+      const at = new THREE.Vector3(x - ox, loaded!.heights.at(x - ox, z - oz), z - oz);
+      path.push(at); roadSnaps[0] = at.clone(); pointer.last = at.clone();
+      return updatePreview();
+    }
+    return commit(g.before);
+  }
   if (g.kind === 'terrain') settle();
   if (g.kind === 'move' || g.kind === 'rotate' || g.kind === 'scatter' || g.kind === 'terrain' || g.kind === 'bulldoze') return commit(g.before);
   if (g.kind === 'marquee') {
@@ -1007,7 +1096,7 @@ addEventListener('pointerup', event => {
   } else if (drawing(tool)) {
     const at = ground(event.clientX, event.clientY, true);
     // A road keeps each click as clicked and where it would snap: only its two ends join streets.
-    if (at && tool === 'road') roadSnaps[path.length] = snapRoad(at).at;
+    if (at && tool === 'road') roadSnaps[path.length] = snapRoad(at, options.roadType, undefined, [event.clientX, event.clientY]).at;
     // The second click of a double-click lands on the first.
     if (at && inSquare(at.x, at.z) && !(path.length && path[path.length - 1].distanceTo(at) < .05)) { path.push(at); updatePreview(); }
   } else if (tool === 'hide') {
@@ -1018,6 +1107,13 @@ addEventListener('pointerup', event => {
     if (at) { measure!.add(at); render(); }
   }
 });
+function cancelExtension() {
+  if (gesture?.kind !== 'extend') return;
+  const before = gesture.before;
+  gesture = null; pointer.down = false; snapMark.visible = false;
+  restore(before); sync();
+}
+renderer.domElement.addEventListener('pointercancel', cancelExtension);
 renderer.domElement.addEventListener('dblclick', () => {
   if (drawing(tool)) finishDrawing();
   if (tool === 'measure') { measure!.finish(); render(); }
@@ -1032,6 +1128,7 @@ renderer.domElement.addEventListener('contextmenu', event => {
 const TOOL_KEYS: Record<string, Tool> = {v: 'select', a: 'place', p: 'path', b: 'scatter', u: 'terrain', l: 'area', k: 'line', w: 'road', x: 'hide', d: 'bulldoze', i: 'measure', r: 'orbit', h: 'pan'};
 addEventListener('keydown', event => {
   if (!site || (event.target as HTMLElement).closest('input, select, textarea, dialog')) return;
+  if (gesture?.kind === 'extend') { if (event.key === 'Escape') { cancelExtension(); event.preventDefault(); } return; }
   const key = event.key.toLowerCase(), ctrl = event.ctrlKey || event.metaKey, by = event.shiftKey ? 10 : 1;
   if (key === ' ') { if (!space) { space = true; navigation(); } }
   else if (ctrl && key === 'z' && !event.shiftKey) step(undo, redo);
@@ -1399,7 +1496,7 @@ function showSelection() {
     const footways = Object.assign(document.createElement('input'), {type: 'checkbox', checked: !!r.footways});
     footways.onchange = () => edit(() => { if (footways.checked) r.footways = true; else delete r.footways; detailsChanged = true; });
     const length = r.points.reduce((s, p, i) => i ? s + Math.hypot(p[0] - r.points[i - 1][0], p[1] - r.points[i - 1][1]) : 0, 0);
-    panel.replaceChildren(heading(ROAD_TYPES.find(t => t[0] === r.type)![1]), Object.assign(document.createElement('small'), {textContent: `${r.id} · ${length.toFixed(1)} m long · ${ROAD_WIDTH[r.type]} m wide`}),
+    panel.replaceChildren(heading(ROAD_TYPES.find(t => t[0] === r.type)![1]), Object.assign(document.createElement('p'), {textContent: 'Drag either endpoint to extend the road or path. Esc cancels; Undo restores the previous length.'}), Object.assign(document.createElement('small'), {textContent: `${r.id} · ${length.toFixed(1)} m long · ${ROAD_WIDTH[r.type]} m wide`}),
       labelled('Type', typeSelect(r.type, v => edit(() => { r.type = v; if (PATH_FINISH[v]) delete r.footways; detailsChanged = true; }))), ...(!PATH_FINISH[r.type] ? [labelled('Footways', footways)] : []), ...tools);
     return;
   }
@@ -1593,7 +1690,7 @@ async function open(square: Square) {
   trees = new TreeLayer(scene, frame, new THREE.Vector3(square.centre[0] - ox, 0, square.centre[1] - oz));
   treesChanged = true;
   measure = new Measure(scene, element('labels'));
-  scene.add(placed, highlights, preview, ring, brushRing, hoverBox, snapMark, demolitionPreview);
+  scene.add(placed, highlights, preview, ring, endpoints, brushRing, hoverBox, snapMark, demolitionPreview);
   streetLines = await fetch('/data/streets.json').then(r => r.ok ? r.json() : []).catch(() => []);
   detailsChanged = true;
   scene.add(new THREE.HemisphereLight('#e6efff', '#73775c', 1.1));

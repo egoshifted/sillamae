@@ -1,4 +1,5 @@
 export const russian: Record<string, string> = {
+  'Drag either endpoint to extend the road or path. Esc cancels; Undo restores the previous length.': 'Тяните за конечную точку, чтобы продлить дорогу или дорожку. Esc — отменить действие; «Отменить» — вернуть прежнюю длину.',
   'Atlas building studio': 'Атлас — студия зданий', 'Atlas site editor': 'Атлас — редактор участка', 'Asset preview': 'Просмотр объекта',
   'Building studio': 'Студия зданий', 'Site editor': 'Редактор участка', 'Open atlas': 'Открыть атлас', 'Workflow': 'Порядок работы', 'Asset guide': 'Руководство по объектам',
   'Reference → plain shape → detail → atlas verification': 'Образец → форма → детали → проверка в атласе',
