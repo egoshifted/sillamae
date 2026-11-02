@@ -1,12 +1,12 @@
 import {fetchTile, type SurveyBucket, type SurveyManifest} from './data.ts';
 import type {WorldFrame} from './types.ts';
 
-export function tileLoader(survey: SurveyManifest, frame: WorldFrame) {
+export function tileLoader(survey: SurveyManifest, frame: WorldFrame, workerCount = 2, flat = false) {
   const pending = new Map<number, {resolve: (buckets: SurveyBucket[]) => void; reject: (error: Error) => void}>();
-  const workers = Array.from({length: 2}, () => new Worker(new URL('./tile-worker.ts', import.meta.url), {type: 'module'}));
+  const workers = Array.from({length: workerCount}, () => new Worker(new URL('./tile-worker.ts', import.meta.url), {type: 'module'}));
   let sequence = 0, failure: Error | undefined;
   for (const worker of workers) {
-    worker.postMessage({type: 'init', survey, frame});
+    worker.postMessage({type: 'init', survey, frame, flat});
     worker.onmessage = ({data}) => {
       const task = pending.get(data.id); pending.delete(data.id);
       if (data.error) task?.reject(Error(data.error)); else task?.resolve(data.buckets);

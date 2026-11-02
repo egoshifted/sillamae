@@ -88,13 +88,14 @@ export class Engine {
     addEventListener('resize', () => { this.#resize(); this.#redraw = true; });
     this.#resize();
 
-    this.#sun = addSun(this.#scene, renderer, this.clock.daylight);
+    const mobile = matchMedia('(pointer: coarse)').matches;
+    this.#sun = addSun(this.#scene, renderer, this.clock.daylight, mobile ? 2048 : 4096);
     if (city.extent) renderer.clippingPlanes = clippingPlanes(city.extent.map(([x, z]): Point2 => [x - ox, z - oz]));
     this.clock.onChange(k => { this.#sun.setDaylight(k); this.#redraw = true; });
 
     const buildingNumbers = Math.max(...data.buildings.map(b => b.pick)) + 1;
     this.#tintBytes = new Uint8Array(buildingNumbers * 4);
-    const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildingNumbers, data.base);
+    const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildingNumbers, data.base, mobile);
     this.#setSurveyTextures = materials.setTextures;
 
     this.#survey = addSurveyLayer(this.#scene, survey.buckets, materials);

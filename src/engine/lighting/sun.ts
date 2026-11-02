@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {shadowCoverage, useBuildingShadowDetail} from './shadow-coverage.ts';
 
-export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylight: number) {
+export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylight: number, maxMapSize = 4096) {
   scene.add(new THREE.HemisphereLight('#e6efff', '#73775c', 1.1));
   const sun = new THREE.DirectionalLight();
   sun.castShadow = true;
@@ -36,7 +36,7 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
       const detail = !!anchor && useBuildingShadowDetail(camera, target, anchor);
       detailed = detail;
       const want = detail ? anchor : target, radius = detail ? 100 : shadowCoverage(camera, target);
-      const mapSize = detail ? 4096 : 2048;
+      const mapSize = Math.min(maxMapSize, detail ? 4096 : 2048);
       if (sun.shadow.mapSize.x !== mapSize) {
         sun.shadow.mapSize.set(mapSize, mapSize);
         sun.shadow.map?.dispose();

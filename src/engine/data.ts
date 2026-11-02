@@ -66,6 +66,7 @@ export interface SurveyManifest {
 }
 
 export interface SurveyBucket {
+  indices?: Uint32Array;
   normal?: Float32Array;
   bounds?: [number, number, number, number];
   index: number;

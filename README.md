@@ -52,6 +52,8 @@ Data generation verifies a content cache before doing geometry work. Changes to 
 
 The viewer prepares survey tiles and their normals in two workers, transfers their buffers to the renderer and preserves manifest mesh order. Distant tiles that affect neither the camera nor its shadow map do not trigger redraws. Model-ground sampling uses an index over immutable site triangles; replace the triangle array after editing it.
 
+Touch devices use one bounded tile decoder, indexed survey geometry and shared overview/close-up buffers to limit memory during pan and zoom. Face normals are derived by the flat-shaded survey material; geometry, colours, texture coordinates and picking IDs remain intact. Refined building models retain their original materials and geometry. Touch-device shadows stay at 2048 pixels to avoid reallocating a 4096-pixel map at the close-up threshold. Desktop rendering keeps its existing path.
+
 ## Publish with GitHub Pages
 
 The workflow in `.github/workflows/pages.yml` builds and deploys `dist/` on every push to `main`. In Settings → Pages, set Source to GitHub Actions.
