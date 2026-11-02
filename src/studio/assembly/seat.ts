@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type {GroundTriangle, Point2} from '../../engine/types.ts';
+import {groundCandidates} from '../../engine/survey/ground-index.ts';
 
 // Triangles wider than this, in metres, are the sea-level plane under the whole town.
 const SEA_PLANE = 200;
@@ -11,7 +12,7 @@ const SEA_PLANE = 200;
 export function entranceDatum(ground: GroundTriangle[], points: Point2[]): number | null {
   const heights = points.flatMap(([x, z]) => {
     let low = Infinity;
-    for (const [x1, z1, h1, x2, z2, h2, x3, z3, h3] of ground) {
+    for (const [x1, z1, h1, x2, z2, h2, x3, z3, h3] of groundCandidates(ground, x, z)) {
       const d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
       if (Math.abs(d) < 1e-9 || Math.max(x1, x2, x3) - Math.min(x1, x2, x3) > SEA_PLANE) continue;
       const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;

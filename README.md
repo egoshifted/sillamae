@@ -14,6 +14,7 @@ npm run check    # strict type check of all source and build configuration
 npm run dev      # build data, then a local server with reload
 npm run build    # type check, build data, static site in dist/
 npm run data     # data only
+npm run data:rebuild # force a clean data build
 npm run osm      # refresh data/source/osm.json from OpenStreetMap
 npm run dtm      # refresh data/source/dtm-1m.* from the Maa- ja Ruumiamet terrain model
 ```
@@ -42,6 +43,14 @@ Code layout:
 The build uses relative URLs, so `dist/` works under a repository subdirectory. It needs a modern browser supporting WebGL and DecompressionStream.
 
 Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository. Each collaborator keeps their own local records; studio tools require an external output directory.
+
+## Data and loading
+
+Data generation verifies a content cache before doing geometry work. Changes to source data, the pipeline, engine, city models, assembly helpers, dependencies or compiler settings invalidate it; missing or modified generated files do too. Development, studio and production builds share this cache. A build lock prevents concurrent writers, and failed builds retain the previous data. `data:rebuild` bypasses reuse. After changing terrain inputs, let the build finish before reloading the viewer.
+
+`src/city/sillamae/terrain-detail.ts` defines the town's fine-terrain boundary in source metres. Ground inside it, its transition margin, building contacts and road corridors stays on the one-metre grid. Outside, flat uniformly coloured patches can use eight-metre fans with every metre-edge vertex retained; water edges, sharp relief and colour boundaries stay fine. The source terrain model is never downsampled. New buildings automatically receive a fine-ground margin.
+
+The viewer prepares survey tiles and their normals in two workers, transfers their buffers to the renderer and preserves manifest mesh order. Distant tiles that affect neither the camera nor its shadow map do not trigger redraws. Model-ground sampling uses an index over immutable site triangles; replace the triangle array after editing it.
 
 ## Publish with GitHub Pages
 

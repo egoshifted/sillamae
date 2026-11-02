@@ -115,15 +115,16 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
   ];
   // Separately mapped sidewalks and paths reach onto the carriageway at junctions and run along its edge.
   const road = area(carriageways);
+  const nearbyRoad = polygonIndex(road);
   // Crossing ways often bend onto the sidewalks; the painted zebra is straight.
   const zebras = crossings.map(w => ({line: [local(w.points[0]), local(w.points[w.points.length - 1])], width: parseFloat(w.tags.width) || CROSSING_WIDTH}));
   // Lane lines stop short of a zebra rather than running through its bars.
   const zebraBands = zebras.map(({line, width}) => band(line[0], line[1], width / 2 + ZEBRA.clear));
   const shapes: RoadShape[] = [
     ...carriageways.map(ring => ({kind: 'carriageway' as const, ring})),
-    ...footways.flatMap(({ring, surface}) => difference([ring], road).map(piece => ({kind: 'footway' as const, ring: piece, surface}))),
+    ...footways.flatMap(({ring, surface}) => difference([ring], nearbyRoad(ring)).map(piece => ({kind: 'footway' as const, ring: piece, surface}))),
     ...markings.flatMap(rings).flatMap(ring => difference([ring], zebraBands)).map(ring => ({kind: 'marking' as const, ring})),
-    ...zebras.flatMap(({line, width}) => zebra(line, width)).flatMap(bar => intersection([bar], road)).map(ring => ({kind: 'marking' as const, ring})),
+    ...zebras.flatMap(({line, width}) => zebra(line, width)).flatMap(bar => intersection([bar], nearbyRoad(bar))).map(ring => ({kind: 'marking' as const, ring})),
   ];
 
   const halves = new Map<number, number>();
@@ -289,6 +290,7 @@ function offset(rings: Point2[][], by: number, join: number): Point2[][] {
 // points are outdrawn by a depth lift. Refined sites own the ground they lay,
 // so roads stop at their patches.
 export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[], heightAt: HeightAt) {
+  if (!shapes.length) return [];
   const [ox, oz] = city.frame.origin, ground = groundIndex(buckets);
   const sites = area(patches.map(p => p.map(([x, z]): Point2 => [x - ox, z - oz])));
   // Surfaces are cut into cells: the viewer triangulates outlines only, and the
@@ -303,7 +305,11 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
   // their patches. Over water there is no ground stack: a path crossing a stream
   // stands on the graded terrain the ground beside it was built from, as the
   // mean of its cell's other points stepped between cells on the banks.
+  const samples = new Map<number, Map<number, {top: number; layer: number} | null>>();
+  let sampleCount = 0;
   const around = (x: number, z: number) => {
+    const cached = samples.get(x);
+    if (cached?.has(z)) return cached.get(z)!;
     let thick = 0, layer = 0, found = false;
     for (let dx = -REACH; dx <= REACH; dx += SAMPLE) for (let dz = -REACH; dz <= REACH; dz += SAMPLE) {
       if (dx * dx + dz * dz > REACH * REACH) continue;
@@ -311,9 +317,12 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
       if (g) { thick = Math.max(thick, g.top - g.low); layer = Math.max(layer, g.layer); found = true; }
     }
     const here = ground(x, z);
-    if (here && found) return {top: Math.max(here.top, here.low + thick), layer};
-    const terrain = heightAt(x, z);
-    return terrain === null ? null : {top: terrain, layer};
+    const terrain = here && found ? Math.max(here.top, here.low + thick) : heightAt(x, z);
+    const result = terrain === null ? null : {top: terrain, layer};
+    if (sampleCount >= 100000) { samples.clear(); sampleCount = 0; }
+    let column = samples.get(x); if (!column) samples.set(x, column = new Map());
+    column.set(z, result); sampleCount++;
+    return result;
   };
   const laid = surfaces.filter(s => {
     const found = s.ring.map(p => around(p[0] + ox, p[2] + oz));
@@ -407,7 +416,25 @@ function zebra(line: Point2[], width: number) {
 // Clipper works in integer millimetres; results keep outer contours only, as
 // the viewer triangulates rings without holes.
 const SCALE = 1000;
-const toPath = (ring: Point2[]) => ring.map(([x, z]) => ({X: Math.round(x * SCALE), Y: Math.round(z * SCALE)}));
+const paths = new WeakMap<Point2[], {X: number; Y: number}[]>();
+const toPath = (ring: Point2[]) => {
+  let path = paths.get(ring);
+  if (!path) paths.set(ring, path = ring.map(([x, z]) => ({X: Math.round(x * SCALE), Y: Math.round(z * SCALE)})));
+  return path;
+};
+
+export function polygonIndex(rings: Point2[][]) {
+  const boxes = rings.map((ring, index) => {
+    const xs = ring.map(p => p[0]), zs = ring.map(p => p[1]);
+    return {index, minX: Math.min(...xs) - .001, maxX: Math.max(...xs) + .001, minZ: Math.min(...zs) - .001, maxZ: Math.max(...zs) + .001};
+  });
+  return (ring: Point2[]) => {
+    const xs = ring.map(p => p[0]), zs = ring.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+    // Keep original ring order and winding, including holes containing the query.
+    return boxes.filter(b => b.minX <= x1 && b.maxX >= x0 && b.minZ <= z1 && b.maxZ >= z0).map(b => rings[b.index]);
+  };
+}
 // osm2streets can return a ring that crosses itself and winds backwards; in a
 // non-zero union it cancels the ground other rings cover, opening a hole that
 // footways are then not cut by. Each becomes simple rings wound forwards, with
@@ -447,7 +474,8 @@ const difference = (subject: Point2[][], cut: Point2[][]) => cut.length ? clip(C
 const intersection = (subject: Point2[][], cut: Point2[][]) => clip(ClipperLib.ClipType.ctIntersection, subject, cut);
 
 function groundIndex(buckets: Bucket[]) {
-  const triangles: {p: number[]; layer: number}[] = [], grid = new Map<string, number[]>();
+  const triangles: {p: number[]; layer: number}[] = [], grid = new Map<number, number[]>();
+  const key = (x: number, z: number) => x * 65536 + z;
   for (const b of buckets) {
     if (b.kind === 'water') continue;
     for (let t = 0; t < b.building.length; t++) {
@@ -457,7 +485,7 @@ function groundIndex(buckets: Bucket[]) {
       const index = triangles.push({p, layer: b.layer?.[t] ?? 0}) - 1;
       for (let cx = Math.floor(Math.min(...xs) / CELL); cx <= Math.floor(Math.max(...xs) / CELL); cx++)
         for (let cz = Math.floor(Math.min(...zs) / CELL); cz <= Math.floor(Math.max(...zs) / CELL); cz++) {
-          const k = cx + ',' + cz;
+          const k = key(cx, cz);
           let list = grid.get(k);
           if (!list) grid.set(k, list = []);
           list.push(index);
@@ -466,18 +494,25 @@ function groundIndex(buckets: Bucket[]) {
   }
   // The stack at a point is its lowest surface and the layers within STACK of
   // it; anything higher is not ground (a shelter roof painted as ground).
+  const cache = new Map<number, Map<number, {low: number; top: number; layer: number} | null>>();
+  let entries = 0;
   return (x: number, z: number) => {
+    const cached = cache.get(x);
+    if (cached?.has(z)) return cached.get(z)!;
     const found: {h: number; layer: number}[] = [];
-    for (const index of grid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL)) ?? []) {
+    for (const index of grid.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const {p: [x1, z1, h1, x2, z2, h2, x3, z3, h3], layer} = triangles[index], d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
       if (Math.abs(d) < 1e-9) continue;
       const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;
       if (Math.min(a, b, c) < -1e-6) continue;
       found.push({h: a * h1 + b * h2 + c * h3, layer});
     }
-    if (!found.length) return null;
     const low = Math.min(...found.map(f => f.h)), stack = found.filter(f => f.h <= low + STACK);
-    return {low, top: Math.max(...stack.map(f => f.h)), layer: Math.max(...stack.map(f => f.layer))};
+    const result = found.length ? {low, top: Math.max(...stack.map(f => f.h)), layer: Math.max(...stack.map(f => f.layer))} : null;
+    if (entries >= 200000) { cache.clear(); entries = 0; }
+    let column = cache.get(x); if (!column) cache.set(x, column = new Map());
+    column.set(z, result); entries++;
+    return result;
   };
 }
 

@@ -174,6 +174,7 @@ export interface PlacementSite {
 export const TREE_MATCH = .75; // metres
 
 export interface CityDefinition {
+  terrainDetail?: Polygon; // source x/z; fine terrain inside, adaptive ground outside
   frame: Omit<WorldFrame, 'base'>;
   defaultFocus: string;
   overrides: BuildingOverride[];

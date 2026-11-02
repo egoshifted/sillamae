@@ -8,8 +8,8 @@ if (fs.readdirSync(out).length) throw Error('Use a new empty output directory; o
 const before = manifest(repo, sourcePaths);
 const commands = [
   ['typecheck', ['node_modules/typescript/bin/tsc', '-p', '.']],
-  ['tests', ['--test', 'src/**/*.test.ts']],
-  ['data', ['pipeline/build.ts']],
+  ['tests', ['--test', 'src/**/*.test.ts', 'pipeline/*.test.ts']],
+  ['data', ['--max-old-space-size=8192', 'pipeline/build.ts']],
   ['production-build', ['node_modules/vite/bin/vite.js', 'build']],
 ] as const;
 const checks = [];

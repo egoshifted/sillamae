@@ -5,6 +5,7 @@ import type {OverrideContext} from '../../../engine/types.ts';
 import type {StudyModel} from '../../../studio/types.ts';
 import {design, sourceFootprint, openingSchedule, type Opening} from './design.ts';
 import {openingHalves} from './windows.ts';
+import {groundCandidates} from '../../../engine/survey/ground-index.ts';
 
 export function createEnvelope(context: OverrideContext): StudyModel {
   return createMassingStudy(context, {footprint: sourceFootprint, height: 17.46, datum: 14.11});
@@ -17,7 +18,7 @@ export function sourcePosition(s: number, t: number): [number,number] {
 
 export function landHeights(ground: number[][], x: number, z: number) {
   const hits: number[] = [];
-  for (const t of ground) {
+  for (const t of groundCandidates(ground, x, z)) {
     const [ax,az,ah,bx,bz,bh,cx,cz,ch] = t;
     if (Math.max(ah,bh,ch) < design.datum - 5) continue;
     const d = (bz-cz)*(ax-cx)+(cx-bx)*(az-cz);

@@ -66,6 +66,8 @@ export interface SurveyManifest {
 }
 
 export interface SurveyBucket {
+  normal?: Float32Array;
+  bounds?: [number, number, number, number];
   index: number;
   position: Float32Array;
   color: Float32Array;
@@ -103,7 +105,7 @@ export interface BuiltLine {
 export const loadLines = (root: string) => json<BuiltLine[]>(root + 'lines.json').catch(() => []);
 
 export async function loadWorld(root: string) {
-  const [world, survey] = await Promise.all([json<WorldData>(root + 'world.json'), json<SurveyManifest>(root + 'survey.json'), MeshoptDecoder.ready]);
+  const [world, survey] = await Promise.all([gunzip(root + 'world.json.gz').then(bytes => JSON.parse(new TextDecoder().decode(bytes)) as WorldData), json<SurveyManifest>(root + 'survey.json'), MeshoptDecoder.ready]);
   return {world, survey};
 }
 
@@ -112,9 +114,16 @@ const pad4 = (n: number) => Math.ceil(n / 4) * 4;
 
 export const fetchTile = (root: string, name: string) => gunzip(`${root}tiles/${name}.bin.gz`);
 
+const tileIndexes = new WeakMap<SurveyManifest, Map<string, number[]>>();
 export function decodeTile(survey: SurveyManifest, name: string, buffer: ArrayBuffer, frame: WorldFrame): SurveyBucket[] {
-  return survey.buckets.flatMap((b, index) => {
-    if (b.tile !== name) return [];
+  let tiles = tileIndexes.get(survey);
+  if (!tiles) {
+    tiles = new Map();
+    survey.buckets.forEach((b, i) => { let list = tiles!.get(b.tile); if (!list) tiles!.set(b.tile, list = []); list.push(i); });
+    tileIndexes.set(survey, tiles);
+  }
+  return (tiles.get(name) ?? []).map(index => {
+    const b = survey.buckets[index];
     const vertices = new Uint8Array(b.unique * 16), corners = new Uint32Array(b.vertices);
     MeshoptDecoder.decodeVertexBuffer(vertices, b.unique, 16, new Uint8Array(buffer, b.offset, b.vertexBytes));
     const indicesAt = b.offset + pad4(b.vertexBytes), trianglesAt = indicesAt + pad4(b.indexBytes);
@@ -134,7 +143,7 @@ export function decodeTile(survey: SurveyManifest, name: string, buffer: ArrayBu
       building.fill(buildings[t], t * 3, t * 3 + 3);
       layer.fill(layers[t], t * 3, t * 3 + 3);
     }
-    return [{index, color, building, layer, ...expandBucket(source, b.kind, frame)}];
+    return {index, color, building, layer, ...expandBucket(source, b.kind, frame)};
   });
 }
 

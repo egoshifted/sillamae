@@ -200,8 +200,8 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
       geo.setAttribute('uv', new THREE.BufferAttribute(bucket.uv, 2));
       geo.setAttribute('building', new THREE.BufferAttribute(bucket.building, 1));
       geo.setAttribute('layer', new THREE.BufferAttribute(bucket.layer, 1));
-      geo.computeVertexNormals();
-      geo.computeBoundingSphere();
+      if (bucket.normal) geo.setAttribute('normal', new THREE.BufferAttribute(bucket.normal, 3)); else geo.computeVertexNormals();
+      if (bucket.bounds) geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(...bucket.bounds.slice(0, 3)), bucket.bounds[3]); else geo.computeBoundingSphere();
       meshes[bucket.index].visible = true;
       const meta = buckets[bucket.index], cell = meta.detail === 'base' && cells.get(meta.cell);
       if (!cell) return;
@@ -212,7 +212,7 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
       merged.setAttribute('color', new THREE.BufferAttribute(concat(parts.map(b => b.color)), 3));
       merged.setAttribute('building', new THREE.BufferAttribute(concatUint16(parts.map(b => b.building)), 1));
       merged.setAttribute('layer', new THREE.BufferAttribute(concatBytes(parts.map(b => b.layer)), 1));
-      merged.computeVertexNormals();
+      if (parts.every(b => b.normal)) merged.setAttribute('normal', new THREE.BufferAttribute(concat(parts.map(b => b.normal!)), 3)); else merged.computeVertexNormals();
       merged.computeBoundingSphere();
       cell.mesh.visible = true;
       cell.loaded.clear();

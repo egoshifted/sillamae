@@ -16,6 +16,11 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
   let width = 0, detailed = false;
 
   const sunlight = {
+    intersects(sphere: THREE.Sphere) {
+      const camera = sun.shadow.camera;
+      camera.updateMatrixWorld();
+      return new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)).intersectsSphere(sphere);
+    },
     state: () => ({mapSize: sun.shadow.mapSize.x, radius: width, detailed}),
 
     setDaylight(k: number) {

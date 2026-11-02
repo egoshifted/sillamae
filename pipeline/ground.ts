@@ -2,6 +2,7 @@ import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type SceneData} from '../src/engine/types.ts';
 import {pushTriangle, splitTriangle, squareOf} from './roads.ts';
 import {surveyLayers} from './survey-colour.ts';
+import {BLOCK, canCoarsen, fineArea, perimeter, type Box as DetailBox} from './terrain-detail.ts';
 
 // Metres. Refined models stand on the survey's heights near their walls (NEAR)
 // and the terrain model takes over by FAR, where the kept survey ground ended.
@@ -89,7 +90,7 @@ export function seatBuildings(v: Float32Array, survey: Float32Array, heightAt: H
 // heights, coloured from the survey's visible layer. Water, buildings and
 // survey ground outside the area stay; triangles across its edge are split.
 // The grid runs on under buildings, where their walls hide it.
-export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData, city: CityDefinition) {
+export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData, city: CityDefinition, roadBounds: DetailBox[] = []) {
   const [ox, oz] = city.frame.origin, square = squareOf(scene, city), {layers} = surveyLayers(v);
   const water = (i: number) => v[i + 5] > v[i + 3] * 1.15 && v[i + 4] > v[i + 3] * 1.15; // as survey/classify.ts
   const [[minX, minZ], , [maxX, maxZ]] = square[0].map(([x, z]): Point2 => [x + ox, z + oz]);
@@ -122,15 +123,16 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
     const i = k % (nx + 1), j = Math.floor(k / (nx + 1));
     return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]].filter(([a, b]) => a >= 0 && a <= nx && b >= 0 && b <= nz).map(([a, b]) => points[b * (nx + 1) + a]).filter(p => p !== null);
   };
-  let filled = 0;
+  let filled = 0, missing = points.flatMap((p, k) => p && (p.h === null || !p.c) ? [k] : []);
   for (let pass = 0; pass < FILL_PASSES; pass++) {
-    const next = points.map((p, k) => {
-      if (!p || (p.h !== null && p.c)) return null;
+    const next = missing.map(k => {
+      const p = points[k]!;
       const near = neighbours(k), heights = near.map(n => n!.h).filter(h => h !== null) as number[];
       return {h: p.h ?? (heights.length ? heights.reduce((a, b) => a + b, 0) / heights.length : null), c: p.c ?? near.map(n => n!.c).find(Boolean)};
     });
     let changed = 0;
-    next.forEach((n, k) => { const p = points[k]; if (p && n && (n.h !== p.h || n.c !== p.c)) { p.h = n.h; p.c = n.c; changed++; } });
+    next.forEach((n, at) => { const p = points[missing[at]]!; if (n.h !== p.h || n.c !== p.c) { p.h = n.h; p.c = n.c; changed++; } });
+    missing = missing.filter(k => points[k]!.h === null || !points[k]!.c);
     filled += changed;
     if (!changed) break;
   }
@@ -138,13 +140,32 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
   // cells a footprint covers left see-through gaps along the foundations.
   const corners = (i: number, j: number) => [points[j * (nx + 1) + i], points[j * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i]];
   const kept = (corner: typeof points) => corner.every(p => p?.c && p.h !== null);
+  const protectedSites = scene.buildings.map(b => {
+    const xs = b.g.map(p => p[0]), zs = b.g.map(p => p[1]);
+    return {minX: Math.min(...xs) - 44, maxX: Math.max(...xs) + 44, minZ: Math.min(...zs) - 44, maxZ: Math.max(...zs) + 44};
+  });
+  const fine = city.terrainDetail ? fineArea(city.terrainDetail, [...protectedSites, ...roadBounds]) : () => true;
+  const width = Math.ceil(nx / BLOCK), coarse = new Uint8Array(width * Math.ceil(nz / BLOCK));
+  let simplified = 0;
+  for (let j = 0; j + BLOCK <= nz; j += BLOCK) for (let i = 0; i + BLOCK <= nx; i += BLOCK)
+    if (!fine(minX + i + BLOCK / 2, minZ + j + BLOCK / 2) && canCoarsen(points, i, j, nx + 1)) { coarse[Math.floor(j / BLOCK) * width + Math.floor(i / BLOCK)] = 1; simplified++; }
+  const isCoarse = (i: number, j: number) => coarse[Math.floor(j / BLOCK) * width + Math.floor(i / BLOCK)];
   let cells = 0;
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (kept(corners(i, j))) cells++;
   // Written straight into the typed array: town-wide, a plain array of the grid's numbers outgrows the heap.
-  const vertices = new Float32Array(out.length + cells * 2 * TRIANGLE);
+  const triangles = cells * 2 - simplified * (BLOCK * BLOCK * 2 - BLOCK * 4);
+  const vertices = new Float32Array(out.length + triangles * TRIANGLE);
   vertices.set(out);
   let at = out.length;
+  const emit = (k: number) => { const p = points[k]!; vertices.set([p.x, p.z, p.h!, ...p.c!, 0], at); at += 7; };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    if (isCoarse(i, j)) {
+      if (j % BLOCK === 0) {
+        const ring = perimeter(i, j, nx + 1), centre = (j + BLOCK / 2) * (nx + 1) + i + BLOCK / 2;
+        for (let k = 0; k < ring.length; k++) { emit(centre); emit(ring[k]); emit(ring[(k + 1) % ring.length]); }
+      }
+      i += BLOCK - 1; continue;
+    }
     const corner = corners(i, j);
     if (!kept(corner)) continue;
     // Split along the diagonal across which the height changes least: one fixed
@@ -153,5 +174,5 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
     for (const t of split) for (const k of t) { const p = corner[k]!; vertices.set([p.x, p.z, p.h!, ...p.c!, 0], at); at += 7; }
   }
   const textured = {minX, maxX, minZ, maxZ};
-  return {vertices, textured, report: `ground rebuilt on a ${GRID} m grid in the road area: ${cells} cells (${filled} point fills under buildings); ${removed} survey ground triangles replaced`};
+  return {vertices, textured, report: `ground: ${cells} metre cells, ${simplified} adaptive ${BLOCK} m blocks outside the town core, ${triangles} triangles (${filled} point fills); ${removed} survey triangles replaced`};
 }

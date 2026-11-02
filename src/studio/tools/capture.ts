@@ -21,7 +21,7 @@ const sourceBefore = manifest(sourceRoot, sourcePaths), errors: string[] = [], i
 const executablePath = process.env.STUDIO_BROWSER;
 const browser = await chromium.launch({...(executablePath ? {executablePath} : {}), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']});
 async function capture(page: Page, name: string) {
-  await page.waitForTimeout(250);
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   const bytes = await page.locator('canvas').first().screenshot({path: path.join(out, name + '.png')});
   images[name] = await page.evaluate(async png => {
     const image = new Image(); image.src = 'data:image/png;base64,' + png; await image.decode();
@@ -39,8 +39,9 @@ try {
   page.on('response', r => { if (r.status() >= 400) errors.push(r.status() + ' ' + r.url()); });
   // Bind the live instance; importing town again after HMR can create an empty store.
   await page.route('**/src/app/town.ts*', async route => { const response = await route.fetch(); await route.fulfill({response, body: await response.text() + '\nwindow.__studioTown=town;'}); });
-  await page.goto(base);
-  await page.waitForFunction(() => window.__studioTown?.get().engine && document.documentElement.dataset.tiles === 'done', undefined, {timeout: 180000});
+  await page.goto(base + (selected ? '#b=' + selected : ''));
+  await page.waitForFunction(() => window.__studioTown?.get().progress.viewReady || window.__studioTown?.get().error, undefined, {timeout: 180000});
+  if (process.argv.includes('--all-tiles')) await page.waitForFunction(() => document.documentElement.dataset.tiles === 'done', undefined, {timeout: 180000});
   for (const {id} of targets) for (const rear of [false, true]) {
     await page.evaluate(({id, rear}) => {
       const engine = window.__studioTown.get().engine!;
@@ -48,14 +49,13 @@ try {
       engine.clock.set(.58); engine.setShadows(true); engine.showTrees(true); engine.setTextures(true);
       if (rear) engine.camera.view = {...engine.camera.view, heading: engine.camera.view.heading + 180}; engine.requestRedraw();
     }, {id, rear});
-    await page.waitForTimeout(1000); await capture(page, 'atlas-' + id + (rear ? '-rear' : '-front'));
+    await page.evaluate(() => window.__studioTown.readyForView()); await capture(page, 'atlas-' + id + (rear ? '-rear' : '-front'));
   }
   if (!atlasOnly) {
-    await page.goto(base + '/src/studio/?capture&building=' + selected);
+    await page.goto(base + '/src/studio/?capture&building=' + selected + (option('stage') ? '&mode=' + encodeURIComponent(option('stage')!) : ''));
     await page.waitForFunction(() => window.studio?.ready || window.studio?.error, undefined, {timeout: 180000});
     const studyError = await page.evaluate(() => window.studio.error); if (studyError) throw Error(studyError);
     for (const {id} of targets) {
-      await page.evaluate(({id, stage}) => window.studio.select(id, stage), {id, stage: option('stage')});
       for (let angle = 0; angle < 360; angle += 45) { await page.evaluate(angle => window.studio.view(angle), angle); await capture(page, id + '-' + angle); }
       for (const light of ['morning', 'midday', 'late']) for (const shadows of [true, false]) {
         await page.evaluate(({light, shadows}) => { window.studio.view(); window.studio.options({light, shadows}); }, {light, shadows});
