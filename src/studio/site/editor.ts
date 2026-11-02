@@ -12,7 +12,7 @@ import {nearestOn, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SN
 import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
 import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
-import {extendRoad, insideEndpointMarker, nearestRoadEnd, roadBoundary} from './road-edit.ts';
+import {clearSection, extendRoad, insideEndpointMarker, nearestRoadEnd, roadBoundary} from './road-edit.ts';
 import {Measure} from './measure.ts';
 import {createStage} from './stage.ts';
 import {TerrainEdit, type TerrainMode} from './terrain.ts';
@@ -810,7 +810,8 @@ function eyedrop(clientX: number, clientY: number) {
 
 // ---- Pointer ---------------------------------------------------------------------
 
-type DemolitionTarget = {key: string} | {building: string} | {cut: RoadCut};
+// A drawn path is split, not cut: a cut would also erase any path drawn over the spot later.
+type DemolitionTarget = {key: string} | {building: string} | {cut: RoadCut; path?: SiteRoad};
 function demolitionTarget(clientX: number, clientY: number): DemolitionTarget | undefined {
   const at = ground(clientX, clientY);
   if (!at || !inSquare(at.x, at.z)) return;
@@ -825,7 +826,7 @@ function demolitionTarget(clientX: number, clientY: number): DemolitionTarget | 
     return {building: id};
   }
   const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
-  const drawn = (site!.roads ?? []).flatMap(r => roadShapes(r, r.points).map(s => ({...s, points: r.points})));
+  const drawn = (site!.roads ?? []).flatMap(r => roadShapes(r, r.points).map(s => ({...s, points: r.points, road: r})));
   const footprints = [...drawn.reverse(), ...loaded!.roadFootprints];
   const hit = footprints.find(r => r.kind !== 'marking' && contains(r.ring, x, z));
   if (!hit || hit.kind === 'marking') return;
@@ -872,7 +873,8 @@ function demolitionTarget(clientX: number, clientY: number): DemolitionTarget | 
     const side = i < 2 ? -1 : 1;
     return loaded!.groundColour.at(px - ox - uz * side * 1.2, pz - oz + ux * side * 1.2) ?? cut.groundColour!;
   });
-  return {cut};
+  const path = drawn.find(s => s === hit)?.road;
+  return path && PATH_FINISH[path.type] ? {cut, path} : {cut};
 }
 
 function bulldoze(clientX: number, clientY: number) {
@@ -880,7 +882,13 @@ function bulldoze(clientX: number, clientY: number) {
   if (!target) return;
   if ('key' in target) { selection = new Set([target.key]); removeSelection(); }
   else if ('building' in target) { (site!.hidden ??= []).push(target.building); reshape(); }
-  else { (site!.roadCuts ??= []).push(target.cut); detailsChanged = true; }
+  else if (target.path) {
+    const road = target.path, [x, z] = centroid(target.cut.ring), roads = site!.roads!;
+    const pieces = clearSection(road.points, [x, z]).map((points, i): SiteRoad => ({...road, id: i ? newId('r') : road.id, points: points.map(([px, pz]): Point2 => [round(px), round(pz)])}));
+    roads.splice(roads.indexOf(road), 1, ...pieces);
+    selection.delete('road:' + road.id);
+    detailsChanged = true;
+  } else { (site!.roadCuts ??= []).push(target.cut); detailsChanged = true; }
   hoverBox.visible = demolitionPreview.visible = false;
 }
 

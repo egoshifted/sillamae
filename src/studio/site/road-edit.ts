@@ -32,6 +32,27 @@ export function extendRoad(points: Point2[], end: 0 | 1, target: Point2): Point2
   return end === 0 ? course.reverse() : course;
 }
 
+// The courses left after removing `length` metres of course centred on the point
+// nearest `at`; remnants shorter than `shortest` go too.
+export function clearSection(points: Point2[], at: Point2, length = 2, shortest = .3): Point2[][] {
+  const along = [0];
+  for (let i = 1; i < points.length; i++) along.push(along[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]));
+  let centre = 0, best = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const [ax, az] = points[i - 1], dx = points[i][0] - ax, dz = points[i][1] - az, l2 = dx * dx + dz * dz;
+    const t = l2 ? Math.max(0, Math.min(1, ((at[0] - ax) * dx + (at[1] - az) * dz) / l2)) : 0;
+    const d = Math.hypot(ax + t * dx - at[0], az + t * dz - at[1]);
+    if (d < best) { best = d; centre = along[i - 1] + t * (along[i] - along[i - 1]); }
+  }
+  const total = along[along.length - 1];
+  const point = (s: number): Point2 => {
+    const i = Math.max(1, along.findIndex(a => a >= s)), span = along[i] - along[i - 1], t = span ? (s - along[i - 1]) / span : 0;
+    return [points[i - 1][0] + t * (points[i][0] - points[i - 1][0]), points[i - 1][1] + t * (points[i][1] - points[i - 1][1])];
+  };
+  const course = (from: number, to: number): Point2[] => [point(from), ...points.filter((_, i) => along[i] > from && along[i] < to).map(p => [...p] as Point2), point(to)];
+  return [[0, centre - length / 2], [centre + length / 2, total]].filter(([from, to]) => to - from >= shortest).map(([from, to]) => course(from, to));
+}
+
 export function roadBoundary(rings: Point2[][]): [Point2, Point2][] {
   const vertices = rings.flat(), edges: [Point2, Point2][] = [], seen = new Set<string>();
   const inside = (x: number, z: number) => rings.some(r => contains(r, x, z));

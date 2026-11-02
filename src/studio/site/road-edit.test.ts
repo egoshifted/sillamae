@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type {Point2, SiteRoad} from '../../engine/types.ts';
-import {extendRoad, insideEndpointMarker, nearestRoadEnd, roadBoundary} from './road-edit.ts';
+import {clearSection, extendRoad, insideEndpointMarker, nearestRoadEnd, roadBoundary} from './road-edit.ts';
 
 const road: SiteRoad = {id: 'path', type: 'kerbed-path', points: [[0, 0], [10, 0]]};
 test('walking paths snap exactly to either existing end without changing its coordinates', () => {
@@ -28,6 +28,12 @@ test('dragging inward shortens the terminal segment without folding it over itse
   assert.deepEqual(extendRoad(road.points, 1, [10.01, 0]), road.points);
 });
 
+test('bulldozing a drawn path splits its course around the click, keeping its bends', () => {
+  assert.deepEqual(clearSection([[0, 0], [10, 0]], [5, .4]), [[[0, 0], [4, 0]], [[6, 0], [10, 0]]]);
+  assert.deepEqual(clearSection([[0, 0], [4, 0], [4, 6]], [4, 3]), [[[0, 0], [4, 0], [4, 2]], [[4, 4], [4, 6]]]);
+  assert.deepEqual(clearSection([[0, 0], [10, 0]], [.5, 0]), [[[1.5, 0], [10, 0]]], 'a remnant shorter than the minimum goes');
+  assert.deepEqual(clearSection([[0, 0], [1.5, 0]], [.75, 0]), []);
+});
 
 test('selection follows bent road edges without drawing its bounding rectangle', () => {
   const ring: Point2[] = [[0, 0], [10, 0], [10, 2], [2, 2], [2, 10], [0, 10]];
