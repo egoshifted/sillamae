@@ -7,12 +7,13 @@ export const ROAD_TAGS: Record<RoadType, Record<string, string>> = {
   residential: {highway: 'residential', lanes: '2', surface: 'asphalt'},
   service: {highway: 'service', lanes: '1', surface: 'asphalt'},
   sidewalk: {highway: 'footway', surface: 'paving_stones'},
+  'kerbed-path': {highway: 'footway', surface: 'asphalt'},
   'asphalt-path': {highway: 'footway', surface: 'asphalt'},
   'gravel-path': {highway: 'footway', surface: 'gravel'},
   'worn-path': {highway: 'path', surface: 'ground'},
 };
-export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, service: 3.5, sidewalk: 2, 'asphalt-path': 1.8, 'gravel-path': 1.5, 'worn-path': .9};
-export const PATH_FINISH: Partial<Record<RoadType, SurfaceFinish>> = {sidewalk: 'paving', 'asphalt-path': 'asphalt', 'gravel-path': 'gravel', 'worn-path': 'worn-grass'};
+export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, service: 3.5, sidewalk: 2, 'kerbed-path': 2, 'asphalt-path': 1.8, 'gravel-path': 1.5, 'worn-path': .9};
+export const PATH_FINISH: Partial<Record<RoadType, SurfaceFinish>> = {sidewalk: 'paving', 'kerbed-path': 'asphalt', 'asphalt-path': 'asphalt', 'gravel-path': 'gravel', 'worn-path': 'worn-grass'};
 
 export function pathOutline(type: RoadType, points: Point2[]): Point2[] {
   const half = ROAD_WIDTH[type] / 2;

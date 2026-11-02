@@ -58,3 +58,5 @@ dialog{border:1px solid #b0bfad;border-radius:8px;padding:16px;max-width:96vw}
 dialog p{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px}
 #chart{display:block;width:min(900px,90vw);height:auto;aspect-ratio:3/2;border:1px solid #ccd3c6;cursor:crosshair;touch-action:none}
 @media(max-width:650px){.workspace{grid-template-columns:1fr;grid-template-rows:auto 1fr}aside{max-height:30vh;border-right:none;border-bottom:1px solid #ccd3c6}}
+
+#tools,#views{max-height:calc(100% - 20px);overflow-y:auto;scrollbar-width:thin}#tools button,#views button{flex-shrink:0}.facts .end{flex-wrap:wrap}#selection select{max-width:100%}

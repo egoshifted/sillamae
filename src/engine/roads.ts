@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import {roadKerbs} from './road-kerbs.ts';
+import {lineMeshes} from './lines.ts';
 import type {Finish, RoadKind, RoadSurface} from './data.ts';
 import type {RoadCut} from './types.ts';
 import {demolishRoads} from './road-demolition.ts';
@@ -17,7 +19,7 @@ const FINISH: Record<Finish, {tile: number; roughness: number; paint: (x: Canvas
   'worn-grass': {tile: 2, roughness: 1, paint: wornGrass},
 };
 
-export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1, cuts: RoadCut[] = []) {
+export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy = 1, cuts: RoadCut[] = [], context: RoadSurface[] = []) {
   surfaces = demolishRoads(surfaces, cuts);
   const group = new THREE.Group();
   group.name = 'roads';
@@ -37,6 +39,8 @@ export function addRoads(scene: THREE.Scene, surfaces: RoadSurface[], anisotropy
   }
   const restored = surfaces.filter(s => s.groundColour);
   if (restored.length) add(restored, restoredGroundMaterial(anisotropy), 2);
+  const kerbs = roadKerbs(surfaces, demolishRoads(context, cuts));
+  for (const lift of new Set(kerbs.map(k => k.lift))) group.add(lineMeshes(kerbs.filter(k => k.lift === lift), {lifted: lift > 0, depthLift: lift + .03}));
   scene.add(group);
   return group;
 }

@@ -161,7 +161,7 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
   for (const r of site.roads ?? []) {
     if (ids.has(r.id)) fail(name, `id ${r.id} used twice`);
     ids.add(r.id);
-    if (!['main', 'residential', 'service', 'sidewalk', 'asphalt-path', 'gravel-path', 'worn-path'].includes(r.type) || !Array.isArray(r.points) || r.points.length < 2 || !r.points.every(pair)) fail(name, `road ${r.id} needs a type and at least two x/z points`);
+    if (!['main', 'residential', 'service', 'sidewalk', 'kerbed-path', 'asphalt-path', 'gravel-path', 'worn-path'].includes(r.type) || !Array.isArray(r.points) || r.points.length < 2 || !r.points.every(pair)) fail(name, `road ${r.id} needs a type and at least two x/z points`);
   }
   for (const c of site.roadCuts ?? []) {
     if (!['carriageway', 'footway'].includes(c.kind) || !Array.isArray(c.ring) || c.ring.length !== 4 || !c.ring.every(pair)) fail(name, 'road demolition needs a kind and four x/z corners');

@@ -1,9 +1,11 @@
+import {installLanguage, translate} from '../i18n.ts';
 /// <reference types="vite/client" />
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {assetById, drafts, library} from '../../city/sillamae/assets/library.ts';
 import type {SurveyManifest, WorldData} from '../../engine/data.ts';
-import {contains, roadSection} from '../../engine/road-demolition.ts';
+import {snapToRoadEdge} from '../../engine/road-kerbs.ts';
+import {demolishRoads, contains, roadSection} from '../../engine/road-demolition.ts';
 import {LINE_HEIGHT} from '../../engine/lines.ts';
 import {nearestOn, PATH_FINISH, ROAD_WIDTH, smoothLine, SNAP} from '../../engine/streets.ts';
 import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
@@ -18,6 +20,7 @@ import {BROADLEAF, CONIFER, pickTree, TreeLayer, treeGhost, treeItems, type Tree
 import '../style.css';
 import './site.css';
 
+const disposeLanguage = installLanguage();
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const main = document.querySelector('main')!, status = element<HTMLOutputElement>('status'), error = element<HTMLParagraphElement>('error');
 const STEP = Math.PI / 12, GRID = .25, CLICK = 5; // radians, metres, pixels a click may move
@@ -73,7 +76,7 @@ const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), h
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
 const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true, shape: 'raise' as TerrainMode, lift: .2, blend: .4,
   finish: 'paving' as SurfaceFinish, lineKind: 'fence' as LineKind, lineHeight: LINE_HEIGHT.fence,
-  roadType: 'residential' as RoadType, footways: true, curved: true};
+  roadType: 'residential' as RoadType, snapFootpath: true, footways: true, curved: true};
 // The town's streets in source x/z, for drawn roads to join; from the data build.
 let streetLines: Point2[][] = [];
 // Where a road point will join a street or another drawn road's end, while drawing.
@@ -335,7 +338,7 @@ function sync(live = false) {
     const heights = loaded!.heights, height = (x: number, z: number) => { const h = heights.at(x, z); return h > -Infinity ? h : 0; };
     const cuts = (site!.roadCuts ?? []).map(c => ({...c, exposeGround: true, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}));
     loaded!.setRoadCuts(cuts, shift);
-    details = detailPreview(site!.surfaces ?? [], site!.lines ?? [], site!.roads ?? [], loaded!.frame.origin, height, renderer.capabilities.getMaxAnisotropy(), heights.surface, [...loaded!.otherCuts, ...cuts]);
+    details = detailPreview(site!.surfaces ?? [], site!.lines ?? [], site!.roads ?? [], loaded!.frame.origin, height, renderer.capabilities.getMaxAnisotropy(), heights.surface, [...loaded!.otherCuts, ...cuts], roadContext());
     loaded!.scene.add(details);
   }
   for (const key of [...selection]) if (!placementOf(key) && !treeOf(key, list) && !pointsOf(key)) selection.delete(key);
@@ -399,7 +402,7 @@ function step(from: string[], to: string[]) {
 // The square as it was opened, for Reset, and as last saved, to tell whether a reset leaves unsaved changes.
 let opened = '', saved = '';
 function reset() {
-  if (!site || snapshot() === opened || !confirm('All changes will be lost. Do you want to reset?')) return;
+  if (!site || snapshot() === opened || !confirm(translate('All changes will be lost. Do you want to reset?'))) return;
   // Kept on the undo stack all the same, so a reset clicked by mistake can be taken back.
   undo.push(snapshot());
   redo.length = 0;
@@ -572,18 +575,32 @@ function updatePreview() {
   if (roadDraft) { disposeGroup(roadDraft); roadDraft = null; }
   if (tool === 'road' && points.length >= 2) {
     const [ox, oz] = loaded!.frame.origin, heights = loaded!.heights;
-    roadDraft = detailPreview([], [], [draftRoad(roadEnds(points).map((p): Point2 => [p.x + ox, p.z + oz]))], loaded!.frame.origin, (x, z) => { const h = heights.at(x, z); return h > -Infinity ? h : 0; }, 1, heights.surface);
+    roadDraft = detailPreview([], [], [draftRoad(roadEnds(points).map((p): Point2 => [p.x + ox, p.z + oz]))], loaded!.frame.origin, (x, z) => { const h = heights.at(x, z); return h > -Infinity ? h : 0; }, 1, heights.surface, [], roadContext());
     preview.add(roadDraft);
   }
   render();
 }
 // The first point at its snap; the last is the pointer's (already snapped) or the last click's snap.
-const roadEnds = (points: THREE.Vector3[]) => points.map((p, i) => i === 0 ? roadSnaps[0] ?? p : i === points.length - 1 && i < path.length ? roadSnaps[i] ?? p : p);
-const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, points: options.curved ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
+const roadEnds = (points: THREE.Vector3[]) => points.map((p, i) => options.roadType === 'kerbed-path' ? roadSnaps[i] ?? p : i === 0 ? roadSnaps[0] ?? p : i === points.length - 1 && i < path.length ? roadSnaps[i] ?? p : p);
+const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, points: options.curved && !(options.roadType === 'kerbed-path' && options.snapFootpath) ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
 // A road point within reach of another drawn road's end, or of a street, moves onto it;
 // the data build joins it there. Local frame.
+function roadContext() {
+  const [ox, oz] = loaded!.frame.origin;
+  const shapes = [...loaded!.roadFootprints, ...(site!.roads ?? []).flatMap(r => roadShapes(r, r.points))].filter(r => r.kind === 'carriageway');
+  const cuts = [...loaded!.otherCuts, ...(site!.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}))].map(c => ({...c, exposeGround: true}));
+  return demolishRoads(shapes.map(s => ({kind: s.kind, lift: 0, ring: s.ring.map(([x, z]): [number, number, number] => [x - ox, 0, z - oz])})), cuts);
+}
 function snapRoad(at: THREE.Vector3) {
   const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
+  if (options.roadType === 'kerbed-path') {
+    if (!options.snapFootpath) return {at, snapped: false};
+    const rings = roadContext().filter(r => r.kind === 'carriageway').map(r => r.ring.map(([x, , z]): Point2 => [x, z]));
+    const point = snapToRoadEdge(rings, [at.x, at.z], ROAD_WIDTH[options.roadType] / 2);
+    if (!point) return {at, snapped: false};
+    const y = loaded!.heights.at(...point);
+    return y > -Infinity ? {at: new THREE.Vector3(point[0], y, point[1]), snapped: true} : {at, snapped: false};
+  }
   const ends = (site!.roads ?? []).flatMap(r => [r.points[0], r.points[r.points.length - 1]]).filter(([px, pz]) => Math.hypot(px - x, pz - z) <= (PATH_FINISH[options.roadType] ? 1 : SNAP));
   const end = ends.sort((a, b) => Math.hypot(a[0] - x, a[1] - z) - Math.hypot(b[0] - x, b[1] - z))[0];
   const point = end ?? nearestOn(streetLines, x, z, PATH_FINISH[options.roadType] ? 1 : SNAP)?.point;
@@ -1157,12 +1174,13 @@ function showOptions() {
     parts.push(labelled('Kind', kindSelect(options.lineKind, v => { options.lineKind = v; options.lineHeight = LINE_HEIGHT[v]; showOptions(); })), labelled('Height m', height));
   }
   else if (tool === 'road') {
-    const tick = (label: string, key: 'footways' | 'curved') => {
+    const tick = (label: string, key: 'footways' | 'curved' | 'snapFootpath') => {
       const box = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options[key]});
-      box.onchange = () => { options[key] = box.checked; updatePreview(); };
+      box.onchange = () => { options[key] = box.checked; showOptions(); updatePreview(); };
       return labelled(label, box);
     };
-    parts.push(labelled('Type', typeSelect(options.roadType, v => { options.roadType = v; showOptions(); updatePreview(); })), ...(!PATH_FINISH[options.roadType] ? [tick('Footways', 'footways')] : []), tick('Curved', 'curved'));
+    parts.push(labelled('Type', typeSelect(options.roadType, v => { options.roadType = v; showOptions(); updatePreview(); })), ...(!PATH_FINISH[options.roadType] ? [tick('Footways', 'footways')] : []), ...(options.roadType === 'kerbed-path' ? [tick('Snap to road', 'snapFootpath')] : []), ...(options.roadType === 'kerbed-path' && options.snapFootpath ? [] : [tick('Curved', 'curved')]));
+    if (options.roadType === 'kerbed-path') parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Click along the road edge; kerbs appear only where the path meets a road.'}));
     if (!streetLines.length) parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Build data (npm run data) to snap to streets'}));
   }
   else if (tool === 'hide') {
@@ -1193,7 +1211,7 @@ function finishSelect(value: SurfaceFinish, onchange: (v: SurfaceFinish) => void
   s.onchange = () => onchange(s.value as SurfaceFinish);
   return s;
 }
-const ROAD_TYPES: [RoadType, string][] = [['residential', 'Residential street'], ['main', 'Main road'], ['service', 'Service lane'], ['sidewalk', 'Paved sidewalk'], ['asphalt-path', 'Asphalt footpath'], ['gravel-path', 'Gravel path'], ['worn-path', 'Worn-grass path']];
+const ROAD_TYPES: [RoadType, string][] = [['residential', 'Residential street'], ['main', 'Main road'], ['service', 'Service lane'], ['sidewalk', 'Paved sidewalk'], ['asphalt-path', 'Asphalt footpath'], ['kerbed-path', 'Kerbed asphalt footpath'], ['gravel-path', 'Gravel path'], ['worn-path', 'Worn-grass path']];
 function typeSelect(value: RoadType, onchange: (v: RoadType) => void) {
   const s = document.createElement('select');
   for (const [v, t] of ROAD_TYPES) s.add(new Option(t, v));
@@ -1247,11 +1265,11 @@ const TREE_BRUSHES: {label: string; brush: Brush}[] = [
 function showPalette() {
   const query = element<HTMLInputElement>('filter').value.toLowerCase(), palette = element('palette');
   const matches = (text: string) => !query || text.toLowerCase().includes(query);
-  const keyOf = (a: AssetDefinition) => [a.id, a.name, a.category, ...a.tags].join(' ');
+  const keyOf = (a: AssetDefinition) => [a.id, a.name, a.category, ...a.tags, ...[a.name, a.category, ...a.tags].map(s => translate(s, 'ru'))].join(' ');
   const groups = new Map<string, HTMLElement[]>(), into = (name: string, row: HTMLElement) => groups.set(name, [...groups.get(name) ?? [], row]);
   for (const a of library) if (!a.retired && matches(keyOf(a)))
     into(a.category, item(a.name, a.id, brush?.kind === 'asset' && brush.asset === a, () => setBrush(brush?.kind === 'asset' && brush.asset === a ? null : {kind: 'asset', asset: a, variant: a.variants[0].id}), thumbnail(a), () => openPreview(a)));
-  for (const t of TREE_BRUSHES) if (t.brush.kind === 'tree' && matches(t.label + ' tree vegetation')) {
+  for (const t of TREE_BRUSHES) if (t.brush.kind === 'tree' && matches(t.label + ' tree vegetation ' + translate(t.label, 'ru') + ' дерево растительность')) {
     const type = t.brush.type;
     into('vegetation', item(t.label, `${t.brush.h} m tall`, brush?.kind === 'tree' && brush.type === type, () => setBrush(brush?.kind === 'tree' && brush.type === type ? null : {...t.brush}), TREE_PICTURES[type]));
   }
@@ -1446,9 +1464,9 @@ async function save() {
 async function review(asset: AssetDefinition, verdict: 'approve' | 'reject') {
   let notes = '';
   if (verdict === 'reject') {
-    notes = prompt(`What should change in ${asset.id}? The notes go to asset-drafts/${asset.id}/REVIEW.md for the agent.`) ?? '';
+    notes = prompt(translate(`What should change in ${asset.id}? The notes go to asset-drafts/${asset.id}/REVIEW.md for the agent.`)) ?? '';
     if (!notes.trim()) return;
-  } else if (!confirm(`Approve ${asset.id} into the library? Its id is then permanent.`)) return;
+  } else if (!confirm(translate(`Approve ${asset.id} into the library? Its id is then permanent.`))) return;
   const response = await fetch(`/__studio/assets/${asset.id}/${verdict}`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({notes})});
   if (!response.ok) throw Error(`${verdict} failed: ` + (await response.json()).error);
   status.textContent = verdict === 'approve' ? `${asset.id} approved; reloading the library…` : `Notes saved to asset-drafts/${asset.id}/REVIEW.md`;
@@ -1545,7 +1563,7 @@ function chooseSquare(data: WorldData, sites: {id: string; square: Square}[]) {
   element('size').onchange = draw;
   dialog.onclose = () => {
     if (dialog.returnValue !== 'open' || !centre) return;
-    if (dirty && !confirm('Leave this square without saving?')) return;
+    if (dirty && !confirm(translate('Leave this square without saving?'))) return;
     dirty = false;
     location.search = new URLSearchParams({x: String(centre[0]), z: String(centre[1]), size: element<HTMLSelectElement>('size').value}).toString();
   };

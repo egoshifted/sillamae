@@ -31,7 +31,7 @@ function run(a: THREE.Vector3Tuple, b: THREE.Vector3Tuple, width: number, bottom
 const hash = (x: number, z: number) => { const s = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453; return s - Math.floor(s); };
 
 // Local positions, one merged mesh per kind; lifted adds the atlas depth lift.
-export function lineMeshes(lines: BuiltLine[], {lifted = true} = {}) {
+export function lineMeshes(lines: BuiltLine[], {lifted = true, depthLift = DEPTH_LIFT} = {}) {
   const group = new THREE.Group(), positions: Record<LineKind, number[]> = {fence: [], hedge: [], wall: [], kerb: []};
   for (const line of lines) {
     const {width} = LOOK[line.kind], h = line.height, out = positions[line.kind], p = line.points;
@@ -58,9 +58,9 @@ export function lineMeshes(lines: BuiltLine[], {lifted = true} = {}) {
     const material = new THREE.MeshStandardMaterial({color: LOOK[kind].color, roughness: LOOK[kind].roughness});
     if (lifted) {
       material.onBeforeCompile = shader => {
-        shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * ${DEPTH_LIFT}.;`);
+        shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * ${depthLift.toFixed(4)};`);
       };
-      material.customProgramCacheKey = () => 'line-lift';
+      material.customProgramCacheKey = () => 'line-lift:' + depthLift;
     }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = mesh.receiveShadow = true;

@@ -7,7 +7,7 @@ import type {CityDefinition, PlacementSite, RoadType} from '../src/engine/types.
 import type {Georeference} from './geo.ts';
 
 const city = {frame: {origin: [100, 200]}} as CityDefinition;
-const types: RoadType[] = ['sidewalk', 'asphalt-path', 'gravel-path', 'worn-path'];
+const types: RoadType[] = ['sidewalk', 'asphalt-path', 'gravel-path', 'worn-path', 'kerbed-path'];
 const site: PlacementSite = {version: 1, id: '110_210_50', square: {centre: [110, 210], size: 50}, placements: [],
   roads: types.map((type, i) => ({id: String(i), type, points: [[100, 200], [100, 210]], footways: true}))};
 
@@ -20,6 +20,8 @@ test('pedestrian types retain their widths and finishes from saved data to atlas
     assert.equal(preview.length, 1, 'no traffic markings or parallel footways');
     assert.equal(preview[0].kind, 'footway');
     assert.equal(built[i].surface, PATH_FINISH[type]);
+    assert.equal(!!built[i].kerbed, type === 'kerbed-path');
+    assert.equal(!!preview[0].kerbed, type === 'kerbed-path');
     assert.equal(built[i].studio, site.id);
     assert.deepEqual(preview[0].ring, built[i].ring);
     assert.ok(built[i].ring.flat().every(Number.isFinite));

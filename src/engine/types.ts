@@ -143,7 +143,7 @@ export interface SiteLine {
   height?: number; // metres; each kind has its own default
 }
 
-export type RoadType = 'main' | 'residential' | 'service' | 'sidewalk' | 'asphalt-path' | 'gravel-path' | 'worn-path';
+export type RoadType = 'main' | 'residential' | 'service' | 'sidewalk' | 'asphalt-path' | 'kerbed-path' | 'gravel-path' | 'worn-path';
 // Vehicle streets join the OSM network. Pedestrian paths retain their drawn
 // width and finish as terrain-following surfaces, without road grading.
 export interface SiteRoad {

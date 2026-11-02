@@ -26,6 +26,7 @@ export type Finish = SurfaceFinish;
 // One road polygon, ring in the local frame (x, height, z); lift is its depth
 // lift in metres above the survey layers it covers. Footways carry a finish.
 export interface RoadSurface {
+  kerbed?: boolean;
   groundColour?: [number, number, number];
   groundColours?: [number, number, number][];
   kind: RoadKind;

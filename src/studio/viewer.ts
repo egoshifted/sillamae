@@ -1,3 +1,4 @@
+import {installLanguage} from './i18n.ts';
 /// <reference types="vite/client" />
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -5,6 +6,7 @@ import {buildStudy, stages, label} from './studies.ts';
 import type {WorldData} from '../engine/data.ts';
 import './style.css';
 
+const disposeLanguage = installLanguage();
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const building = element<HTMLSelectElement>('building'), mode = element<HTMLSelectElement>('mode');
 const main = document.querySelector('main')!, status = element<HTMLOutputElement>('status'), error = element<HTMLParagraphElement>('error');
@@ -30,7 +32,7 @@ function render() {
   current.ground.visible = checked('ground'); current.scene.overrideMaterial = checked('plain') ? neutral : null;
   sun.castShadow = checked('shadows'); sun.target.position.copy(centre); sun.position.copy(centre).add(sunOffset.clone().normalize().multiplyScalar(radius * 3));
   renderer.render(current.scene, camera);
-  status.textContent = `${buildings.find(s => s.id === building.value)?.name} · ${mode.selectedOptions[0].text} · ${renderer.info.render.triangles.toLocaleString()} rendered triangles · ${renderer.info.render.calls} draws`;
+  status.textContent = `${buildings.find(s => s.id === building.value)?.name} · ${stages(building.value).find(s => s.id === mode.value)?.label} · ${renderer.info.render.triangles.toLocaleString()} rendered triangles · ${renderer.info.render.calls} draws`;
 }
 function resize() { const {width, height} = main.getBoundingClientRect(); renderer.setSize(width, height); camera.aspect = width / Math.max(1, height); camera.updateProjectionMatrix(); render(); }
 const observer = new ResizeObserver(resize); observer.observe(main); controls.addEventListener('change', render);
@@ -106,4 +108,4 @@ action(async () => {
   const position = vector('position'), target = vector('target');
   if (position && target) { camera.position.fromArray(position); controls.target.fromArray(target); controls.update(); render(); }
 });
-import.meta.hot?.dispose(() => { disposed = true; generation++; observer.disconnect(); controls.dispose(); sun?.shadow.map?.dispose(); current?.dispose(); neutral.dispose(); renderer.dispose(); renderer.domElement.remove(); });
+import.meta.hot?.dispose(() => { disposeLanguage(); disposed = true; generation++; observer.disconnect(); controls.dispose(); sun?.shadow.map?.dispose(); current?.dispose(); neutral.dispose(); renderer.dispose(); renderer.domElement.remove(); });
