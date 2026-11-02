@@ -30,6 +30,50 @@
    ],
    "heading": 1.2468,
    "attach": "ground"
+  },
+  {
+   "id": "pmvzerydhqgs",
+   "asset": "shrub-rounded-01",
+   "p": [
+    222.83,
+    557.703,
+    12.845
+   ],
+   "heading": 0,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzes3pbzjb",
+   "asset": "bin-wheeled-01",
+   "p": [
+    222.431,
+    559.518,
+    12.806
+   ],
+   "heading": -0.3828,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzesuwedg1",
+   "asset": "bin-wheeled-01",
+   "p": [
+    221.582,
+    559.202,
+    12.795
+   ],
+   "heading": -0.2618,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzetuxhj91",
+   "asset": "shrub-spreading-01",
+   "p": [
+    212.081,
+    589.614,
+    12.412
+   ],
+   "heading": 0,
+   "attach": "ground"
   }
  ],
  "roads": [
@@ -104,6 +148,76 @@
      572.426
     ]
    ]
+  },
+  {
+   "id": "rmvzerc6dn9e",
+   "type": "tiled-path",
+   "tiles": 5,
+   "points": [
+    [
+     218.047,
+     558.539
+    ],
+    [
+     225.127,
+     561.533
+    ]
+   ]
+  },
+  {
+   "id": "rmvzeubqtbj8",
+   "type": "tiled-path",
+   "tiles": 1,
+   "points": [
+    [
+     213.784,
+     593.122
+    ],
+    [
+     196.692,
+     584.716
+    ]
+   ]
+  },
+  {
+   "id": "rmvzeumw6kgc",
+   "type": "tiled-path",
+   "tiles": 1,
+   "points": [
+    [
+     196.692,
+     584.716
+    ],
+    [
+     194.597,
+     583.649
+    ],
+    [
+     192.132,
+     581.897
+    ],
+    [
+     190.916,
+     580.063
+    ],
+    [
+     189.877,
+     577.934
+    ],
+    [
+     189.167,
+     576.414
+    ]
+   ]
   }
- ]
+ ],
+ "trees": {
+  "remove": [
+   [
+    223.46,
+    553.25
+   ]
+  ],
+  "add": []
+ }
 }

@@ -1,3 +1,4 @@
+import type {AtlasBuildStatus} from './atlas-build.ts';
 import {installLanguage, translate} from '../i18n.ts';
 /// <reference types="vite/client" />
 import * as THREE from 'three';
@@ -1549,19 +1550,48 @@ function showStatus() {
 }
 
 // Draft previews let the owner judge a draft in place; they never reach the saved file.
+let saving = false;
+function showAtlasBuild(build: AtlasBuildStatus) {
+  const output = element<HTMLOutputElement>('atlas-build'), link = element<HTMLAnchorElement>('atlas');
+  output.textContent = build.state === 'building' ? 'Square saved · rebuilding atlas… You can keep editing.' : build.state === 'ready' ? 'Atlas updated · open atlas to view your saved edits.' : build.state === 'error' ? 'Square saved, but atlas update failed. Save again to retry.' : '';
+  output.title = build.error ?? '';
+  link.setAttribute('aria-disabled', String(build.state === 'building'));
+  link.onclick = event => { if (link.getAttribute('aria-disabled') === 'true') event.preventDefault(); };
+}
+async function pollAtlasBuild() {
+  try {
+    const response = await fetch('/__studio/atlas-build', {cache: 'no-store'});
+    if (response.ok) showAtlasBuild(await response.json() as AtlasBuildStatus);
+  } catch { /* Reconnect after a development-server restart. */ }
+}
+const atlasPoll = window.setInterval(() => void pollAtlasBuild(), 2000);
+void pollAtlasBuild();
+addEventListener('pagehide', () => window.clearInterval(atlasPoll));
+
 async function save() {
-  if (!site) return;
-  const kept: PlacementSite = {...site, placements: site.placements.filter(p => !drafts.some(d => d.id === p.asset)), trees: edits()};
-  if (!kept.trees!.add.length && !kept.trees!.remove.length) delete kept.trees;
-  for (const key of ['surfaces', 'lines', 'roads', 'roadCuts', 'hidden'] as const) if (!kept[key]?.length) delete kept[key];
-  const deltas = terrain?.saved();
-  if (deltas) kept.terrain = {deltas}; else delete kept.terrain;
-  const response = await fetch('/__studio/sites/' + site.id, {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(kept)});
-  if (!response.ok) throw Error('Save failed: ' + (await response.json()).error);
-  dirty = kept.placements.length !== site.placements.length;
-  saved = dirty ? '' : snapshot();
-  showStatus();
-  status.textContent = `Saved to data/source/placements/${site.id}.json` + (dirty ? '; draft previews were left out' : '');
+  if (!site || saving) return;
+  saving = true;
+  const before = snapshot(), id = site.id;
+  element<HTMLButtonElement>('save').disabled = true;
+  element<HTMLButtonElement>('choose').disabled = true;
+  try {
+    const kept: PlacementSite = {...site, placements: site.placements.filter(p => !drafts.some(d => d.id === p.asset)), trees: edits()};
+    if (!kept.trees!.add.length && !kept.trees!.remove.length) delete kept.trees;
+    for (const key of ['surfaces', 'lines', 'roads', 'roadCuts', 'hidden'] as const) if (!kept[key]?.length) delete kept[key];
+    const deltas = terrain?.saved();
+    if (deltas) kept.terrain = {deltas}; else delete kept.terrain;
+    const response = await fetch('/__studio/sites/' + id, {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(kept)});
+    if (!response.ok) throw Error('Save failed: ' + (await response.json()).error);
+    saved = kept.placements.length !== site.placements.length ? '' : before;
+    dirty = snapshot() !== saved;
+    showAtlasBuild((await response.json()).build);
+    showStatus();
+    status.textContent = `Saved to data/source/placements/${id}.json`;
+  } finally {
+    saving = false;
+    element<HTMLButtonElement>('save').disabled = false;
+    element<HTMLButtonElement>('choose').disabled = false;
+  }
 }
 
 async function review(asset: AssetDefinition, verdict: 'approve' | 'reject') {
@@ -1678,10 +1708,15 @@ async function open(square: Square) {
   const data = await world, id = `${square.centre[0]}_${square.centre[1]}_${square.size}`;
   loaded = await loadSquare(data, await survey, square, renderer, text => { status.textContent = text; });
   const response = await fetch('/__studio/sites/' + id);
+  if (!response.ok && response.status !== 404) throw Error('Could not open saved square: ' + (await response.text()));
   site = response.ok ? await response.json() as PlacementSite : {version: 1, id, square, placements: []};
   const missing = site.placements.filter(p => !assetById.has(p.asset));
-  if (missing.length) error.textContent = `Not shown, unknown assets: ${[...new Set(missing.map(p => p.asset))].join(', ')}`;
-  site.placements = site.placements.filter(p => assetById.has(p.asset));
+  if (missing.length) {
+    element<HTMLButtonElement>('save').disabled = true;
+    const ids = [...new Set(missing.map(p => p.asset))].join(', ');
+    site = undefined;
+    throw Error('This square uses unavailable assets: ' + ids + '. Restore the matching project version before editing; saved data has not been changed.');
+  }
   const {scene, frame} = loaded, [ox, oz] = frame.origin;
   // The built data holds this square's added trees from the last data build; they
   // are drawn from the edits instead. Trees can only be added inside their square.
