@@ -74,6 +74,28 @@
    ],
    "heading": 0,
    "attach": "ground"
+  },
+  {
+   "id": "pmvzganpf3rz",
+   "asset": "sign-residential-01",
+   "p": [
+    224.22,
+    558.581,
+    12.835
+   ],
+   "heading": 2.618,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzgbzvu2pl",
+   "asset": "lamp-post-concrete-01",
+   "p": [
+    222.26,
+    594.207,
+    12.151
+   ],
+   "heading": -1.309,
+   "attach": "ground"
   }
  ],
  "roads": [
