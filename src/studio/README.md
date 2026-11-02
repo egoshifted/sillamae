@@ -99,4 +99,6 @@ Finalization checks evidence files, unchanged source/data hashes, automated resu
 
 ## Provenance and cleanup
 
+Captures wait for the current view's survey/shadow coverage and rendered frames instead of fixed sleeps. Add `--all-tiles` to retain a full-town loading gate. A selected building and stage are opened directly; moving to another view reprioritizes pending tile downloads. Data verification shares the content cache with development and production builds, and uses the same 8 GB heap setting. Use `npm run data:rebuild` when a fresh generation is required.
+
 The process and rules were consolidated from the existing building-refinement rules (including the 24–28 October lessons), the 12-stage process and D01–D20 component checklists used for Kesk 1, Kesk 5 and Rodina. The study controls derive from the Rodina study viewer; verification derives from the local TypeScript migration and apron investigations. Historical commands under `work/city3d`, vendored Three.js, hardcoded paths, duplicated model copies and stale status claims are replaced by current imports and the commands above. Historical evidence stays local and immutable. Do not import archived runtime files over current city models.

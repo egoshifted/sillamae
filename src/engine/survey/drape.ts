@@ -13,6 +13,17 @@ const LAYER_GAP = .02, MAX_LAYER = 7, UNDERWATER = .02;
 
 type Corner = {x: number; z: number; old: number; h: number; r: number; g: number; b: number};
 
+class PointMap<T> {
+  #columns = new Map<number, Map<number, T>>();
+  get(x: number, z: number) { return this.#columns.get(x)?.get(z); }
+  has(x: number, z: number) { return this.#columns.get(x)?.has(z) ?? false; }
+  set(x: number, z: number, value: T) {
+    let column = this.#columns.get(x);
+    if (!column) this.#columns.set(x, column = new Map());
+    column.set(z, value);
+  }
+}
+
 // The survey ground is stacked: road, lawn and pitch polygons lie 5-35 cm above
 // a base surface. Every ground vertex therefore moves by the same correction,
 // finer terrain minus the lowest old surface at its x/z, which keeps the gaps.
@@ -23,26 +34,23 @@ type Corner = {x: number; z: number; old: number; h: number; r: number; g: numbe
 export function drapeGround(buckets: Bucket[], heightAt: HeightAt, sites: Site[]) {
   const surfaces = surfaceIndex(buckets, false), base = (x: number, z: number) => surfaces(x, z)[0] ?? null;
   const waters = surfaceIndex(buckets, true), sea = seaLevel(buckets);
-  const key = (x: number, z: number) => x + ',' + z;
-  const kept = new Set<string>();
+  const kept = new PointMap<true>();
   for (const b of buckets) for (let i = 0; i < b.source.length; i += 3) {
     const x = b.source[i], z = b.source[i + 1];
-    if (b.kind === 'water' || sites.some(s => x >= s.minX - KEEP_MARGIN && x <= s.maxX + KEEP_MARGIN && z >= s.minZ - KEEP_MARGIN && z <= s.maxZ + KEEP_MARGIN)) kept.add(key(x, z));
+    if (b.kind === 'water' || sites.some(s => x >= s.minX - KEEP_MARGIN && x <= s.maxX + KEEP_MARGIN && z >= s.minZ - KEEP_MARGIN && z <= s.maxZ + KEEP_MARGIN)) kept.set(x, z, true);
   }
-  const corrections = new Map<string, number | null>();
+  const corrections = new PointMap<number | null>();
   const correction = (x: number, z: number) => {
-    const k = key(x, z);
-    let c = corrections.get(k);
+    let c = corrections.get(x, z);
     if (c !== undefined) return c;
-    const fine = kept.has(k) ? null : heightAt(x, z), old = fine === null ? null : base(x, z);
-    corrections.set(k, c = fine === null || old === null ? null : fine - old);
+    const fine = kept.has(x, z) ? null : heightAt(x, z), old = fine === null ? null : base(x, z);
+    corrections.set(x, z, c = fine === null || old === null ? null : fine - old);
     return c;
   };
-  const waterTops = new Map<string, number>();
+  const waterTops = new PointMap<number>();
   const underwater = (x: number, z: number, old: number) => {
-    const k = key(x, z);
-    let top = waterTops.get(k);
-    if (top === undefined) waterTops.set(k, top = Math.max(sea, ...waters(x, z)));
+    let top = waterTops.get(x, z);
+    if (top === undefined) waterTops.set(x, z, top = Math.max(sea, ...waters(x, z)));
     return old < top + UNDERWATER;
   };
   const splits = (p: Corner, q: Corner) => {

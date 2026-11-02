@@ -24,6 +24,8 @@ The survey ground is never cut under roads: it stays as it is beneath them, so a
 
 ## Extending to another block
 
+Terrain detail is now bounded separately from road coverage: the city supplies `terrainDetail` in source coordinates. The town core, building margins and road corridors retain the one-metre grid. Flat, uniformly coloured outer blocks may use stitched eight-metre fans; source heights, water edges and sharp relief remain intact. See the README's data/loading section. Road clipping discards only non-overlapping cutting rings and preserves containing holes; height-query caches retain exact coordinates and results.
+
 1. Branch from `main`. Record atlas view URLs of the block (top-down and a low oblique per junction and crossing) and look at Street View for each street: real carriageway width, crossings, what lies beside the road (grass or sidewalk), parking.
 2. Inspect the OSM ways in the block (`data/source/osm.json`): highway types, `lanes`, `sidewalk*`, crossing tags (`crossing`, `crossing:markings`), areas mapped as ways. Note refined sites nearby and check their models build no streets of their own (Kesk 1 did; it was removed).
 3. The road area (`roadArea` in `pipeline/roads.ts`) is every building plus 30 m. Keep junctions well inside it: osm2streets cuts roads at the clip edge and the survey road carries on beyond it. The build takes several minutes and needs the larger heap the npm scripts give it (8 GB).

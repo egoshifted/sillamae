@@ -118,6 +118,7 @@ export class Engine {
       const built = o.build({scene: this.#scene, building, terrain: this.#data.terrain, frame: this.frame, ground, changed: () => { this.#redraw = true; }});
       this.#built.set(o.id, built);
       if (built.ready) ready.push(built.ready);
+      if (built.root.userData.ready) ready.push(built.root.userData.ready);
       tagBuilding(built.root, building.pick);
       if (o.detailShadows) this.#shadowAnchors.push(new THREE.Vector3(building.c[0] - ox, 6, building.c[1] - oz));
     }
@@ -177,8 +178,15 @@ export class Engine {
 
   addSurvey(buckets: SurveyBucket[]) {
     for (const bucket of buckets) this.#survey.fill(bucket);
-    this.#renderer.shadowMap.needsUpdate = true;
-    this.#redraw = true;
+    const camera = this.camera.ortho;
+    camera.updateMatrixWorld();
+    const visible = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    for (const bucket of buckets) {
+      const b = bucket.bounds, sphere = b && new THREE.Sphere(new THREE.Vector3(b[0], b[1], b[2]), b[3]);
+      const shadow = !sphere || this.#sun.intersects(sphere);
+      if (shadow) this.#renderer.shadowMap.needsUpdate = true;
+      if (shadow || !sphere || visible.intersectsSphere(sphere)) this.#redraw = true;
+    }
   }
 
   tilesByDistance(survey: SurveyManifest) {

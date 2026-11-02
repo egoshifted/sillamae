@@ -1,3 +1,6 @@
 node_modules/
 dist/
 public/data/
+public/.data-build-*/
+public/.data-build.lock
+public/.data-previous-*/
