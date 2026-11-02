@@ -37,7 +37,7 @@ The **English / Русский** selector in the header switches the building st
 | Scatter | B | Drag to scatter the brush within a radius, keeping a gap from its own kind. |
 | Shape the ground | U | Drag to raise, lower, flatten (to the height where the stroke began), smooth, or reset towards the survey, with a radius and a strength. Objects and added trees on the ground ride with it. |
 | Ground surface | L | Click the corners of an area of paving, asphalt, gravel, lawn or flowerbed; Enter or a double-click closes it. Laid on the ground like a footway, drawn over the footways it overlaps. |
-| Line | K | Click along a fence, hedge, low wall or kerb; Enter or a double-click finishes. It follows the ground; its height can be set. |
+| Line | K | Click along a fence, hedge, low wall or kerb; Enter or a double-click finishes. It follows the ground; its height can be set. With **Snap to road**, a point clicked over a road or path, or within 0.6 m of one, moves to stand along its edge. Select a line and drag either end handle to extend or shorten it, as with roads. |
 | Road | W | Click along a street, as in SimCity: residential street, main road or service lane, with or without footways, corners rounded or not. An end near an existing street or another drawn road snaps to it (an orange ring) and becomes a junction. The editor shows a close preview; the data build lays the real road. |
 | Hide survey objects | X | Click a survey building, shed or kiosk to leave it out of the town; the list in the top bar brings them back. Refined buildings cannot be hidden. |
 | Measure | I | Click points for lengths on plan, height changes and slopes. |

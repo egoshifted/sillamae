@@ -11,6 +11,7 @@ const LOOK: Record<LineKind, {color: string; roughness: number; width: number}> 
   wall: {color: '#a9a59b', roughness: .95, width: .3},
   kerb: {color: '#a4a39c', roughness: .9, width: .15},
 };
+export const lineWidth = (kind: LineKind) => LOOK[kind].width;
 const FOOT = .25; // metres below the ground, so a run's foot stays buried between its points
 const POST = {every: 2.5, size: .07}; // fence posts, metres
 // Depth-only lift over the survey ground's own (see placements.ts).

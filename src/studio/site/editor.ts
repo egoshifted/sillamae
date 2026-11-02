@@ -7,8 +7,8 @@ import {assetById, drafts, library} from '../../city/sillamae/assets/library.ts'
 import type {SurveyManifest, WorldData} from '../../engine/data.ts';
 import {snapToRoadEdge} from '../../engine/road-kerbs.ts';
 import {demolishRoads, contains, roadSection} from '../../engine/road-demolition.ts';
-import {LINE_HEIGHT} from '../../engine/lines.ts';
-import {nearestOn, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SNAP} from '../../engine/streets.ts';
+import {LINE_HEIGHT, lineMeshes, lineWidth, standLine} from '../../engine/lines.ts';
+import {FOOTWAY, nearestOn, offsetLine, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SNAP} from '../../engine/streets.ts';
 import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
 import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
@@ -54,7 +54,7 @@ type Tool = 'select' | 'place' | 'path' | 'scatter' | 'terrain' | 'area' | 'line
 type Start = {p: Point2; heading: number; points?: Point2[]};
 type Gesture =
   | {kind: 'move'; before: string; anchor: THREE.Vector3; start: Map<string, Point2>; moved: boolean; wall?: string}
-  | {kind: 'extend'; before: string; id: string; end: 0 | 1; points: Point2[]; anchor: THREE.Vector3; moved: boolean}
+  | {kind: 'extend'; before: string; key: string; end: 0 | 1; points: Point2[]; anchor: THREE.Vector3; moved: boolean}
   | {kind: 'rotate'; before: string; centre: THREE.Vector3; from: number; start: Map<string, Start>; moved: boolean}
   | {kind: 'marquee'; x: number; y: number; additive: boolean}
   | {kind: 'scatter'; before: string; count: number}
@@ -79,7 +79,7 @@ const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), h
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
 const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true, shape: 'raise' as TerrainMode, lift: .2, blend: .4,
   finish: 'paving' as SurfaceFinish, lineKind: 'fence' as LineKind, lineHeight: LINE_HEIGHT.fence,
-  roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true};
+  roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true, snapLine: true};
 // The town's streets in source x/z, for drawn roads to join; from the data build.
 let streetLines: Point2[][] = [];
 // Where a road point will join a street or another drawn road's end, while drawing.
@@ -87,7 +87,7 @@ const ENDPOINT_RADIUS = .9;
 const snapMark = new THREE.Mesh(new THREE.RingGeometry(.6, ENDPOINT_RADIUS, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#e07b00', depthTest: false, side: THREE.DoubleSide}));
 snapMark.renderOrder = 999;
 snapMark.visible = false;
-let roadDraft: THREE.Group | null = null;
+let roadDraft: THREE.Group | null = null, hoverDraft: THREE.Group | null = null;
 const roadSnaps: THREE.Vector3[] = []; // where each road point would snap, by index in path
 
 // Flat on the ground round the selection; dragging it turns the selection, as in The Sims.
@@ -368,17 +368,15 @@ function sync(live = false) {
     if (road) {
       const cuts = [...loaded!.otherCuts, ...(site!.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}))].map(c => ({...c, exposeGround: true}));
       const surfaces = roadShapes(road, road.points.map(([x, z]): Point2 => [x - ox, z - oz])).filter(s => s.kind !== 'marking').map(s => ({...s, lift: 0, ring: s.ring.map(([x, z]): [number, number, number] => [x, 0, z])}));
-      const edges = roadBoundary(demolishRoads(surfaces, cuts).map(s => s.ring.map(([x, , z]): Point2 => [x, z])));
-      const vertices: number[] = [];
-      for (const [a, b] of edges) {
-        const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / .5));
-        for (let i = 0; i < n; i++) for (const t of [i / n, (i + 1) / n]) {
-          const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
-          vertices.push(x, loaded!.heights.at(x, z) + .1, z);
-        }
-      }
-      const outline = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)), new THREE.LineBasicMaterial({color: '#f0a400', depthTest: false}));
-      outline.renderOrder = 998; highlights.add(outline);
+      highlights.add(groundOutline(roadBoundary(demolishRoads(surfaces, cuts).map(s => s.ring.map(([x, , z]): Point2 => [x, z])))));
+      continue;
+    }
+    const line = lineOf(key);
+    if (line) {
+      // Padded, so a 4 cm fence still shows a band around it.
+      const course = line.points.map(([x, z]): Point2 => [x - ox, z - oz]), half = lineWidth(line.kind) / 2 + .15;
+      const ring = [...offsetLine(course, half), ...offsetLine(course, -half).reverse()];
+      highlights.add(groundOutline(ring.map((p, i): [Point2, Point2] => [p, ring[(i + 1) % ring.length]])));
       continue;
     }
     const points = pointsOf(key);
@@ -398,17 +396,32 @@ function sync(live = false) {
   showStatus();
   render();
 }
+// Local edges, sampled every half metre so the outline follows the ground between corners.
+function groundOutline(edges: [Point2, Point2][]) {
+  const vertices: number[] = [];
+  for (const [a, b] of edges) {
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / .5));
+    for (let i = 0; i < n; i++) for (const t of [i / n, (i + 1) / n]) {
+      const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+      vertices.push(x, loaded!.heights.at(x, z) + .1, z);
+    }
+  }
+  const outline = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)), new THREE.LineBasicMaterial({color: '#f0a400', depthTest: false}));
+  outline.renderOrder = 998;
+  return outline;
+}
 function placeRing(list: TreeItem[]) {
   const entries = [...selection].map(key => ({key, a: anchorOf(key, list)})).filter(e => e.a !== null).map(e => ({key: e.key, at: e.a!.at}));
-  endpoints.visible = selection.size === 1 && !!roadOf([...selection][0]) && (tool === 'select' || tool === 'road') && !path.length;
+  const only = selection.size === 1 ? [...selection][0] : '';
+  endpoints.visible = !path.length && (roadOf(only) ? tool === 'select' || tool === 'road' : !!lineOf(only) && (tool === 'select' || tool === 'line'));
   if (endpoints.visible) {
-    const road = roadOf([...selection][0])!, [ox, oz] = loaded!.frame.origin;
+    const course = pointsOf(only)!, [ox, oz] = loaded!.frame.origin;
     endpoints.children.forEach((handle, i) => {
-      const [x, z] = road.points[i ? road.points.length - 1 : 0];
+      const [x, z] = course[i ? course.length - 1 : 0];
       handle.position.set(x - ox, loaded!.heights.at(x - ox, z - oz) + .15, z - oz);
     });
   }
-  ring.visible = !entries.some(e => roadOf(e.key)) && tool === 'select' && entries.length > 0 && entries.some(e => placementOf(e.key)?.attach !== 'wall');
+  ring.visible = !entries.some(e => roadOf(e.key) || lineOf(e.key)) && tool === 'select' && entries.length > 0 && entries.some(e => placementOf(e.key)?.attach !== 'wall');
   if (!ring.visible) return;
   const centre = entries.reduce((s, e) => s.add(e.at), new THREE.Vector3()).divideScalar(entries.length);
   // Clear of each item's footprint, so the ring can be grabbed beside it rather than through it.
@@ -619,6 +632,13 @@ function updatePreview() {
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(course.map(p => p.clone().setY(p.y + .08))), new THREE.LineBasicMaterial({color: '#233e36', depthTest: false}));
   line.renderOrder = 997;
   preview.add(line);
+  if (hoverDraft) { disposeAll(hoverDraft); hoverDraft = null; }
+  if (pointer.last && !path.length && (tool === 'road' || tool === 'line')) hoverDraft = tool === 'road' ? roadFootprint(pointer.last) : lineFootprint(pointer.last);
+  else if (tool === 'line' && points.length >= 2) {
+    const heights = loaded!.heights;
+    hoverDraft = lineMeshes([{kind: options.lineKind, height: options.lineHeight, points: standLine(points.map((p): Point2 => [p.x, p.z]), (x, z) => { const h = heights.at(x, z); return h > -Infinity ? h : null; })}], {lifted: false});
+  }
+  if (hoverDraft) preview.add(hoverDraft);
   if (roadDraft) { disposeGroup(roadDraft); roadDraft = null; }
   if (tool === 'road' && points.length >= 2) {
     const [ox, oz] = loaded!.frame.origin, heights = loaded!.heights;
@@ -627,14 +647,62 @@ function updatePreview() {
   }
   render();
 }
+// Before the first click, the chosen road's full width (footways included) as a faint
+// disc on the ground, so its size can be judged against what is already there.
+function roadFootprint(at: THREE.Vector3) {
+  const type = options.roadType, carriageway = PATH_FINISH[type] ? roadWidth({type, tiles: options.tiles}) : ROAD_WIDTH[type];
+  const radii = [carriageway / 2, ...!PATH_FINISH[type] && options.footways ? [carriageway / 2 + FOOTWAY.offset + FOOTWAY.width / 2] : []];
+  const group = new THREE.Group(), steps = 48;
+  const ring = (r: number) => Array.from({length: steps + 1}, (_, i) => {
+    const a = i / steps * Math.PI * 2, x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r, h = loaded!.heights.at(x, z);
+    return new THREE.Vector3(x, (h > -Infinity ? h : at.y) + .06, z);
+  });
+  for (const r of radii) {
+    const edge = ring(r), fill = new THREE.BufferGeometry().setFromPoints(edge.flatMap((p, i) => i ? [at.clone().setY(at.y + .06), edge[i - 1], p] : []));
+    const disc = new THREE.Mesh(fill, new THREE.MeshBasicMaterial({color: '#ffffff', transparent: true, opacity: .14, depthTest: false, depthWrite: false, side: THREE.DoubleSide}));
+    const outline = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edge), new THREE.LineBasicMaterial({color: '#ffffff', transparent: true, opacity: .7, depthTest: false}));
+    disc.renderOrder = outline.renderOrder = 996;
+    group.add(disc, outline);
+  }
+  return group;
+}
+// Before the first click, the chosen line's width and height as a faint post, so a
+// hedge or wall can be judged against the paths beside it.
+function lineFootprint(at: THREE.Vector3) {
+  const width = lineWidth(options.lineKind), height = options.lineHeight, box = new THREE.BoxGeometry(width, height, width).translate(at.x, at.y + height / 2, at.z);
+  const fill = new THREE.Mesh(box, new THREE.MeshBasicMaterial({color: '#ffffff', transparent: true, opacity: .2, depthWrite: false}));
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(box), new THREE.LineBasicMaterial({color: '#ffffff', transparent: true, opacity: .8, depthTest: false}));
+  fill.renderOrder = outline.renderOrder = 996;
+  return new THREE.Group().add(fill, outline);
+}
+// The hover drafts are rebuilt on every pointer move, lines included, so all their GPU buffers go.
+function disposeAll(group: THREE.Object3D) {
+  group.traverse(o => {
+    if (!(o instanceof THREE.Mesh || o instanceof THREE.Line)) return;
+    o.geometry.dispose();
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+  });
+  group.removeFromParent();
+}
+// A line point over a road or path, or just beside one, moves to stand along its edge.
+// Only surfaces of the hovered kind count: a footway running beside a carriageway
+// would otherwise move a point on the road out to the footway's far side.
+function snapLine(at: THREE.Vector3, kind = options.lineKind) {
+  if (!options.snapLine) return {at, snapped: false};
+  const surfaces = roadContext(['carriageway', 'footway']), over = surfaces.find(s => contains(s.ring.map(([x, , z]): Point2 => [x, z]), at.x, at.z));
+  const rings = surfaces.filter(s => !over || s.kind === over.kind).map(s => s.ring.map(([x, , z]): Point2 => [x, z]));
+  const edge = snapToRoadEdge(rings, [at.x, at.z], lineWidth(kind) / 2, over ? 8 : .6);
+  const y = edge ? loaded!.heights.at(...edge) : -Infinity;
+  return edge && y > -Infinity ? {at: new THREE.Vector3(edge[0], y, edge[1]), snapped: true} : {at, snapped: false};
+}
 // The first point at its snap; the last is the pointer's (already snapped) or the last click's snap.
 const roadEnds = (points: THREE.Vector3[]) => points.map((p, i) => options.roadType === 'kerbed-path' ? roadSnaps[i] ?? p : i === 0 ? roadSnaps[0] ?? p : i === points.length - 1 && i < path.length ? roadSnaps[i] ?? p : p);
 const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, ...options.roadType === 'tiled-path' && {tiles: options.tiles}, points: options.curved && !(options.roadType === 'kerbed-path' && options.snapFootpath) ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
 // A road point within reach of another drawn road's end, or of a street, moves onto it;
 // the data build joins it there. Local frame.
-function roadContext() {
+function roadContext(kinds: string[] = ['carriageway']) {
   const [ox, oz] = loaded!.frame.origin;
-  const shapes = [...loaded!.roadFootprints, ...(site!.roads ?? []).flatMap(r => roadShapes(r, r.points))].filter(r => r.kind === 'carriageway');
+  const shapes = [...loaded!.roadFootprints, ...(site!.roads ?? []).flatMap(r => roadShapes(r, r.points))].filter(r => kinds.includes(r.kind));
   const cuts = [...loaded!.otherCuts, ...(site!.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}))].map(c => ({...c, exposeGround: true}));
   return demolishRoads(shapes.map(s => ({kind: s.kind, lift: 0, ring: s.ring.map(([x, z]): [number, number, number] => [x - ox, 0, z - oz])})), cuts);
 }
@@ -952,9 +1020,9 @@ renderer.domElement.addEventListener('pointerdown', event => {
   }
   const end = endpointAt(event.clientX, event.clientY);
   if (end !== undefined) {
-    const road = roadOf([...selection][0])!, at = ground(event.clientX, event.clientY);
+    const key = [...selection][0], at = ground(event.clientX, event.clientY);
     if (at) {
-      gesture = {kind: 'extend', before: snapshot(), id: road.id, end, points: road.points.map(p => [...p]), anchor: at, moved: false};
+      gesture = {kind: 'extend', before: snapshot(), key, end, points: pointsOf(key)!.map(p => [...p] as Point2), anchor: at, moved: false};
       renderer.domElement.setPointerCapture(event.pointerId);
       return;
     }
@@ -987,7 +1055,7 @@ renderer.domElement.addEventListener('pointermove', event => {
   element('cursor').textContent = at ? `x ${(at.x + ox).toFixed(2)} · z ${(at.z + oz).toFixed(2)} · ground ${(at.y + loaded.frame.base).toFixed(2)} m` : '';
   if (tool === 'measure') { measure!.hover(at); render(); }
   if (drawing(tool) && gesture?.kind !== 'extend') {
-    const snap = tool === 'road' && at ? snapRoad(at, options.roadType, undefined, [event.clientX, event.clientY]) : null;
+    const snap = !at ? null : tool === 'road' ? snapRoad(at, options.roadType, undefined, [event.clientX, event.clientY]) : tool === 'line' ? snapLine(at) : null;
     snapMark.visible = !!snap?.snapped;
     if (snap?.snapped) snapMark.position.copy(snap.at).setY(snap.at.y + .1);
     pointer.last = snap?.at ?? at;
@@ -1003,19 +1071,19 @@ renderer.domElement.addEventListener('pointermove', event => {
     render();
   }
   if (!gesture || !pointer.down) {
-    if (tool === 'select' || tool === 'road') renderer.domElement.style.cursor = endpointAt(event.clientX, event.clientY) !== undefined ? 'grab' : tool === 'road' ? 'crosshair' : 'default';
+    if (tool === 'select' || tool === 'road' || tool === 'line') renderer.domElement.style.cursor = endpointAt(event.clientX, event.clientY) !== undefined ? 'grab' : tool === 'select' ? 'default' : 'crosshair';
     return;
   }
   const moved = Math.hypot(event.clientX - pointer.downX, event.clientY - pointer.downY) >= CLICK;
   if (gesture.kind === 'extend' && at && (moved || gesture.moved)) {
-    const g = gesture, road = site.roads!.find(r => r.id === g.id)!;
+    const g = gesture, road = roadOf(g.key), line = lineOf(g.key)!;
     const start = g.points[g.end ? g.points.length - 1 : 0];
     const target = at.clone().add(new THREE.Vector3(start[0] - ox - g.anchor.x, 0, start[1] - oz - g.anchor.z));
     if (element<HTMLInputElement>('grid').checked) { target.x = Math.round(target.x / GRID) * GRID; target.z = Math.round(target.z / GRID) * GRID; }
-    const snap = snapRoad(target, road.type, road.id, [event.clientX, event.clientY]);
+    const snap = road ? snapRoad(target, road.type, road.id, [event.clientX, event.clientY]) : snapLine(target, line.kind);
     if (!inSquare(snap.at.x, snap.at.z)) return;
     g.moved = true;
-    road.points = extendRoad(g.points, g.end, [round(snap.at.x + ox), round(snap.at.z + oz)]);
+    (road ?? line).points = extendRoad(g.points, g.end, [round(snap.at.x + ox), round(snap.at.z + oz)]);
     detailsChanged = true; snapMark.visible = snap.snapped;
     if (snap.snapped) snapMark.position.copy(snap.at).setY(snap.at.y + .1);
     renderer.domElement.style.cursor = 'grabbing';
@@ -1072,7 +1140,7 @@ addEventListener('pointerup', event => {
   if (!g || !site) return;
   if (g.kind === 'extend') {
     snapMark.visible = false; renderer.domElement.style.cursor = 'grab';
-    if (!g.moved && tool === 'road') {
+    if (!g.moved && tool === 'road' && roadOf(g.key)) {
       const [ox, oz] = loaded!.frame.origin, [x, z] = g.points[g.end ? g.points.length - 1 : 0];
       const at = new THREE.Vector3(x - ox, loaded!.heights.at(x - ox, z - oz), z - oz);
       path.push(at); roadSnaps[0] = at.clone(); pointer.last = at.clone();
@@ -1103,7 +1171,7 @@ addEventListener('pointerup', event => {
       if (b.kind === 'tree') { showGhost(); render(); }
     }
   } else if (drawing(tool)) {
-    const at = ground(event.clientX, event.clientY, true);
+    const hit = ground(event.clientX, event.clientY, true), at = hit && tool === 'line' ? snapLine(hit).at : hit;
     // A road keeps each click as clicked and where it would snap: only its two ends join streets.
     if (at && tool === 'road') roadSnaps[path.length] = snapRoad(at, options.roadType, undefined, [event.clientX, event.clientY]).at;
     // The second click of a double-click lands on the first.
@@ -1276,8 +1344,10 @@ function showOptions() {
   else if (tool === 'area') parts.push(labelled('Finish', finishSelect(options.finish, v => { options.finish = v; })));
   else if (tool === 'line') {
     const height = Object.assign(document.createElement('input'), {type: 'number', step: '.05', min: '.05', max: '4', value: String(options.lineHeight)});
-    height.onchange = () => { options.lineHeight = Math.min(4, Math.max(.05, Number(height.value) || LINE_HEIGHT[options.lineKind])); };
-    parts.push(labelled('Kind', kindSelect(options.lineKind, v => { options.lineKind = v; options.lineHeight = LINE_HEIGHT[v]; showOptions(); })), labelled('Height m', height));
+    height.onchange = () => { options.lineHeight = Math.min(4, Math.max(.05, Number(height.value) || LINE_HEIGHT[options.lineKind])); updatePreview(); };
+    const snap = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.snapLine});
+    snap.onchange = () => { options.snapLine = snap.checked; };
+    parts.push(labelled('Kind', kindSelect(options.lineKind, v => { options.lineKind = v; options.lineHeight = LINE_HEIGHT[v]; showOptions(); updatePreview(); })), labelled('Height m', height), labelled('Snap to road', snap));
   }
   else if (tool === 'road') {
     const tick = (label: string, key: 'footways' | 'curved' | 'snapFootpath') => {
