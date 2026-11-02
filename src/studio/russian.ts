@@ -1,4 +1,7 @@
 export const russian: Record<string, string> = {
+  'Square saved · rebuilding atlas… You can keep editing.': 'Участок сохранён · обновление атласа… Можно продолжать редактирование.',
+  'Atlas updated · open atlas to view your saved edits.': 'Атлас обновлён · откройте атлас, чтобы посмотреть сохранённые изменения.',
+  'Square saved, but atlas update failed. Save again to retry.': 'Участок сохранён, но обновить атлас не удалось. Нажмите «Сохранить» ещё раз для повтора.',
   'Atlas season': 'Сезон атласа', 'Spring foliage': 'Весенняя листва', 'Autumn foliage': 'Осенняя листва', 'Winter branches': 'Зимние ветви',
   'Wheeled rubbish bin': 'Мусорный контейнер на колёсах',
   'Cylindrical waste bin': 'Цилиндрический контейнер',

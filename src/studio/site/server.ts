@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import {spawn} from 'node:child_process';
+import {AtlasBuildQueue} from './atlas-build.ts';
 import path from 'node:path';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import type {Plugin} from 'vite';
@@ -20,18 +22,37 @@ const body = (request: IncomingMessage) => new Promise<string>((resolve, reject)
 function send(response: ServerResponse, status: number, value: unknown) {
   response.statusCode = status;
   response.setHeader('content-type', 'application/json');
+  response.setHeader('cache-control', 'no-store');
   response.end(JSON.stringify(value));
 }
 
-export function studioSites(): Plugin {
+function rebuildAtlas(root: string) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--max-old-space-size=8192', 'pipeline/build.ts'], {cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
+    let log = '';
+    const capture = (chunk: Buffer) => { log = (log + chunk.toString()).slice(-12000); };
+    child.stdout.on('data', capture);
+    child.stderr.on('data', capture);
+    child.once('error', reject);
+    child.once('close', code => code === 0 ? resolve() : reject(Error(log.trim() || 'Atlas rebuild failed (' + code + ')')));
+  });
+}
+
+export function studioSites(run = rebuildAtlas): Plugin {
   return {
     name: 'studio-sites',
     apply: 'serve',
+    config: () => ({server: {watch: {ignored: ['**/public/data', '**/public/data/**', '**/public/.data-*', '**/public/.data-*/**', '**/public/.data-build.lock', '**/data/source/placements/**']}}}),
     configureServer(server) {
-      const root = server.config.root;
+      const root = server.config.root, builds = new AtlasBuildQueue(() => run(root));
+      server.middlewares.use((request, response, next) => {
+        if ((request.url ?? '').startsWith('/data/')) response.setHeader('cache-control', 'no-store');
+        next();
+      });
       server.middlewares.use('/__studio', (request, response, next) => {
         const parts = (request.url ?? '').split('?')[0].split('/').filter(Boolean);
         void (async () => {
+          if (parts[0] === 'atlas-build' && parts.length === 1 && request.method === 'GET') return send(response, 200, builds.status());
           if (parts[0] === 'sites' && parts.length === 1 && request.method === 'GET') {
             const dir = path.join(root, SITES);
             const sites = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
@@ -51,8 +72,10 @@ export function studioSites(): Plugin {
             const site = JSON.parse(await body(request));
             if (site.version !== 1 || site.id !== id || !Array.isArray(site.placements)) return send(response, 400, {error: 'Not a placement site'});
             fs.mkdirSync(path.join(root, SITES), {recursive: true});
-            fs.writeFileSync(path.join(root, SITES, id + '.json'), JSON.stringify(site, null, 1) + '\n');
-            return send(response, 200, {saved: site.placements.length});
+            const file = path.join(root, SITES, id + '.json'), temporary = file + '.tmp';
+            fs.writeFileSync(temporary, JSON.stringify(site, null, 1) + '\n');
+            fs.renameSync(temporary, file);
+            return send(response, 200, {saved: site.placements.length, build: builds.request()});
           }
           if (parts[0] === 'assets' && parts.length === 3 && request.method === 'POST' && ASSET_ID.test(parts[1])) {
             const [, id, action] = parts, draft = path.join(root, DRAFTS, id), approved = path.join(root, ASSETS, id);

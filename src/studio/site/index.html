@@ -2,7 +2,7 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas site editor</title><link rel="icon" href="data:,"></head>
 <body class="site">
-<header><strong>Site editor</strong><span id="where">Choose a square</span><a href="../">Building studio</a><a id="atlas" href="/">Open atlas</a><a href="../ASSETS.md">Asset guide</a></header>
+<header><strong>Site editor</strong><span id="where">Choose a square</span><a href="../">Building studio</a><a id="atlas" href="/" target="_blank" rel="noopener">Open atlas</a><a href="../ASSETS.md">Asset guide</a></header>
 <nav aria-label="Site controls">
   <button id="choose">Choose square…</button>
   <button id="undo" title="Ctrl+Z">Undo</button><button id="redo" title="Ctrl+Y">Redo</button>
@@ -28,7 +28,7 @@
     <p id="error" role="alert"></p>
   </main>
 </div>
-<footer><output id="status">Loading…</output><output id="cursor"></output><span id="hint"></span></footer>
+<footer><output id="atlas-build" role="status" aria-live="polite"></output><output id="status">Loading…</output><output id="cursor"></output><span id="hint"></span></footer>
 <dialog id="map">
   <form method="dialog">
     <p><strong>Choose a square</strong> Click the map to centre it; scroll to zoom, drag to pan. Squares already worked on are outlined.</p>
