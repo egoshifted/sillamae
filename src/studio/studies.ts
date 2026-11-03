@@ -3,9 +3,18 @@ import {usePhysicalDepth} from './depth.ts';
 import {city, definitions} from './project.ts';
 import {createMassingStudy} from './assembly/massing.ts';
 import {createSurveyStudy, surveyGround} from './survey.ts';
+import {carveGroundPatches} from '../engine/survey/carve.ts';
 import type {WorldData} from '../engine/data.ts';
-import type {Building, OverrideContext} from '../engine/types.ts';
+import {TRIANGLE, VERTEX, type Building, type GroundTriangle, type OverrideContext, type Polygon} from '../engine/types.ts';
 import type {StudyModel} from './types.ts';
+
+function cutGround(ground: GroundTriangle[], patches: Polygon[]): GroundTriangle[] {
+  const vertices = new Float32Array(ground.length * TRIANGLE);
+  ground.forEach((t, i) => { for (let k = 0; k < 3; k++) vertices.set(t.slice(k * 3, k * 3 + 3), i * TRIANGLE + k * VERTEX); });
+  const cut = carveGroundPatches(vertices, patches), result: GroundTriangle[] = [];
+  for (let i = 0; i < cut.length; i += TRIANGLE) result.push([0, 1, 2].flatMap(k => Array.from(cut.subarray(i + k * VERTEX, i + k * VERTEX + 3))));
+  return result;
+}
 
 export function stages(id: string) {
   const result = [{id: 'survey', label: 'Original survey'}, {id: 'massing', label: 'Provisional massing'}];
@@ -20,7 +29,7 @@ export async function buildStudy(world: WorldData, id: string, mode: string) {
   const building = world.buildings.find(b => b.id === id);
   if (!building) throw Error('Unknown study building: ' + id);
   const scene = new THREE.Scene(), frame = {...city.frame, base: world.base};
-  const groundTriangles = world.siteGround[id] ?? await surveyGround(building);
+  let groundTriangles = world.siteGround[id] ?? await surveyGround(building);
   const context: OverrideContext = {scene, building: structuredClone(building), terrain: world.terrain, frame, ground: groundTriangles, changed() {}};
   let model: StudyModel;
   if (mode === 'survey') model = await createSurveyStudy(building, frame);
@@ -34,6 +43,7 @@ export async function buildStudy(world: WorldData, id: string, mode: string) {
     const stage = definitions.find(s => s.id === id)?.stages[mode];
     if (!stage) throw Error('Unknown study stage: ' + mode);
     model = await stage.build(context);
+    if (stage.cutsGround) groundTriangles = cutGround(groundTriangles, model.root.userData.groundPatches ?? []);
   }
   try { await model.ready; if (model.root.userData.detailError) throw Error(model.root.userData.detailError); }
   catch (error) { model.dispose(); throw error; }

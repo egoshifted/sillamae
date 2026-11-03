@@ -82,7 +82,9 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
       for(const yy of [y-.08,y+h+.08])surface([[x-.08,yy,0],[x+w+.08,yy,0],[x+w+.08,yy,-.31],[x-.08,yy,-.31]]);
     }
     p.block(x-.08,y-.08,w+.16,h+.16,.045,dark,.015-inset);p.block(x,y,w,h,.045,glass,.065-inset);if(curtains)for(let j=0;j<8;j++)p.block(x+j*w/8,y,.055,h,.015,j%2?trim:concrete,.117-inset);for(const xx of [x-.06,x+w*division-.025,x+w])p.block(xx,y-.06,.06,h+.12,.07,frame,.12-inset);for(const yy of [y-.06,y+h])p.block(x-.06,yy,w+.12,.06,.07,frame,.12-inset);if(annexHood)p.block(x-.16,y+h+.12,w+.32,.19,.16,concrete,.02);else if(y>=1.8)p.block(x-.31,y+h+.12,w+.62,.19,.13,lintelMaterial,-.13);if(annexHood)p.block(x-.1,y-.15,w+.2,.07,.24,concrete,.02);else{p.block(x-.08,y-.085,w+.16,.025,.26,sillMetal,-.20);p.block(x-.08,y-.10,w+.16,.04,.018,sillMetal,.042);}}
-  const height=design.height;
+  const height=design.height,basementW=design.basementWindow.width;
+  // Kesk 1's basement columns; a sister's wider windows stay centred on them.
+  const basementX=(i: number,L: number)=>(i===8?L*.1:i===4?L*.32:i===14?L*.76:L*.65)-(basementW-1.2)/2;
   const roofLevel=height-.22,mainParapetTop=roofLevel+(design.mainParapetAboveRoof??.22);
   // Recessed balcony back walls must end BELOW the roof deck. Previously their
   // upper 22 cm pierced the roof as five separate brick strips inside the edge.
@@ -109,7 +111,9 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
       if(i===8)x=p.L*.1;
       if(x!==undefined){cuts.push({x:x-.31,y:y+1.45+.12,w:w+.62,h:.19});cuts.push({x:x-.08,y:y-.08,w:w+.16,h:1.61});}
     }
-    if([4,8,14,19].includes(i)){const x=i===8?p.L*.1:i===4?p.L*.32:i===14?p.L*.76:p.L*.65;cuts.push({x:x-.08,y:.27,w:1.36,h:.96});}
+    if([4,8,14,19].includes(i)){const x=basementX(i,p.L);cuts.push({x:x-.08,y:.27,w:basementW+.16,h:.96});}
+    const wing=design.wingBasementWindow;
+    if(wing&&i===1)cuts.push({x:p.L*wing.along-basementW/2-.08,y:wing.y-.08,w:basementW+.16,h:.96});
     if(i===18)cuts.push({x:(p.L-1.25)/2-.08,y:.27,w:1.41,h:.96});
     if(cuts.length){
       const top=recessed?roofLevel-.04:roofLevel,ys=[0,1.8,top,...cuts.flatMap(c=>[c.y,c.y+c.h])].filter(y=>y>=0&&y<=top).sort((a,b)=>a-b);
@@ -219,6 +223,29 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
         for(let start=x;start<x+width;start+=.25){const w=Math.min(.25,x+width-start),point=p.at(start+w/2,0,offset+depth/2);p.block(start,apronGround(point)-.025,w,.06,depth,material,offset);}
       }
     }
+  // Wells for basement windows that the ground reaches. Their footprints are
+  // registered before the aprons, which skip earlier patches; they start inside
+  // the wall face because the aprons tuck 0.2 m under it and would otherwise
+  // cross the window reveal. Proportions from Kesk 5's lightwells; provisional.
+  if(design.lightwells)for(const i of [4,8,14,18]){
+    const p=edge(i),back=i===18?-.94:0,w=i===18?1.25:basementW,x=i===18?(p.L-w)/2:basementX(i,p.L);
+    const y=.35,wall=.12,depth=.65+wall,wx=x-.15-wall,ww=w+2*(.15+wall);
+    const top=Math.max(...[wx,wx+ww].flatMap(xx=>[back,back+depth].map(d=>apronGround(p.at(xx,0,d)))));
+    if(top<y-.1)continue;
+    const floor=y-.2,rim=top+.08;
+    for(const xx of [wx,wx+ww-wall])p.block(xx,floor,wall,rim-floor,depth,concrete,back);
+    p.block(wx+wall,floor,ww-2*wall,rim-floor,wall,concrete,back+depth-wall);
+    p.block(wx,floor-.1,ww,.1,depth,concrete,back);
+    (root.userData.groundPatches??=[]).push([[wx,back-.25],[wx+ww,back-.25],[wx+ww,back+depth],[wx,back+depth]].map(([u,d])=>{const q=p.at(u,0,d);return [q.x+ox,q.z+oz];}));
+  }
+  // The sunken annex access pit, as Kesk 1's adapter carves it from the survey;
+  // registered here so the aprons leave it open over ground that is not carved.
+  // Like the wells, it starts 0.25 m inside the wall faces the aprons tuck under.
+  if(design.annexAccessOnGround){
+    const a=edge(19),offset=Math.max(...g.map(q=>(q[0]-g[19][0])*a.n.x+(q[1]-g[19][1])*a.n.z))+.06,depth=offset+design.pathWidth;
+    const start=(g[2][0]-g[19][0])*Math.cos(a.angle)-(g[2][1]-g[19][1])*Math.sin(a.angle);
+    (root.userData.groundPatches??=[]).push(...[[4.29,a.L,-.25,depth],[a.L,start,offset-.31,depth]].map(([x0,x1,d0,d1])=>[[x0,d0],[x1,d0],[x1,d1],[x0,d1]].map(([u,d])=>{const q=a.at(u,0,d);return [q.x+ox,q.z+oz] as [number,number];})));
+  }
   if(design.baseProjection){
     for(let i=0;i<g.length;i++){
       if([6,16,19].includes(i))continue; // Doorways and approved annex access stay untouched.
@@ -291,7 +318,8 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
       p.block(.12,0,L-.24,1.8,.04,[2,9,11,13,18].includes(i)?foundation:dark,[2,9,11,13,18].includes(i)?-.98:.015);
       }
       for(const x of [0,L-shoulder])p.block(x,0,shoulder,1.8,1.13,foundation,-1.13);
-      for(let r=0;r<design.floors;r++){const y=1.9+r*design.floorPitch,brown=(i===2&&r===1)||(i===11&&r===1),timber=i===9&&r===0,frame=brown||timber?wood:trim;
+      for(let r=0;r<design.floors;r++){const unit=(units: number[][])=>units.some(([edge,floor])=>edge===i&&floor===r);
+        const y=1.9+r*design.floorPitch,brown=unit(design.brownBalconies),timber=unit(design.timberBalconies),frame=brown||timber?wood:trim;
         p.block(.05,y,L-.1,1.0,.16,trim,.05);
         for(let x=.08;x<L-.05;x+=.09)p.block(x,y,.025,1.0,.035,concrete,.21);
         // The 17 cm band height is inferred from the supplied photo.
@@ -316,7 +344,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
           for(const yy of [y+1.17,y+2.65])p.block(.08,yy,L-.16,.07,.1,balconyFrame,.19-frameInset);
         }
         p.block(.02,y+2.8,L-.04,.1,1.25,concrete,-1.0);
-        if(i===13&&r===0){
+        if(unit(design.sunburstBalconies)){
           for(let bay=0;bay<3;bay++){const cx=.15+(bay+.5)*(L-.3)/3,cy=y+1.9;
             for(let spoke=0;spoke<12;spoke++){const a=spoke*Math.PI/6;beam(p.at(cx,cy,.34),p.at(cx+Math.cos(a)*(L-.3)/6,cy+Math.sin(a)*.64,.34),.014,trim);}
             for(const xx of [cx-(L-.3)/6,cx+(L-.3)/6])beam(p.at(xx,y+1.2,.34),p.at(xx,y+2.65,.34),.018,trim);
@@ -324,16 +352,17 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
         }
       }
     }
-    for(let r=0;r<9;r++){const y=2.8+r*2.85;
-      if(i===14)window(p,L*.76,y,1.3,1.45,trim,false,false,r===0?.3:.5);
+    for(let r=0;r<9;r++){const y=2.8+r*2.85,timberWindow=design.timberWindows.some(([edge,floor])=>edge===i&&floor===r);
+      if(i===14)window(p,L*.76,y,1.3,1.45,trim,false,false,design.fanlightGrille&&r===0?.3:.5);
       if(i===16&&r>0)window(p,(L-1.65)/2,y,1.65);
       if(i===19)window(p,L*.83,y);
-      if(i===4)window(p,L*.32,y,L*.37,1.45,r===2?wood:trim,r===2);
+      if(i===4)window(p,L*.32,y,L*.37,1.45,timberWindow?wood:trim,timberWindow);
       if(i===6&&r>0)window(p,(L-2.2)/2,y-.15,2.2,1.45);
       if(i===8)window(p,L*.1,y); // Single column: the two spurious lower windows are removed.
     }
-    if([4,8,14,19].includes(i))window(p,i===8?L*.1:i===4?L*.32:i===14?L*.76:L*.65,.35,1.2,.8);
-    if(i===18)window({...p,at:(x: number,y: number,d=0)=>p.at(x,y,d-.94),block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>p.block(x,y,w,h,d,m,offset-.94)},(L-1.25)/2,.35,1.25,.8);
+    if([4,8,14,19].includes(i))window(p,basementX(i,L),.35,basementW,.8,trim,false,false,design.basementWindow.division);
+    if(design.wingBasementWindow&&i===1)window(p,L*design.wingBasementWindow.along-basementW/2,design.wingBasementWindow.y,basementW,.8,trim,false,false,design.basementWindow.division);
+    if(i===18)window({...p,at:(x: number,y: number,d=0)=>p.at(x,y,d-.94),block:(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset=0)=>p.block(x,y,w,h,d,m,offset-.94)},(L-1.25)/2,.35,1.25,.8,trim,false,false,design.basementWindow.division);
   }
   // September 2023 reference: the entrance fills the bay between both walls.
   // The old 7% margins left grass exposed beside the stair and a short canopy.
@@ -360,20 +389,23 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   // The 38 cm canopy upstand is inferred from the supplied photo.
   entry.block(0,3.53,entry.L,.16,.015,paleMetal,1.42);
   entry.block(0,3.69,entry.L,.012,.075,paleMetal,1.36);
+  if(design.entranceCanopyUpstand){
   entry.block(-.02,3.69,entry.L+.04,.38,.025,canopyMembrane,.002);
   for(const x of [-.02,entry.L-.02])entry.block(x,3.69,.04,.38,1.42,canopyMembrane,-.015);
+  }
   // Extend entrance solids down into the sampled apron. The old fixed
   // +.02/.05 bottoms left daylight below the landing and stair side faces.
   const entrySolid=(x: number,y: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,offset: number)=>{
     const bottom=Math.min(y,...[x,x+w].flatMap(xx=>[offset,offset+d].map(dd=>apronGround(entry.at(xx,0,dd))-.03)));
-    entry.block(x,bottom,w,y+h-bottom,d,m===concrete?stepConcrete:m,offset);
+    // An at-grade landing is paving: the stairs' 1 m depth lift would draw its buried sides through the ground.
+    entry.block(x,bottom,w,y+h-bottom,d,m===concrete?(design.entranceStair?stepConcrete:apronConcrete):m,offset);
   };
     entrySolid(-.03,.05,stairX+.03,.9,2.76,concrete,-.04);
   entry.block(ex+.08,.95,ew*.30,2.20,.075,dark,.13);
   entry.block(stairX-.13,.95,.26,2.4,1.05,brick,.02);
     entrySolid(stairX,.05,stairW,.9,1.16,concrete,-.04);
-  for(let j=0;j<5;j++)entrySolid(stairX,.02,stairW,.9-j*.18,.32,concrete,1.12+j*.32);
-  for(const x of [ex+ew-.06]){for(const [d,y] of [[1.1,.95],[2.6,.08]])beam(entry.at(x,y,d),entry.at(x,y+.95,d),.025,metal);beam(entry.at(x,1.9,1.1),entry.at(x,1.03,2.6),.025,metal);}
+  if(design.entranceStair)for(let j=0;j<5;j++)entrySolid(stairX,.02,stairW,.9-j*.18,.32,concrete,1.12+j*.32);
+  if(design.entranceStair)for(const x of [ex+ew-.06]){for(const [d,y] of [[1.1,.95],[2.6,.08]])beam(entry.at(x,y,d),entry.at(x,y+.95,d),.025,metal);beam(entry.at(x,1.9,1.1),entry.at(x,1.03,2.6),.025,metal);}
   // September 2023 side view: annex outer face aligns with the tiled access path.
   // About six slab widths are visible; 2.4 m is provisional, not surveyed.
   // This supersedes the misleading rear-view balcony-width comparison.
@@ -393,12 +425,13 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   foundationStain=(x,y,z)=>{const along=(x+ox-g[19][0])*Math.cos(annex.angle)-(z+oz-g[19][1])*Math.sin(annex.angle);
     const reach=.52+.07*Math.sin(along*2.1)+.04*Math.sin(along*5.3),depth=parapetTop-y;
     return 1-.48*Math.max(0,Math.min(1,(reach-depth)/.18));};
-  annex.block(annexStart,-1.14,annexEndX-annexStart,annexRoofY+1.14,annexDepth,foundation,.02);
+  const annexWall=design.annexFinish==='brick'?brick:foundation;
+  annex.block(annexStart,-1.14,annexEndX-annexStart,annexRoofY+1.14,annexDepth,annexWall,.02);
   // Keep the membrane inside the concrete shell: its side face must not
   // intersect the exterior parapet and create a flickering horizontal stripe.
   annex.block(annexStart+parapetThickness,annexRoofY,annexEndX-annexStart-parapetThickness,.045,annexDepth-parapetThickness,annexMembrane,.02);
-  annex.block(annexStart,annexRoofY,annexEndX-annexStart,parapetTop-annexRoofY,parapetThickness,foundation,annexDepth-parapetThickness+.02);
-  annex.block(annexStart,annexRoofY,parapetThickness,parapetTop-annexRoofY,annexDepth,foundation,.02);
+  annex.block(annexStart,annexRoofY,annexEndX-annexStart,parapetTop-annexRoofY,parapetThickness,annexWall,annexDepth-parapetThickness+.02);
+  annex.block(annexStart,annexRoofY,parapetThickness,parapetTop-annexRoofY,annexDepth,annexWall,.02);
   foundationStain=null;
   annex.block(annexStart-.03,parapetTop,annexEndX-annexStart+.06,.012,parapetThickness+.08,roofEdgeMetal,annexDepth-parapetThickness-.02);
   annex.block(annexStart-.03,parapetTop-.10,annexEndX-annexStart+.06,.10,.012,roofEdgeMetal,annexDepth+.048);
@@ -420,22 +453,28 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   window(annexEnd,ax,.35,aw,1.15,wood,false,true);
   for(let j=0;j<=7;j++)annexEnd.block(ax+j*aw/7,.35,.025,1.15,.025,metal,.23);
   for(let j=0;j<=4;j++)annexEnd.block(ax,.35+j*1.15/4,aw,.025,.025,metal,.23);
-  const serviceDoorX=annexEndX+.13,serviceDoorW=canopyEnd-serviceDoorX-.1;
-  annex.block(serviceDoorX,-.95,serviceDoorW,2.55,.07,wood,.03);
-  annex.block(serviceDoorX+serviceDoorW*.5,-.95,.025,2.55,.025,metal,.105);
+  const pathStart=(g[2][0]-g[19][0])*Math.cos(annex.angle)-(g[2][1]-g[19][1])*Math.sin(annex.angle);
+  // Kesk 1's sunken access hangs from its local zero. A sister seated lower
+  // hangs it from the ground at the stair head instead, keeping its five risers.
+  const access=design.annexAccessOnGround?apronGround(annex.at(pathStart+.3,0,pathOffset+pathWidth/2)):0;
+  const serviceDoorX=annexEndX+.13,serviceDoorW=canopyEnd-serviceDoorX-.1,serviceDoorY=access-.95,serviceDoorH=Math.min(2.55,1.83-serviceDoorY);
+  annex.block(serviceDoorX,serviceDoorY,serviceDoorW,serviceDoorH,.07,wood,.03);
+  annex.block(serviceDoorX+serviceDoorW*.5,serviceDoorY,.025,serviceDoorH,.025,metal,.105);
   annex.block(annexEndX,1.85,canopyEnd-annexEndX,.16,annexDepth+.08,concrete,.02);
   annex.block(annexEndX,annexRoofY,canopyEnd-annexEndX,.045,annexDepth+.08,annexMembrane,.02);
-  beam(annex.at(canopyEnd-.08,-1,annexDepth-.05),annex.at(canopyEnd-.08,1.85,annexDepth-.05),.035,redWood);
-  const pathStart=(g[2][0]-g[19][0])*Math.cos(annex.angle)-(g[2][1]-g[19][1])*Math.sin(annex.angle);
+  beam(annex.at(canopyEnd-.08,access-1,annexDepth-.05),annex.at(canopyEnd-.08,1.85,annexDepth-.05),.035,redWood);
   // Continuous floor under the stairs prevents open gaps exposing the water plane.
-  annex.block(4.29,-1.14,annex.L-4.29,.14,annexDepth+.04,stepConcrete,-.02);
-  annex.block(annex.L-.02,-1.14,pathStart-annex.L+.04,.14,pathWidth+.04,stepConcrete,pathOffset-.02);
-  for(let j=0;j<5;j++)annex.block(pathStart-(j+1)*.35,-1.12,.35,1.12-(j+1)*.2,pathWidth,stepConcrete,pathOffset);
-  annex.block(4.31,-1.12,pathStart-4.31,1.12,.12,stepConcrete,annexDepth-.12);
-  annex.block(4.29,-1.14,annex.L-4.29,1.14,.12,stepConcrete,-.12);
-  annex.block(annex.L,-1.14,pathStart-annex.L,1.14,.12,stepConcrete,pathOffset-.12);
-  for(let x=annexEndX+.1;x<=pathStart;x+=2)beam(annex.at(x,0,annexDepth),annex.at(x,.95,annexDepth),.025,redWood);
-  beam(annex.at(annexEndX+.1,.95,annexDepth),annex.at(pathStart,.95,annexDepth),.025,redWood);
+  annex.block(4.29,access-1.14,annex.L-4.29,.14,annexDepth+.04,stepConcrete,-.02);
+  annex.block(annex.L-.02,access-1.14,pathStart-annex.L+.04,.14,pathWidth+.04,stepConcrete,pathOffset-.02);
+  for(let j=0;j<5;j++)annex.block(pathStart-(j+1)*.35,access-1.12,.35,1.12-(j+1)*.2,pathWidth,stepConcrete,pathOffset);
+  annex.block(4.31,access-1.12,pathStart-4.31,1.12,.12,stepConcrete,annexDepth-.12);
+  // Linings against the building stop at its base; above that the plinth is the wall.
+  const lining=Math.min(access,0)-(access-1.14);
+  annex.block(4.29,access-1.14,annex.L-4.29,lining,.12,stepConcrete,-.12);
+  annex.block(annex.L,access-1.14,pathStart-annex.L,lining,.12,stepConcrete,pathOffset-.12);
+  const rail=design.annexRail==='metal'?mat('#5d6a5f',.6):redWood;
+  for(let x=annexEndX+.1;x<=pathStart;x+=2)beam(annex.at(x,access,annexDepth),annex.at(x,access+.95,annexDepth),.025,rail);
+  beam(annex.at(annexEndX+.1,access+.95,annexDepth),annex.at(pathStart,access+.95,annexDepth),.025,rail);
   const rear=edge(16),rx=.12,rw=rear.L-.24;
   rear.block(rx,.85,rw,2.5,.06,dark,.02);rear.block(rx+.16,.9,rw-.32,2.3,.07,wood,.1);
   rear.block(rx-.1,3.4,rw+.2,.17,1.05,concrete,.02);
@@ -451,20 +490,22 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   for(let j=0;j<5;j++)rearStep(.85-j*.17,.3,.87+j*.3);
   for(const x of [rx+.04,rx+rw-.04]){beam(rear.at(x,.85,.85),rear.at(x,1.75,.85),.022,redWood);beam(rear.at(x,.05,2.3),rear.at(x,.95,2.3),.022,redWood);beam(rear.at(x,1.75,.85),rear.at(x,.95,2.3),.022,redWood);}
   }
+  if(design.fanlightGrille){
   const grille=edge(14),gx=grille.L*.76,gd=-.045,gx0=gx+.04,gx1=gx+1.26,gy0=2.84,gy1=4.21;
   for(let j=0;j<=12;j++){const a=j*Math.PI/24,dx=Math.cos(a),dy=Math.sin(a),length=Math.min((gx1-gx0)/Math.max(dx,.0001),(gy1-gy0)/Math.max(dy,.0001));beam(grille.at(gx0,gy0,gd),grille.at(gx0+dx*length,gy0+dy*length,gd),.012,trim);}
   for(const x of [gx0,gx1])beam(grille.at(x,gy0,gd),grille.at(x,gy1,gd),.018,trim);
   for(const y of [gy0,gy1])beam(grille.at(gx0,y,gd),grille.at(gx1,y,gd),.018,trim);
   for(let j=0;j<24;j++){const a=j*Math.PI/48,b=(j+1)*Math.PI/48;beam(grille.at(gx0+.98*Math.cos(a),gy0+.98*Math.sin(a),gd),grille.at(gx0+.98*Math.cos(b),gy0+.98*Math.sin(b),gd),.012,trim);}
-  const signWall=edge(1);
-  function plaque(text: string,x: number,y: number,w: number,h: number){const c=document.createElement('canvas');c.width=512;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle='#f3f2e8';ctx.fillRect(0,0,512,256);ctx.fillStyle='#263130';ctx.font=`bold ${text===design.number?200:105}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,133);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;const m=mat('#ffffff');m.map=t;m.userData.flushPlaque=true;const right=new THREE.Vector3(signWall.n.z,0,-signWall.n.x),matrix=new THREE.Matrix4().makeBasis(right,new THREE.Vector3(0,1,0),signWall.n);matrix.setPosition(signWall.at(x,y,.0045));emit(new THREE.BoxGeometry(w,h,.003),m,matrix);}
-  plaque(design.number,signWall.L-.7,4,.42,.4);plaque(design.street,signWall.L-.7,3.62,.85,.25);
-  const fp=edge(8),fx=fp.L*.1;fp.block(fx,5.65,1.3,.22,.3,wood,-.12);
+  }
+  const signWall=edge(design.plaque?.edge??1);
+  function plaque(text: string,x: number,y: number,w: number,h: number){const c=document.createElement('canvas');c.width=512;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle='#f3f2e8';ctx.fillRect(0,0,512,256);ctx.fillStyle='#263130';ctx.font=`bold ${text===design.number?200:105}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,133);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;const m=mat('#ffffff');m.map=t;m.userData.flushPlaque=true;const right=new THREE.Vector3(signWall.n.z,0,-signWall.n.x),matrix=new THREE.Matrix4().makeBasis(right,new THREE.Vector3(0,1,0),signWall.n);matrix.setPosition(signWall.at(x,y,(design.plaque?.depth??0)+.0045));emit(new THREE.BoxGeometry(w,h,.003),m,matrix);}
+  if(design.plaque){const {x,y,streetWidth}=design.plaque;plaque(design.number,signWall.L+x,y,.42,.4);plaque(design.street,signWall.L+x,y-.38,streetWidth,.25);}
+  const fp=edge(8),fx=fp.L*.1;if(design.flowerBox)fp.block(fx,5.65,1.3,.22,.3,wood,-.12);
   // Position and length are approximate, referenced to the lowest balcony frame.
-  const flagX=fp.L-.85;fp.block(flagX,3.6,.09,.32,.035,metal,0);
-  beam(fp.at(flagX+.045,3.65,.025),fp.at(flagX+.045,3.92,.23),.024,metal);
-  for(let j=0;j<12;j++){const p=fp.at(fx+.08+j*.1,5.95+.08*Math.sin(j),.09);dummy.position.copy(p);dummy.rotation.set(0,0,0);dummy.updateMatrix();emit(new THREE.IcosahedronGeometry(.095,0),j%3?flower:green,dummy.matrix);}
-  const bp=edge(2),dish=bp.at(bp.L-.25,8.6,.65);beam(bp.at(bp.L-.25,8.3,.12),dish,.035,metal);dummy.position.copy(dish);dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),bp.n.clone().add(new THREE.Vector3(0,.25,0)).normalize());dummy.scale.set(1,1,.22);dummy.updateMatrix();emit(new THREE.SphereGeometry(.42,16,10),trim,dummy.matrix);dummy.scale.set(1,1,1);
+  if(design.flag){const flagX=fp.L-.85;fp.block(flagX,3.6,.09,.32,.035,metal,0);
+  beam(fp.at(flagX+.045,3.65,.025),fp.at(flagX+.045,3.92,.23),.024,metal);}
+  if(design.flowerBox)for(let j=0;j<12;j++){const p=fp.at(fx+.08+j*.1,5.95+.08*Math.sin(j),.09);dummy.position.copy(p);dummy.rotation.set(0,0,0);dummy.updateMatrix();emit(new THREE.IcosahedronGeometry(.095,0),j%3?flower:green,dummy.matrix);}
+  if(design.dish){const bp=edge(2),dish=bp.at(bp.L-.25,8.6,.65);beam(bp.at(bp.L-.25,8.3,.12),dish,.035,metal);dummy.position.copy(dish);dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),bp.n.clone().add(new THREE.Vector3(0,.25,0)).normalize());dummy.scale.set(1,1,.22);dummy.updateMatrix();emit(new THREE.SphereGeometry(.42,16,10),trim,dummy.matrix);dummy.scale.set(1,1,1);}
   if(terrain){
     const approach=edge(6);
     const apronInset=approach.L*.07;
@@ -505,7 +546,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
     }
     if(vertices.length){const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(new Float32Array(vertices.length/3*2),2));geo.computeVertexNormals();emit(geo,cap.material,new THREE.Matrix4());}
   }
-  // Merge by material: façade detail should not add hundreds of draw calls.
+  // Merge by material: faÃ§ade detail should not add hundreds of draw calls.
   for(const [material,parts] of batches){const merged=new THREE.BufferGeometry();for(const name of ['position','normal','uv',...(material===foundation?['color']:[])]){const size=parts[0].attributes[name].itemSize,total=parts.reduce((n,p)=>n+p.attributes[name].array.length,0),array=new Float32Array(total);let offset=0;for(const p of parts){array.set(p.attributes[name].array,offset);offset+=p.attributes[name].array.length;}merged.setAttribute(name,new THREE.BufferAttribute(array,size));}merged.computeBoundingSphere();const mesh=new THREE.Mesh(merged,material);mesh.castShadow=!material.userData.groundSurface;mesh.receiveShadow=true;root.add(mesh);parts.forEach(p=>p.dispose());}
   root.userData.setTextures=(enabled: boolean)=>{for(const m of [brick,concrete,stepConcrete,apronConcrete,foundation,...membraneMaterials]){m.userData.texture??=m.map;m.userData.bumpTexture??=m.bumpMap;m.map=enabled?m.userData.texture:null;m.bumpMap=enabled?m.userData.bumpTexture:null;m.needsUpdate=true;}};
   let disposed=false;

@@ -37,6 +37,8 @@ export const study: StudyDefinition = {
 };
 ```
 
+A stage with `cutsGround: true` removes the model's `root.userData.groundPatches` from the study ground, as the atlas does once the building is registered; use it to review lightwells and sunken access before integration.
+
 Factories receive `OverrideContext`: building, frame, terrain, site ground, scene and optional change notification. They return the root plus disposal, optional texture toggle and readiness. Factories can share components without duplicating the whole model. `survey`, `massing` and `assembled` are reserved stages. The viewer waits for readiness, releases superseded loads and rebuilds without mutating source inputs.
 
 Keep one correction active. Establish the plain shell before detail, compare actual source imagery, and implement independent tests for each consequential relationship. The starter extrusion does not supply a universal architectural style. Add genuinely reusable low-level tools under `studio/assembly`; keep building-specific geometry and assumptions in its own folder.

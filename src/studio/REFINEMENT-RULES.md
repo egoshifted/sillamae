@@ -223,6 +223,10 @@ Lightwell probes must include the strip between the external facade plane and ac
 
 Audit shared-return/end-cap materials as well as geometry: a closed surface left in plain study material can make masonry appear to stop short. Check colour/height texture ownership and metre-scale UVs on side faces through the full depth, with foundation finish retained separately. Reusing a surface should reference the existing assets and safe shared lifetimes; keep each building’s materials independent and preserve approved model/texture inputs.
 
+## Ground cuts against aprons — 3 November 2026
+
+A lightwell or sunken-access ground patch must reach inside the wall face as far as any apron tucks under it, and be registered before the aprons are laid. Otherwise an apron strip survives between the wall and the cut and crosses the recessed glazing, once per stacked survey layer. Probe for ground-surface triangles across the full opening width between the glass and the cut, with the ground hidden, not only at the well centre. A sister model seated lower than its source must re-reference sunken features to its own ground rather than inherit the source datum.
+
 ## Apron depth and foundation visibility
 
 Shader depth lift changes visibility without moving geometry. A large lift on a ground apron can draw buried triangles through a foundation and imitate raised or jagged feet. Compare identical views with shadows off, inspect actual heights and nearby survey layers, then use the smallest appropriate offset for that surface. Keep stair/road requirements separate. Give shader variants distinct cache keys and recheck full cast shadows and low-angle camera motion.
