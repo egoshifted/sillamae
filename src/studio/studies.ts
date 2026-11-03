@@ -5,6 +5,7 @@ import {createMassingStudy} from './assembly/massing.ts';
 import {createSurveyStudy, surveyGround} from './survey.ts';
 import type {WorldData} from '../engine/data.ts';
 import type {Building, OverrideContext} from '../engine/types.ts';
+import {cutGround} from './ground-cut.ts';
 import type {StudyModel} from './types.ts';
 
 export function stages(id: string) {
@@ -41,7 +42,8 @@ export async function buildStudy(world: WorldData, id: string, mode: string) {
   usePhysicalDepth(scene);
   const bounds = new THREE.Box3().setFromObject(model.root), ground = new THREE.Group(); ground.name = 'study-ground';
   const positions: number[] = [];
-  for (const t of groundTriangles) {
+  for (const t of cutGround(groundTriangles, model.groundCuts ?? [])) {
+    if(model.keepGroundTriangle&&!model.keepGroundTriangle(t))continue;
     // The source sea plane is not a local contact surface; retain nearby land layers.
     if (Math.max(t[2], t[5], t[8]) < bounds.min.y + frame.base - 5) continue;
     for (let i = 0; i < 9; i += 3) positions.push(t[i] - frame.origin[0], t[i + 2] - frame.base, t[i + 1] - frame.origin[1]);
