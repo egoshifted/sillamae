@@ -11,20 +11,12 @@ import {createRearSite,streetTrees} from './site.ts';
 import {addTrees} from '../../../engine/vegetation/trees.ts';
 import type {Tree} from '../../../engine/types.ts';
 
-export function createGardenStudy(context:OverrideContext) {
+export function createGarden(context:OverrideContext) {
   const building=createFrontStudy(context),root=new THREE.Group(),garden=new THREE.Group();root.add(building.root,garden);
   let masonry:THREE.MeshStandardMaterial|undefined;
   building.root.traverse(o=>{if(o instanceof THREE.Mesh&&o.material instanceof THREE.MeshStandardMaterial&&o.material.userData.surface==='kesk1-masonry-v1')masonry=o.material;});
   const annex=createAnnex(context,building.root.userData.audit.datum,masonry);annex.root.position.copy(building.root.position);annex.root.rotation.copy(building.root.rotation);root.add(annex.root);
   const site=createRearSite(context.ground,building.root.userData.audit.datum);site.root.position.copy(building.root.position);site.root.rotation.copy(building.root.rotation);root.add(site.root);
-  const trees=new THREE.Group();trees.name='ranna-street-trees';root.add(trees);
-  const list:Tree[]=streetTrees.map(t=>{
-    const p='local' in t?sourcePoint(...t.local):t.p,z='z' in t?t.z:entranceDatum(context.ground,[p]);
-    if(z===null)throw Error('Street tree needs survey land');
-    return {p,h:t.h,r:t.r,type:'Lehtpuu',year:2021,z};
-  });
-  // Near crowns only: the studio camera stays close, and the engine's level switching needs the atlas loop.
-  addTrees(trees,list,context.frame).update(new THREE.Vector3(list[0].p[0]-context.frame.origin[0],0,list[0].p[1]-context.frame.origin[1]),10);
   garden.name='right-front-garden';garden.position.copy(building.root.position);garden.rotation.copy(building.root.rotation);
   // Plant origins meet the upper survey layer, whereas the foundation sampler selects the lowest one.
   const upperGround=context.ground.map(t=>t.map((v,i)=>i%3===2?-v:v));
@@ -56,5 +48,19 @@ export function createGardenStudy(context:OverrideContext) {
     lamp.position.set(x,-height-context.frame.base-building.root.position.y,z);lamp.rotation.y=Math.PI;lamp.traverse(o=>{if(o instanceof THREE.Mesh)o.castShadow=o.receiveShadow=true;});garden.add(lamp);
   }
   let disposed=false;
-  return {...building,root,ready:Promise.all([building.ready,annex.ready]),setTextures(enabled:boolean){building.setTextures?.(enabled);annex.setTextures(enabled);site.setTextures(enabled);},groundCuts:[...(building.groundCuts??[]),...annex.groundCuts,...site.groundCuts],dispose(){if(disposed)return;disposed=true;building.dispose();annex.dispose();site.dispose();trees.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();for(const m of [o.material].flat())m.dispose();}});trees.removeFromParent();garden.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry.dispose();});foliage.forEach(m=>m.dispose());garden.removeFromParent();root.removeFromParent();}};
+  return {...building,root,datum:building.root.userData.audit.datum as number,ready:Promise.all([building.ready,annex.ready]),setTextures(enabled:boolean){building.setTextures?.(enabled);annex.setTextures(enabled);site.setTextures(enabled);},groundCuts:[...(building.groundCuts??[]),...annex.groundCuts,...site.groundCuts],dispose(){if(disposed)return;disposed=true;building.dispose();annex.dispose();site.dispose();garden.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry.dispose();});foliage.forEach(m=>m.dispose());garden.removeFromParent();root.removeFromParent();}};
+}
+
+// The atlas draws the street trees itself, from the survey register and the town's saved site edits.
+export function createGardenStudy(context:OverrideContext) {
+  const model=createGarden(context),trees=new THREE.Group();trees.name='ranna-street-trees';model.root.add(trees);
+  const list:Tree[]=streetTrees.map(t=>{
+    const p='local' in t?sourcePoint(...t.local):t.p,z='z' in t?t.z:entranceDatum(context.ground,[p]);
+    if(z===null)throw Error('Street tree needs survey land');
+    return {p,h:t.h,r:t.r,type:'Lehtpuu',year:2021,z};
+  });
+  // Near crowns only: the studio camera stays close, and the engine's level switching needs the atlas loop.
+  addTrees(trees,list,context.frame).update(new THREE.Vector3(list[0].p[0]-context.frame.origin[0],0,list[0].p[1]-context.frame.origin[1]),10);
+  let disposed=false;
+  return {...model,dispose(){if(disposed)return;disposed=true;trees.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();for(const m of [o.material].flat())m.dispose();}});trees.removeFromParent();model.dispose();}};
 }

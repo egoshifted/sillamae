@@ -1,0 +1,39 @@
+{
+ "version": 1,
+ "id": "1195_646_50",
+ "square": {
+  "centre": [
+   1195,
+   646
+  ],
+  "size": 50
+ },
+ "placements": [],
+ "trees": {
+  "remove": [],
+  "add": [
+   {
+    "id": "ranna31a-linden-1",
+    "p": [
+     1198.53,
+     645.94
+    ],
+    "z": 7.85,
+    "h": 12.5,
+    "r": 3.2,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "ranna31a-linden-2",
+    "p": [
+     1191.34,
+     646.41
+    ],
+    "z": 7.85,
+    "h": 12,
+    "r": 3.1,
+    "type": "Lehtpuu"
+   }
+  ]
+ }
+}
