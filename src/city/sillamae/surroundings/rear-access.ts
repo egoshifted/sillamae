@@ -33,8 +33,7 @@ export function createRearSurroundings(building: Building,terrain: TerrainGrid,f
  }
  function beam(from: Point3,to: Point3){const p=point(...from),q=point(...to),v=q.clone().sub(p),geo=new THREE.CylinderGeometry(.025,.025,v.length(),8),m=new THREE.Matrix4().compose(p.clone().add(q).multiplyScalar(.5),new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize()),new THREE.Vector3(1,1,1));geo.applyMatrix4(m);emit(geo,rail);}
  function railing(x: number,d0: number,d1: number){const count=Math.ceil((d1-d0)/1.5);for(let i=0;i<=count;i++){const d=d0+(d1-d0)*i/count;beam([x,0,d],[x,.9,d]);}beam([x,.9,d0],[x,.9,d1]);}
- // Meet the corrected five-tread stair at its foot. The old draft's +0.34 m
- // landing served a different three-tread study; keeping it would bury treads.
+ // The landing meets the stair at its foot so every tread stays exposed.
  const stairEnd=2.37,platformEnd=4.52,turnDepth=Math.max(local(g[18])[1],local(g[19])[1])+.03;
  patch(0,L,stairEnd,turnDepth,()=>0);patch(0,platformEnd,turnDepth,7.5,()=>0);
  railing(.16,2.37,7.45);

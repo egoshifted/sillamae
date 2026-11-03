@@ -27,13 +27,7 @@ function entrancePoints(out = .4) {
   });
 }
 
-// Kesk 5 stands on a foundation whose top is the ground at its entrances, the
-// median of their heights. It first came from a standalone study at a fixed
-// 11.81 m and flattened the survey around it to that height, sinking it up to
-// 1.5 m into the terrain model, which rises about a metre from its west section
-// to its east one. The ground is read DATUM_OUT out from each entrance, beyond
-// the site works' grading, so the data build, the atlas and the studio all read
-// the same ungraded ground.
+// Sample beyond the graded site so the pipeline and both viewers use the same entrance datum.
 const FLAT_DROP = .015, NO_GROUND_DATUM = 11.81, DATUM_OUT = 4, FOUNDATION_BELOW = .4; // metres
 const datumPoints = () => entrancePoints(DATUM_OUT);
 const entranceBox = () => {

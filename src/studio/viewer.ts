@@ -1,6 +1,7 @@
 import {installLanguage} from './i18n.ts';
 /// <reference types="vite/client" />
 import * as THREE from 'three';
+import {buildingShadows, setShadowCoverage, shadowDistance} from '../engine/lighting/sun.ts';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {buildStudy, stages, label} from './studies.ts';
 import type {WorldData} from '../engine/data.ts';
@@ -30,7 +31,7 @@ const checked = (id: string) => element<HTMLInputElement>(id).checked;
 function render() {
   if (!current || !sun || disposed) return;
   current.ground.visible = checked('ground'); current.scene.overrideMaterial = checked('plain') ? neutral : null;
-  sun.castShadow = checked('shadows'); sun.target.position.copy(centre); sun.position.copy(centre).add(sunOffset.clone().normalize().multiplyScalar(radius * 3));
+  sun.castShadow = checked('shadows'); sun.target.position.copy(centre); sun.position.copy(centre).addScaledVector(sunOffset.clone().normalize(), shadowDistance(sun.shadow.camera.right));
   renderer.render(current.scene, camera);
   status.textContent = `${buildings.find(s => s.id === building.value)?.name} · ${stages(building.value).find(s => s.id === mode.value)?.label} · ${renderer.info.render.triangles.toLocaleString()} rendered triangles · ${renderer.info.render.calls} draws`;
 }
@@ -58,8 +59,13 @@ async function load(reset = true) {
     sun?.shadow.map?.dispose(); current?.dispose(); current = next;
     centre.copy(next.bounds.getCenter(new THREE.Vector3())); radius = Math.max(10, next.bounds.getSize(new THREE.Vector3()).length() / 2);
     next.scene.add(new THREE.HemisphereLight(0xe5edf2, 0x7b775e, 1.65));
-    sun = new THREE.DirectionalLight(0xfff4df, 3); sun.shadow.mapSize.set(4096, 4096); sun.shadow.normalBias = .008; sun.shadow.bias = -.000015;
-    Object.assign(sun.shadow.camera, {left: -radius * 2, right: radius * 2, top: radius * 2, bottom: -radius * 2, near: .1, far: radius * 8}); sun.shadow.camera.updateProjectionMatrix();
+    sun = new THREE.DirectionalLight(0xfff4df, 3);
+    const mapSize = Math.min(renderer.capabilities.maxTextureSize, buildingShadows.mapSize);
+    sun.shadow.mapSize.set(mapSize, mapSize);
+    sun.shadow.bias = buildingShadows.bias;
+    sun.shadow.normalBias = buildingShadows.normalBias;
+    sun.shadow.radius = buildingShadows.filterRadius;
+    setShadowCoverage(sun, Math.max(buildingShadows.radius, radius));
     next.scene.add(sun, sun.target); next.textures(checked('textures'));
     if (reset) view(); resize(); ready = true;
   } catch (e) { if (ticket === generation) { error.textContent = String(e); status.textContent = 'Study failed'; } throw e; }

@@ -1,0 +1,5 @@
+import * as THREE from 'three';
+
+export function panelTexture(){const w=256,h=128,data=new Uint8Array(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const rib=y<112&&(x%16<2),c=rib?142:164,i=(y*w+x)*4;data.set([c,c+2,c+1,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=THREE.RepeatWrapping;t.wrapT=THREE.ClampToEdgeWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
+
+export function roughcast(relief=false){const w=256,h=256,data=new Uint8Array(w*h*4);let seed=733;for(let y=0;y<h;y++)for(let x=0;x<w;x++){seed=(seed*1664525+1013904223)>>>0;const grain=((seed>>>24)/255-.5)*24,wave=5*Math.sin(y*.09+Math.sin(x*.04)),v=Math.max(0,Math.min(255,Math.round((relief?143:182)+grain+wave))),i=(y*w+x)*4;data.set([v,v,v-2,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;if(!relief)t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}

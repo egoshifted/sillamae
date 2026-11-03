@@ -24,6 +24,18 @@ test('draped triangle edges do not become interior kerbs', () => {
   assert.equal(length([road, {...path, ring: [a, b, c]}, {...path, ring: [a, c, d]}]), 10);
 });
 
+test('a lower stacked copy of a path adds no second kerb', () => {
+  const lower: RoadSurface = {...path, ring: path.ring.map(([x, y, z]) => [x, y - .05, z])};
+  const kerbs = roadKerbs([road, path, lower]);
+  assert.ok(kerbs.every(l => l.points.every(([x, y, z]) => z === 6.075 && Math.abs(y - (.03 + .02 * x)) < 1e-8)));
+  assert.equal(length([road, path, lower]), 10);
+});
+test('a path drawn a few decimetres off a curving road keeps its kerb, a distant one does not', () => {
+  const shifted = (dz: number): RoadSurface => ({...path, ring: path.ring.map(([x, y, z]) => [x, y, z + dz])});
+  assert.equal(length([road, shifted(.25)]), 10);
+  assert.equal(length([road, shifted(.6)]), 0);
+});
+
 test('bulldozing either adjoining surface removes the matching kerb', () => {
   for (const kind of ['carriageway', 'footway'] as const) {
     const cut = {kind, exposeGround: true, ring: [[4, -1], [6, -1], [6, 9], [4, 9]] as [number, number][]};

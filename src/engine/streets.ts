@@ -1,6 +1,5 @@
 import type {Point2, RoadType, SiteRoad, SurfaceFinish} from './types.ts';
 
-// Street types the studio draws, as OpenStreetMap tags osm2streets builds from.
 // osm2streets makes every driving lane 3 m, so the lanes give the width.
 export const ROAD_TAGS: Record<RoadType, Record<string, string>> = {
   main: {highway: 'tertiary', lanes: '2', surface: 'asphalt'},

@@ -9,7 +9,6 @@ import {georeference, type OsmExtract} from './geo.ts';
 import {isCrossing, marked, roadArea} from './roads.ts';
 import {MARKING, ROAD, surveyLayers} from './survey-colour.ts';
 
-// Checks the generated road surfaces against the survey; run after `npm run data`.
 // Fails on broken polygons, walls, footways on the carriageway, trees on a road
 // surface or buildings off their survey contact; the rest is for review.
 // Metres; EDGE skips the strip along the area's edge, where roads stop by design.
@@ -162,7 +161,6 @@ for (const s of world.roads) if (s.kind === 'footway') {
 }
 console.log(`footway edge points on the carriageway: ${onRoad}${where.length ? ` (local x,z: ${where.join(' ')})` : ''}`);
 
-// Trees: no trunk may stand on a carriageway or footway.
 const surface = index(world.roads.filter(s => s.kind !== 'marking'));
 const treesOn = world.trees.filter(t => surface(t.p[0] - ox, t.p[1] - oz).length).map(t => `${(t.p[0] - ox).toFixed(1)},${(t.p[1] - oz).toFixed(1)}`);
 console.log(`trees on a road or path: ${treesOn.length}${treesOn.length ? ` (local x,z: ${treesOn.slice(0, 8).join('; ')})` : ''}`);

@@ -1,69 +1,34 @@
 # Sillamäe · 3D Atlas
 
-An interactive 3D model of Sillamäe, Estonia. The town model is being progressively refined against reference imagery; detail varies between buildings.
+Explore a 3D model of Sillamäe, Estonia, built from survey geometry, terrain and OpenStreetMap data. Search for an address, drag to move, scroll to zoom and use the rotation buttons to see another side. Selected buildings have hand-built details based on reference imagery.
 
-Search for an address, drag to move, scroll to zoom, and use the rotation buttons to view another side. Adjust sunlight, textures, shadows and rendering quality with the on-screen controls.
+## Run locally
 
-## Develop
+Install Node.js 24 or newer, then run:
 
-Requires Node.js 24 or newer. Application source, refined buildings, the data pipeline and build configuration use TypeScript.
-
-```
-npm install
-npm run check    # strict type check of all source and build configuration
-npm run dev      # build data, then a local server with reload
-npm run build    # type check, build data, static site in dist/
-npm run data     # data only
-npm run data:rebuild # force a clean data build
-npm run osm      # refresh data/source/osm.json from OpenStreetMap
-npm run dtm      # refresh data/source/dtm-1m.* from the Maa- ja Ruumiamet terrain model
+```sh
+npm ci
+npm run dev
 ```
 
-Source data lives in `data/source/`. `pipeline/build.ts` prepares it into `public/data/` (not committed): it cuts refined buildings out of the survey mesh, classifies and buckets the survey triangles, and packs them into 360 m tiles (vertices on a 1 mm grid, meshopt-encoded, then gzip) that the viewer decodes without further processing. The viewer streams the tiles: those around the first view on their own, then the rest nearest-first.
+Open the local URL printed by the server. The first run generates the town data and can take several minutes. Later runs reuse verified output when the inputs are unchanged. The viewer requires WebGL and DecompressionStream.
 
-The build also georeferences the survey by matching building outlines with OpenStreetMap (EPSG:3301, about 0.1 m RMS) and writes `nav.json`: the walking network in scene coordinates, with every building linked to it through its entrances. Entrances come from refined models, from OpenStreetMap `entrance` nodes, or are estimated as the outline point facing the nearest path.
+| Command | Purpose |
+| --- | --- |
+| `npm run studio` | Open the building studio and site editor. See the [studio guide](src/studio/README.md). |
+| `npm run check` / `npm test` | Type-check the project or run the tests. |
+| `npm run data` / `npm run data:rebuild` | Generate atlas data or force a fresh build. |
+| `npm run osm` / `npm run dtm` | Refresh the OpenStreetMap or terrain inputs. |
+| `npm run build` | Type-check, prepare the data and build the static site in `dist/`. |
 
-The survey ground is laid onto the 1 m terrain model of Maa- ja Ruumiamet (`data/source/dtm-1m.*`, heights in centimetres): every ground vertex moves by the difference between that model and the lowest survey ground layer, so the stacked ground layers keep their gaps, and edges along which the terrain bends are subdivided. Water, ground under water and the Kesk 1 site keep their heights; trees stand on the new ground.
+## Project layout
 
-Roads cover the whole town (every building plus 30 m): `pipeline/roads.ts` builds lane, junction and marking polygons from OpenStreetMap with [osm2streets](https://github.com/a-b-street/osm2streets), and `pipeline/grade.ts` grades the terrain model to them before the survey ground is laid on it (each road's profile smoothed along it, flat across, blended back over 3 m). osm2streets makes every lane 3 m wide, so each carriageway is then grown or shrunk to the width of the survey's road paint, measured across its OSM ways. Inside the road area the survey ground is rebuilt as one surface on a 1 m grid from the graded terrain model, coloured from the survey (`pipeline/ground.ts`); near refined sites it eases to their surveyed height instead of keeping rectangles of old ground. The survey's footway paint is recoloured to the ground around it. Mapped crossings become zebras rather than footways, footways are clipped off the carriageway, and roads stop at the ground patches of refined sites. The viewer draws the polygons on the graded ground (`src/engine/roads.ts`). `npm run roads:check` checks the result against the survey; [pipeline/ROADS.md](pipeline/ROADS.md) describes the method for extending it.
+- `data/source/` holds the survey, terrain, street data and saved site edits. `pipeline/` turns these into tiles and town data under `public/data/`. See the [road-building guide](pipeline/ROADS.md) for road geometry and terrain grading.
+- `src/engine/` renders the atlas. `src/city/sillamae/` supplies town settings, refined buildings and street assets.
+- `src/app/` contains the viewer controls. `src/studio/` contains the local editing tools.
 
-Every OpenStreetMap `steps` way becomes stairs: one flight per segment with treads, a solid base and side cheeks, its ends on the 1 m terrain model; width and step count come from OSM tags where mapped (2 of 56 ways), otherwise 2.5 m and 15 cm risers.
+## Publishing and credits
 
-Street detail added in the studio's site editor (`data/source/placements/`, one file per square) is built in too: tree edits change the tree list before trees are seated on the ground, and placed objects from the asset library go to `placements.json`, which the viewer draws in instanced batches per 120 m with near and far detail. See the [studio guide](src/studio/README.md).
+Choose **GitHub Actions** as the Pages source in repository settings. The [Pages workflow](.github/workflows/pages.yml) builds and deploys the atlas on pushes to `main`.
 
-Buildings are grouped into blocks: areas enclosed by streets and the edge of the modelled town, found by flood-filling a 2 m street raster. Each building in `world.json` carries its block (`zone`); the F1 debug panel can colour buildings by block.
-
-Code layout:
-
-- `src/engine/`: the renderer. It knows nothing about a particular town.
-- `src/city/sillamae/`: town settings and refined building models.
-- `src/studio/`: a reusable studio for progressively refining any atlas building, with draft scaffolding, studies and local verification tools. See the [studio guide](src/studio/README.md) for the reference-led refinement process and `npm run studio`.
-- `src/app/`: the on-screen controls, in React. The engine is created once outside React's render cycle; components use its API.
-
-The build uses relative URLs, so `dist/` works under a repository subdirectory. It needs a modern browser supporting WebGL and DecompressionStream.
-
-Building-specific models implement `BuildingOverride`; its ground preparation runs in the same offline pipeline as the other town data. Review records and reference evidence are kept separately on the project owner's machine, outside this repository. Each collaborator keeps their own local records; studio tools require an external output directory.
-
-## Data and loading
-
-Data generation verifies a content cache before doing geometry work. Changes to source data, the pipeline, engine, city models, assembly helpers, dependencies or compiler settings invalidate it; missing or modified generated files do too. Development, studio and production builds share this cache. A build lock prevents concurrent writers, and failed builds retain the previous data. `data:rebuild` bypasses reuse. After changing terrain inputs, let the build finish before reloading the viewer.
-
-`src/city/sillamae/terrain-detail.ts` defines the town's fine-terrain boundary in source metres. Ground inside it, its transition margin, building contacts and road corridors stays on the one-metre grid. Outside, flat uniformly coloured patches can use eight-metre fans with every metre-edge vertex retained; water edges, sharp relief and colour boundaries stay fine. The source terrain model is never downsampled. New buildings automatically receive a fine-ground margin.
-
-The viewer prepares survey tiles and their normals in two workers, transfers their buffers to the renderer and preserves manifest mesh order. Distant tiles that affect neither the camera nor its shadow map do not trigger redraws. Model-ground sampling uses an index over immutable site triangles; replace the triangle array after editing it.
-
-Touch devices use one bounded tile decoder, indexed survey geometry and shared overview/close-up buffers to limit memory during pan and zoom. Face normals are derived by the flat-shaded survey material; geometry, colours, texture coordinates and picking IDs remain intact. Refined building models retain their original materials and geometry. Touch-device shadows stay at 2048 pixels to avoid reallocating a 4096-pixel map at the close-up threshold. Desktop rendering keeps its existing path.
-
-## Publish with GitHub Pages
-
-The workflow in `.github/workflows/pages.yml` builds and deploys `dist/` on every push to `main`. In Settings → Pages, set Source to GitHub Actions.
-
-## Credits
-
-Map data: © OpenStreetMap contributors — https://www.openstreetmap.org/copyright
-
-Survey geometry and vegetation: Maa- ja Ruumiamet.
-
-Rendering: Three.js (MIT).
-
-This is an independent visualisation, not an official survey or navigation service.
+Survey geometry and vegetation are from Maa- ja Ruumiamet. Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Rendering uses Three.js (MIT). This independent visualisation is for exploration, and detail varies by building.

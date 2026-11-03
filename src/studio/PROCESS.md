@@ -23,3 +23,36 @@ For any new building, begin with [NEW-BUILDING.md](NEW-BUILDING.md), select its 
 Use studio to isolate geometry and compare plain/detail representations with a common camera. Use the atlas for actual survey layers, depth bias, vegetation, surroundings, selection, loading and runtime lighting. Never treat a clean diagnostic ground plane as proof of atlas contact. For a lighting suspicion, hold the camera fixed, switch shadows off, then inspect actual geometry and depth/material overlap. A surface still visible with shadows off can be a depth-buffer artifact.
 
 For every pass record what was inspected and its limits. Static overview screenshots cannot validate every reveal, motion stability, photo-derived dimensions or mobile performance. A regression test derived from the same erroneous dimensions can preserve the error; reference expectations and negative controls must remain independent.
+
+## Local checks
+
+Use a new output directory for every run. These commands reject repository-contained outputs (including junction aliases) and never replace an existing record. Paths below are examples **outside** the checkout; choose your own local review root.
+
+```sh
+npm run check
+npm run build
+npm run studio:check -- --out ../sillamae-local/review-001/checks
+npm run studio:snapshot -- --out ../sillamae-local/review-001/models
+```
+
+`studio:check` runs type checking, batching/output-safety tests, data generation and the production build. Exit **1** means failure; **2** means automated checks passed and visual review remains pending. Normal `check` and `build` retain their usual exit codes. Snapshot checks finite attributes/transforms, texture restoration, LOD snapshots and scene cleanup; it uses inert Node canvases, so browser material checks are still required. Compare snapshots with `--compare <previous-model-directory>` for a rendering-neutral change.
+
+Install a local browser once with `npx playwright install chromium`, or set `STUDIO_BROWSER` to your existing Chrome/Chromium executable (PowerShell: `$env:STUDIO_BROWSER = 'C:\Program Files\Google\Chrome\Application\chrome.exe'`). Captures never contact a remote atlas.
+
+```sh
+npm run studio:capture -- --url http://127.0.0.1:5174 --id <building-id> --stage draft --out ../sillamae-local/review-001/views
+npm run studio:capture -- --url http://127.0.0.1:5174 --atlas-only --out ../sillamae-local/refactor-before
+# After the change, on the same browser, machine and viewport:
+npm run studio:capture -- --url http://127.0.0.1:5174 --atlas-only --out ../sillamae-local/refactor-after --compare ../sillamae-local/refactor-before
+```
+
+The capture runner saves unobscured canvas PNGs, decoded RGBA hashes, source hashes and browser errors. Comparisons require identical capture names and pixels; any mismatch exits 1. Review intentional differences individually, retaining the original baseline. Capture success means pictures were taken, not inspected. Run capture after checks; avoid editing sources during either run. For active building corrections inspect that building; the registered-building atlas preservation views are technical parity checks and do not reopen older architectural approvals.
+
+Copy [the review template](templates/visual-review.json) into your local folder. Fill findings after inspecting the images. Add close detail/reference PNGs and WebM/MP4 motion evidence as needed; the automated overview matrix is not a substitute. To bind additional PNGs to a run, use `studio:evidence` before filling the review. It creates a separate capture record rather than editing the old one. The reviewer must record when and under which conditions the manual evidence was captured.
+
+```sh
+npm run studio:evidence -- --captures ../sillamae-local/review-001/views --extra ../sillamae-local/review-001/manual --out ../sillamae-local/review-001/all-views
+npm run studio:finalize -- --checks ../sillamae-local/review-001/checks --captures ../sillamae-local/review-001/all-views --review ../sillamae-local/review-001/visual-review.json --out ../sillamae-local/review-001/final
+```
+
+Finalization checks evidence files, unchanged source/data hashes, automated results and explicit findings. It does not interpret photos, prove motion from a still, or grant architectural approval. Leave an uninspected gate pending; mark an inapplicable gate with a specific reason. List known failures explicitly in the review; finalization rejects unresolved failures. Save exact owner approvals separately using [the building record](templates/building-record.md).

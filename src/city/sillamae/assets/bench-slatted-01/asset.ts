@@ -1,7 +1,6 @@
 import type {AssetDefinition} from '../../../../engine/types.ts';
 import {assemble, box, palette, type Part} from '../../assets/palette.ts';
 
-// Park bench: wooden slats on two cast concrete legs, with a two-slat back.
 // Sitters face +z.
 export const asset: AssetDefinition = {
   id: 'bench-slatted-01',

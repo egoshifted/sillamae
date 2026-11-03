@@ -1,8 +1,6 @@
 import type {AssetDefinition} from '../../../../engine/types.ts';
 import {assemble, cylinder, palette} from '../../assets/palette.ts';
 
-// The cast concrete litter urn of Soviet-era estates: a short plinth under a
-// flared bowl, its dark mouth open at the top.
 export const asset: AssetDefinition = {
   id: 'bin-concrete-01',
   name: 'Concrete litter urn',

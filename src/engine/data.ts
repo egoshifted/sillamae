@@ -20,7 +20,6 @@ export interface Stair {
 }
 
 export type RoadKind = 'carriageway' | 'footway' | 'marking';
-// Grass and flowerbeds come only from areas drawn in the studio.
 export type Finish = SurfaceFinish;
 
 // One road polygon, ring in the local frame (x, height, z); lift is its depth

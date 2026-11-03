@@ -8,7 +8,8 @@ import {TRIANGLE, type Building, type BuildingOverride, type Point2} from '../..
 
 // Floor indices are zero-based (L1 = 0).
 // These settings are not evidence for other addresses.
-export const kesk1Design = Object.freeze({
+// Built as a plain literal so the type keeps widened values for sister buildings of this type.
+const design = {
   height: 28.5, floors: 9, floorPitch: 2.85,
   foundationLevel: 12.8, // survey height of local Y = 0
   balconyEdges: [2, 9, 11, 13, 18],
@@ -24,7 +25,20 @@ export const kesk1Design = Object.freeze({
   // Aerial-supported relationships; dimensions provisional pending review.
   steppedFacadeEdges: [2, 9, 11, 13, 18], balconyShoulder: .26, roofShelfDepth: .45, baseProjection: .35,
   sideWallStep: {edge: 8, width: .60, depth: .12}, entranceReturnStep: {edge: 7, widthFraction: 1 / 3, projection: .12},
-});
+  // Individual units and fixtures observed on Kesk 1 only, as [edge, floor].
+  brownBalconies: [[2, 1], [11, 1]], timberBalconies: [[9, 0]], sunburstBalconies: [[13, 0]], timberWindows: [[4, 2]],
+  fanlightGrille: true, flowerBox: true, flag: true, dish: true,
+  // Number plate centre; x from the wall's far end, depth behind its face.
+  plaque: {edge: 1, x: -.7, y: 4, depth: 0, streetWidth: .85} as {edge: number; x: number; y: number; depth: number; streetWidth: number} | null,
+  annexFinish: 'roughcast' as 'roughcast' | 'brick',
+  lightwells: false,
+  entranceStair: true, entranceCanopyUpstand: true, annexAccessOnGround: false,
+  annexRail: 'timber' as 'timber' | 'metal',
+  basementWindow: {width: 1.2, division: .5},
+  // On the wing wall beside the sunken annex access: centre as a fraction of the wall, sill height.
+  wingBasementWindow: null as {along: number; y: number} | null,
+};
+export const kesk1Design: Readonly<typeof design> = Object.freeze(design);
 
 export const kesk1: BuildingOverride = {
   id: '213321385',

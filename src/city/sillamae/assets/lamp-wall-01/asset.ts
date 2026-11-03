@@ -1,7 +1,6 @@
 import type {AssetDefinition} from '../../../../engine/types.ts';
 import {assemble, box, palette, rod, type Part} from '../../assets/palette.ts';
 
-// Entrance lamp: a lantern hung from a bracket over a doorway.
 export const asset: AssetDefinition = {
   id: 'lamp-wall-01',
   name: 'Wall lantern',

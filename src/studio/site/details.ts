@@ -32,7 +32,7 @@ function clip(ring: Point2[], minX: number, minZ: number, maxX: number, maxZ: nu
   return out;
 }
 const area = (r: Point2[]) => Math.abs(r.reduce((s, p, i) => { const q = r[(i + 1) % r.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
-function densify(ring: Point2[], step = 1) {
+export function densify(ring: Point2[], step = 1) {
   return ring.flatMap((p, i) => {
     const q = ring[(i + 1) % ring.length], n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
     return Array.from({length: n}, (_, k): Point2 => [p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n]);
@@ -75,8 +75,20 @@ export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads:
   const [ox, oz] = origin, group = new THREE.Group(), scratch = new THREE.Scene();
   const local = (ring: Point2[]) => ring.map(([x, z]): Point2 => [x - ox, z - oz]);
   const shapes: Shape[] = [...roads.flatMap(r => roadShapes(r, local(r.points))), ...surfaces.map(s => ({kind: 'footway' as const, surface: s.finish, ring: local(s.ring), rise: RISE + .02}))];
-  const laid: RoadSurface[] = [];
+  const laid: RoadSurface[] = [], kerbed: RoadSurface[] = [];
   const lay = (ring: Point2[], s: Shape) => laid.push({kind: s.kind, lift: 0, ...s.tileLayout && {tileLayout: s.tileLayout}, ...s.kerbed && {kerbed: true}, ...s.surface && {surface: s.surface}, ring: densify(ring).map(([px, pz]): [number, number, number] => [px, height(px, pz) + s.rise, pz])});
+  const cells = (s: Shape) => {
+    const xs = s.ring.map(p => p[0]), zs = s.ring.map(p => p[1]), out: Point2[][] = [];
+    for (let x = Math.floor(Math.min(...xs) / CELL) * CELL; x < Math.max(...xs); x += CELL)
+      for (let z = Math.floor(Math.min(...zs) / CELL) * CELL; z < Math.max(...zs); z += CELL) {
+        const cell = clip(s.ring, x, z, x + CELL, z + CELL);
+        if (cell.length >= 3 && area(cell) >= .01) out.push(cell);
+      }
+    return out;
+  };
+  // Kerbs follow the whole outline on the top ground, sampled at kerb-piece spacing.
+  for (const s of shapes.filter(s => s.kerbed))
+    kerbed.push({kind: 'footway', lift: 0, kerbed: true, ring: densify(s.ring, .25).map(([px, pz]): [number, number, number] => [px, height(px, pz) + s.rise, pz])});
   for (const s of shapes) {
     if (ground) {
       const rings = ground.drape(s.ring, s.rise);
@@ -86,14 +98,9 @@ export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads:
       }
     }
     if (s.kind === 'marking') { lay(s.ring, s); continue; }
-    const xs = s.ring.map(p => p[0]), zs = s.ring.map(p => p[1]);
-    for (let x = Math.floor(Math.min(...xs) / CELL) * CELL; x < Math.max(...xs); x += CELL)
-      for (let z = Math.floor(Math.min(...zs) / CELL) * CELL; z < Math.max(...zs); z += CELL) {
-        const cell = clip(s.ring, x, z, x + CELL, z + CELL);
-        if (cell.length >= 3 && area(cell) >= .01) lay(cell, s);
-      }
+    for (const cell of cells(s)) lay(cell, s);
   }
-  if (laid.length) group.add(addRoads(scratch, laid, anisotropy, cuts, context));
+  if (laid.length) group.add(addRoads(scratch, laid, anisotropy, cuts, context, kerbed));
   if (lines.length) group.add(lineMeshes(lines.map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], points: standLine(local(l.points), height)})), {lifted: false}));
   usePhysicalDepth(group);
   return group;

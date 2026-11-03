@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import type {BuiltLine} from './data.ts';
 import type {LineKind} from './types.ts';
 
-// Fences, hedges, low walls and kerbs drawn in the studio. Each run follows the
-// ground point by point, so its foot never floats on a slope.
 export const LINE_HEIGHT: Record<LineKind, number> = {fence: 1.2, hedge: 1.1, wall: .6, kerb: .12};
 const LOOK: Record<LineKind, {color: string; roughness: number; width: number}> = {
   fence: {color: '#3d4a3d', roughness: .6, width: .04},
@@ -11,6 +9,7 @@ const LOOK: Record<LineKind, {color: string; roughness: number; width: number}> 
   wall: {color: '#a9a59b', roughness: .95, width: .3},
   kerb: {color: '#a4a39c', roughness: .9, width: .15},
 };
+export const lineWidth = (kind: LineKind) => LOOK[kind].width;
 const FOOT = .25; // metres below the ground, so a run's foot stays buried between its points
 const POST = {every: 2.5, size: .07}; // fence posts, metres
 // Depth-only lift over the survey ground's own (see placements.ts).
@@ -45,7 +44,6 @@ export function lineMeshes(lines: BuiltLine[], {lifted = true, depthLift = DEPTH
         next = travelled + POST.every;
       }
     } else for (let i = 1; i < p.length; i++) {
-      // Hedges are trimmed unevenly; walls and kerbs are not.
       const top = line.kind === 'hedge' ? h * (.92 + .16 * hash(p[i][0], p[i][2])) : h;
       run(p[i - 1], p[i], width, -FOOT, top, out);
     }
@@ -63,7 +61,9 @@ export function lineMeshes(lines: BuiltLine[], {lifted = true, depthLift = DEPTH
       material.customProgramCacheKey = () => 'line-lift:' + depthLift;
     }
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = mesh.receiveShadow = true;
+    // A kerb's shadow is finer than the shadow map resolves; it renders as a blotchy band along the road.
+    mesh.castShadow = kind !== 'kerb';
+    mesh.receiveShadow = true;
     mesh.name = kind;
     group.add(mesh);
   }

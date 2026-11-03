@@ -39,7 +39,6 @@ async function build() {
     const osm: OsmExtract = JSON.parse(fs.readFileSync(path.join(SOURCE, 'osm.json'), 'utf8'));
     const georef = georeference(osm, data, sillamae), geo = georef.geo;
     const sites = loadSites(path.join(SOURCE, 'placements'));
-    // Everything built from the streets sees the roads drawn in the studio too.
     const {osm: streets, report: studioRoadReport} = addStudioRoads(osm, sites, georef, sillamae);
     const {shapes, centrelines, report: roadReport} = buildRoads(streets, data, sillamae, georef, vertices);
     // Studio terrain edits go in before the roads are graded, so roads follow them too.

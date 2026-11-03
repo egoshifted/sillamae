@@ -37,6 +37,8 @@ export const study: StudyDefinition = {
 };
 ```
 
+A stage with `cutsGround: true` removes the model's `root.userData.groundPatches` from the study ground, as the atlas does once the building is registered; use it to review lightwells and sunken access before integration.
+
 Factories receive `OverrideContext`: building, frame, terrain, site ground, scene and optional change notification. They return the root plus disposal, optional texture toggle and readiness. Factories can share components without duplicating the whole model. `survey`, `massing` and `assembled` are reserved stages. The viewer waits for readiness, releases superseded loads and rebuilds without mutating source inputs.
 
 Keep one correction active. Establish the plain shell before detail, compare actual source imagery, and implement independent tests for each consequential relationship. The starter extrusion does not supply a universal architectural style. Add genuinely reusable low-level tools under `studio/assembly`; keep building-specific geometry and assumptions in its own folder.
@@ -50,7 +52,7 @@ npm run studio:capture -- --url http://127.0.0.1:5174 --id <building-id> --stage
 
 Capture defaults to the selected building's draft, production assembly or original survey, in that order. It includes the selected building's atlas context, eight study directions, lighting/shadow matrix, texture/plain-material restoration, distances and available stages. Capture `--compare <previous-views>` requires equal named images and pixels. Keep intentional differences explained; preserve the old baseline.
 
-Inspect close features, matching reference angles, roof/ground contacts and motion in addition to these overview captures. Add local evidence and findings as described in [README.md](README.md). Exit 2 from `studio:check` means technical checks passed but visual review is pending. No tool grants architectural approval.
+Inspect close features, matching reference angles, roof/ground contacts and motion in addition to these overview captures. Add local evidence and findings using the [local checks and capture commands](PROCESS.md#local-checks). Exit 2 from `studio:check` means technical checks passed but visual review is pending. No tool grants architectural approval.
 
 ## Integrate after review
 
