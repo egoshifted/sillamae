@@ -1,116 +1,30 @@
 # Building studio
 
-A reusable local workspace for progressively building and refining any atlas building. Start with [a new building](NEW-BUILDING.md); no existing refined model is required. Read [AGENTS.md](../../AGENTS.md), then [the process](PROCESS.md), [refinement rules](REFINEMENT-RULES.md) and [the component checklist](COMPONENTS.md). Update the relevant rule when a correction teaches a general lesson; keep building decisions and evidence in local records.
+Use the studio to compare building models against the survey and edit street details in the atlas. It runs locally and supports English and Russian.
 
-Copy the [collaborator prompt](COLLABORATOR-PROMPT.md) to start an agent on any building. Reference study requires both available Street View and web searches for photographs; ask the user for specific missing photos when these sources leave gaps.
+## Open the studio
 
-## Reuse before creating new assets
+With Node.js 24 or newer and the project dependencies installed (`npm ci`), run `npm run studio`. Open [Building studio](http://127.0.0.1:5174/src/studio/) or [Site editor](http://127.0.0.1:5174/src/studio/site/). If the atlas development server is already running, open `/src/studio/` on that server.
 
-Follow [the reuse guide](REUSE.md) before authoring textures, details, fittings, fixtures or other components. Search existing assets and rendered parts for exact and near-identical matches; prefer supported reuse and report sources, adaptations, visible differences, resource effects and owner choices in every refinement review. Near matches remain explicit choices for the owner, not silent substitutions. The local record and review templates include this inventory. Preserve target-specific dimensions and layouts, shared-resource lifetimes and existing consumers.
+## Inspect a building
 
-## Start
+Search by address or building ID. Compare the original survey, provisional massing and available model stages from repeatable angles. **Save view URL** puts the camera and display settings in the address bar. **Download PNG** saves the current view. The atlas shows the building with its final terrain, vegetation and lighting.
 
-Requires Node 24+ and the repository's installed dependencies:
+For model authoring, see [Starting a building](NEW-BUILDING.md), the [refinement process](PROCESS.md), [shared components](ASSEMBLY.md) and the [asset library guide](ASSETS.md). The [local checks and capture commands](PROCESS.md#local-checks) cover visual comparisons and review records.
 
-```sh
-npm ci
-npm run studio
-```
+## Edit a square
 
-Open `http://127.0.0.1:5174/src/studio/`. The same server serves the atlas at `/`. An existing atlas development server also serves `/src/studio/`; do not start another server unnecessarily. Studio is a development entry point and is excluded from the published application build.
+Choose a 50, 100 or 200 m square on the map. Select an asset or tree in the palette. Each tool shows its options in the top bar and its shortcuts in the footer.
 
-Search the catalogue by address or stable ID and select any building. Orbit, pan, choose eight repeatable 45° views, inspect the plan and compare close/medium/far views. Check morning/midday/late light, shadows, textures and plain materials. **Save view URL** records the camera and switches in the address bar. Copy that URL into your local record. **Download PNG** saves to your browser's local downloads folder; move it into the building's local evidence folder.
-
-Every catalogue building has original-survey and provisional-massing views. New draft stages are discovered from `src/city/sillamae/*/study.ts`; existing refined buildings provide optional examples. Plain materials do not simplify the shell or certify material appearance. Assembled mode calls the same `BuildingOverride` used by the atlas. Studio uses diagnostic lighting and untextured local site triangles, without vegetation or atlas depth layering. It removes the atlas-only projected ground-depth offsets from the study material shaders; these orthographic offsets would otherwise draw hidden stairs through walls and roofs in the perspective study camera. A small polygon offset keeps coplanar ground contacts stable without the metre-scale displacement. Original survey is ungraded; a draft may be based on a prepared height envelope. Always finish datum, ground-contact, lighting, vegetation and loading checks in the atlas.
-
-The **English / Русский** selector in the header switches the building studio and site editor without reloading or discarding edits. The choice is remembered in the browser and shared between open studio tabs. Asset search accepts Russian and English names; model IDs, addresses, saved data and keyboard shortcuts remain unchanged. UI translations live in `russian.ts`, with live text and accessibility-label updates in `i18n.ts`. Documentation links continue to open the source documentation.
-
-## Site editor
-
-`/src/studio/site/` opens a square of the atlas (50, 100 or 200 m) for adding street detail from the asset library. Choose the square on the map. The palette on the left sets the brush (an asset, or a broadleaf or conifer tree); the toolbar on the canvas holds the tools, each with its options in the top bar and its keys in the footer:
-
-| Tool | Key | Use |
-| --- | --- | --- |
-| Select and move | V | Click, Shift-click, Ctrl-click or drag a box to select objects and trees, survey trees included. Drag to move; drag the orange ring to turn the selection round its centre (15° steps, Alt for free); Q/E turn 15° (Shift 90°); arrows nudge 10 cm (Shift 1 m); Del, Ctrl+D, Ctrl+A. |
-| Place | A | Click the ground or a wall; Alt-click an object to pick up its asset. With a tree brush, **Vary each tree** (on by default, also in Path and Scatter) gives every tree after the first its own height and crown within a fifth of the brush size. |
-| Path | P | Click points; double-click or Enter places a row at the set spacing, facing along or across the path, with a sideways offset. |
-| Scatter | B | Drag to scatter the brush within a radius, keeping a gap from its own kind. |
-| Shape the ground | U | Drag to raise, lower, flatten (to the height where the stroke began), smooth, or reset towards the survey, with a radius and a strength. Objects and added trees on the ground ride with it. |
-| Ground surface | L | Click the corners of an area of paving, asphalt, gravel, lawn or flowerbed; Enter or a double-click closes it. Laid on the ground like a footway, drawn over the footways it overlaps. |
-| Line | K | Click along a fence, hedge, low wall or kerb; Enter or a double-click finishes. It follows the ground; its height can be set. With **Snap to road**, a point clicked over a road or path, or within 0.6 m of one, moves to stand along its edge. Select a line and drag either end handle to extend or shorten it, as with roads. |
-| Road | W | Click along a street, as in SimCity: residential street, main road or service lane, with or without footways, corners rounded or not. An end near an existing street or another drawn road snaps to it (an orange ring) and becomes a junction. The editor shows a close preview; the data build lays the real road. |
-| Hide survey objects | X | Click a survey building, shed or kiosk to leave it out of the town; the list in the top bar brings them back. Refined buildings cannot be hidden. |
-| Measure | I | Click points for lengths on plan, height changes and slopes. |
-| Orbit, Pan | R, H | Navigation; in any tool Space or the middle button orbits, right-drag pans, the wheel zooms to the pointer. F frames the selection, T looks straight down, Home resets. |
-
-Ground assets stand on the highest ground or road surface and never inside a building footprint; wall assets sit flat against the wall facing out. Ctrl+Z/Ctrl+Y undo and redo; **Reset**, after a confirmation, returns the square to how it was when opened (the reset itself can still be undone); Ctrl+S saves to `data/source/placements/<x>_<z>_<size>.json`. A changed survey tree is saved as removed at its old position and added anew, matched within 0.75 m so the edit survives a data rebuild that nudges trees. Each palette entry shows a picture; clicking it opens a preview of the asset turning on a stand beside a 1.75 m person and, if chosen, a library asset, with its variants, near and far detail, and measured size and triangles against the declared ones. `npm run assets:preview` saves the same views as pictures for an agent to check (see [ASSETS.md](ASSETS.md)). Drafts appear under **Drafts to review** for previewing in place; **Approve** moves a draft into the library, **Reject** writes notes for the agent. Ground shaping is saved as a grid of height changes over the square (1 m, in centimetres), fading to nothing over the last 5 m inside its edge (`src/engine/terrain-edit.ts`). The data build adds it to the terrain model before roads are graded and the survey ground is laid on it, so ground, roads, buildings, trees and stairs follow; the survey's stacked ground layers never move on their own. Refined building models keep their own heights, so shape well away from them. The build writes the edits it used to `terrain.json`, and the editor previews only what changed since.
-
-Select a drawn road or path to highlight its actual pavement edges, including bends and demolished gaps, and reveal its two endpoint handles instead of the rotation ring. Drag either handle to extend it, bend the extension, or shorten its final straight segment; release to finish in one Undo step, or press Esc to cancel. A new walking path snaps to the exact endpoint of a nearby drawn walking path before considering a carriageway-edge snap. Road and footpath endpoints are kept separate, and demolished endpoints are excluded.
-
-**Worn tiled path** uses weathered 50 cm concrete slabs with grassy joints. Choose **Width (tiles)** from 1 to 6 (0.5–3 m), either while drawing or in the selected path panel. Width changes support Undo and are saved with the path. The texture follows the path course; curved bends can taper the slab rows.
-
-**Kerbed asphalt footpath** is a 2 m walking path in the Road tool. **Snap to road** is on by default: each clicked point snaps beside the edge of an existing or drawn carriageway, leaving the path outside the traffic lane. Add points along bends to follow the road; snapped paths keep these corners rather than rounding away from the road edge. Turn snapping off to draw freely. A 12 cm concrete kerb appears only where the path meets a carriageway; the grass-facing edge and detached paths have no kerb. The editor and atlas use the same contact detection, and bulldozing either adjoining surface removes that section of kerb.
-
-The **Bulldozer (D)** removes placed objects, trees and survey objects, and clears approximately 2 m along an existing or drawn road or footway per click. Hover previews the exact target in red. Hold and drag to continue; each stroke is one Undo step. Cleared sections expose the existing terrain. Where survey road paint remains underneath, its vertex colours blend between samples from the unpaved verges; the terrain keeps its own geometry, normals, grass shader and shadows. Refined building models remain protected. Road cuts are saved with the square and applied in both the editor and atlas as ground-filled surface cuts, including road markings. They do not modify the street navigation network. A drawn path (asphalt, kerbed, gravel, worn or tiled) is split instead, leaving two shorter paths and no cut, so a path drawn over the gap later is not erased.
-
-Surfaces, lines and hidden buildings are saved with the square. Areas, lines, objects and trees can all be selected, moved, turned, duplicated and removed alike. The data build lays surfaces with the road layer, drawn just over its footways; stands lines on the built terrain into `lines.json` (`src/engine/lines.ts` builds them, in the atlas and the editor alike); and leaves hidden survey buildings out of the survey mesh and the building list, with the rebuilt ground running on beneath.
-
-Drawn roads become OpenStreetMap streets before anything is built from the streets (`addStudioRoads` in `pipeline/placements.ts`, tags in `src/engine/streets.ts`): an end within 8 m of a street becomes a node on it, splitting the street there if no node is near, and drawn roads whose ends meet share a node, so osm2streets builds the junctions. They are then laid, marked, graded into the terrain and cleared of trees like any street, and join the walking network and the block outlines. Footways are separate paths 1.5 m beyond the kerb. The build writes the town's own streets to `streets.json` for the editor to snap to.
-
-**Save** writes the square and starts a background atlas rebuild. The footer shows progress and confirms when **Open atlas** can show the saved edits in a fresh tab. Continue editing or switch squares while it runs; saves during a build queue another pass so the latest files are included. A failed rebuild preserves the saved square and previous atlas; Save retries it. Generated files do not reload the editor or discard unsaved edits. `npm run data` also brings saved squares into the atlas: tree edits are applied before trees are seated on the ground, and placements of library assets (never drafts) go to `public/data/placements.json`, drawn in batches per 120 m with the far detail and small objects hidden when zoomed out. The build reports placements standing more than 0.5 m from the terrain; `npm run assets:check` also checks placements against the built buildings and roads. Generating assets is described in [ASSETS.md](ASSETS.md); `npm run assets:check` validates the library, drafts and saved placements.
-
-## What lives where
-
-| Location | Responsibility |
+| Task | Controls |
 | --- | --- |
-| `src/city/sillamae/<building>/` | Production model, design, building-specific assets and site adaptation for that address; reference canonical shared assets instead of copying them. |
-| `src/studio/project.ts`, `studies.ts`, `types.ts` | Select the city, discover per-building stages and apply a common study lifecycle. Building-specific stages live beside their model. |
-| `src/studio/viewer.ts` | Shared controls, camera, lighting and lifecycle for every building. |
-| `src/studio/assembly/` | Shared model-authoring utilities and extracted city-independent components used by studies and production models. No UI, evidence or town assumptions. |
-| `src/city/sillamae/shared/` (when needed) | Town-specific shared assets/loaders or component variants extracted under the reuse guide; existing canonical assets may remain in building folders. |
-| `src/studio/tools/` | Portable TypeScript versions of the local verification, model snapshot and capture workflows. |
-| `src/engine/` | Town-independent runtime and survey handling; never import studio UI/tools here. |
-| Local folder outside the checkout | Photos, URLs, feature schedules, approvals, backups, comparisons, captures, logs and reports. |
+| Select and move | **V** selects. Drag to move, use the orange ring to rotate, or nudge with the arrow keys. |
+| Place objects or trees | **A** places one, **P** places a row along a path, and **B** scatters a group. |
+| Edit the ground | **U** shapes the terrain. **L** lays a surface and **K** draws a fence, hedge, wall or kerb. |
+| Draw roads and paths | **W** draws a street or walking path. Select a drawn route and drag its end handles to extend or shorten it. |
+| Hide or remove | **X** hides a survey building. **D** removes objects and trees or clears a section of road or path. Ctrl+Z undoes a stroke. |
+| Inspect and navigate | **I** measures. Use **R** to orbit, **H** to pan, **F** to frame the selection and **T** for a plan view. |
 
-No copied model/vendor tree, personal filesystem paths, historical approval records or private reference images are needed to run studio. Production imports only the small batching utility, not the viewer or review tooling. See [assembly](ASSEMBLY.md) before extending a generator.
+**Save** or **Ctrl+S** writes the current square to `data/source/placements/`. You can save several squares before rebuilding. **Reset** returns the square to its state when opened, and Ctrl+Z can undo the reset.
 
-## Local checks
-
-Use a new output directory for every run. These commands reject repository-contained outputs (including junction aliases) and never replace an existing record. Paths below are examples **outside** the checkout; choose your own local review root.
-
-```sh
-npm run check
-npm run build
-npm run studio:check -- --out ../sillamae-local/review-001/checks
-npm run studio:snapshot -- --out ../sillamae-local/review-001/models
-```
-
-`studio:check` runs type checking, batching/output-safety tests, data generation and the production build. Exit **1** means failure; **2** means automated checks passed and visual review remains pending. Normal `check` and `build` retain their usual exit codes. Snapshot checks finite attributes/transforms, texture restoration, LOD snapshots and scene cleanup; it uses inert Node canvases, so browser material checks are still required. Compare snapshots with `--compare <previous-model-directory>` for a rendering-neutral change.
-
-Install a local browser once with `npx playwright install chromium`, or set `STUDIO_BROWSER` to your existing Chrome/Chromium executable (PowerShell: `$env:STUDIO_BROWSER = 'C:\Program Files\Google\Chrome\Application\chrome.exe'`). Captures never contact a remote atlas.
-
-```sh
-npm run studio:capture -- --url http://127.0.0.1:5174 --id <building-id> --stage draft --out ../sillamae-local/review-001/views
-npm run studio:capture -- --url http://127.0.0.1:5174 --atlas-only --out ../sillamae-local/refactor-before
-# After the change, on the same browser, machine and viewport:
-npm run studio:capture -- --url http://127.0.0.1:5174 --atlas-only --out ../sillamae-local/refactor-after --compare ../sillamae-local/refactor-before
-```
-
-The capture runner saves unobscured canvas PNGs, decoded RGBA hashes, source hashes and browser errors. Comparisons require identical capture names and pixels; any mismatch exits 1. Review intentional differences individually, retaining the original baseline. Capture success means pictures were taken, not inspected. Run capture after checks; avoid editing sources during either run. For active building corrections inspect that building; the registered-building atlas preservation views are technical parity checks and do not reopen older architectural approvals.
-
-Copy [the review template](templates/visual-review.json) into your local folder. Fill findings after inspecting the images. Add close detail/reference PNGs and WebM/MP4 motion evidence as needed; the automated overview matrix is not a substitute. To bind additional PNGs to a run, use `studio:evidence` before filling the review. It creates a separate capture record rather than editing the old one. The reviewer must record when and under which conditions the manual evidence was captured.
-
-```sh
-npm run studio:evidence -- --captures ../sillamae-local/review-001/views --extra ../sillamae-local/review-001/manual --out ../sillamae-local/review-001/all-views
-npm run studio:finalize -- --checks ../sillamae-local/review-001/checks --captures ../sillamae-local/review-001/all-views --review ../sillamae-local/review-001/visual-review.json --out ../sillamae-local/review-001/final
-```
-
-Finalization checks evidence files, unchanged source/data hashes, automated results and explicit findings. It does not interpret photos, prove motion from a still, or grant architectural approval. Leave an uninspected gate pending; mark an inapplicable gate with a specific reason. List known failures explicitly in the review; finalization rejects unresolved failures. Save exact owner approvals separately using [the building record](templates/building-record.md).
-
-## Provenance and cleanup
-
-Captures wait for the current view's survey/shadow coverage and rendered frames instead of fixed sleeps. Add `--all-tiles` to retain a full-town loading gate. A selected building and stage are opened directly; moving to another view reprioritizes pending tile downloads. Data verification shares the content cache with development and production builds, and uses the same 8 GB heap setting. Use `npm run data:rebuild` when a fresh generation is required.
-
-The process and rules were consolidated from the existing building-refinement rules (including the 24–28 October lessons), the 12-stage process and D01–D20 component checklists used for Kesk 1, Kesk 5 and Rodina. The study controls derive from the Rodina study viewer; verification derives from the local TypeScript migration and apron investigations. Historical commands under `work/city3d`, vendored Three.js, hardcoded paths, duplicated model copies and stale status claims are replaced by current imports and the commands above. Historical evidence stays local and immutable. Do not import archived runtime files over current city models.
-
-The library includes a residential-zone sign, 240 L wheeled bin, cylindrical waste containers (general/paper variants and a smaller bio bin), and rounded/spreading shrubs. Shrubs reuse atlas tree leaf cards and autumn colouring; **Atlas season** matches the current early-autumn tree treatment. Spring, summer, autumn and bare winter are explicit asset variants; the atlas does not yet have a global seasonal timeline.
+Choose **Update atlas** when you want to see all saved squares in the atlas. Confirm the rebuild, which can take several minutes. You can keep editing while it runs. If you save more changes during the build, choose **Update atlas** again when ready. The footer shows progress and reports failures.

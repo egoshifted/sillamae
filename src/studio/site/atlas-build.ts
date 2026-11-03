@@ -1,40 +1,30 @@
 export interface AtlasBuildStatus {
-  state: 'idle' | 'building' | 'ready' | 'error';
-  requested: number;
-  completed: number;
+  state: 'idle' | 'pending' | 'building' | 'ready' | 'error';
   error?: string;
 }
 
 export class AtlasBuildQueue {
-  #status: AtlasBuildStatus = {state: 'idle', requested: 0, completed: 0};
-  #running = false;
+  #status: AtlasBuildStatus = {state: 'idle'};
+  #revision = 0;
   #run: () => Promise<void>;
   constructor(run: () => Promise<void>) { this.#run = run; }
   status(): AtlasBuildStatus { return {...this.#status}; }
+  saved() {
+    this.#revision++;
+    if (this.#status.state !== 'building') this.#status = {state: 'pending'};
+  }
   request() {
-    this.#status.requested++;
-    this.#status.state = 'building';
-    delete this.#status.error;
-    if (!this.#running) void this.#drain();
+    if (this.#status.state !== 'building') void this.#build();
     return this.status();
   }
-  async #drain() {
-    this.#running = true;
+  async #build() {
+    const revision = this.#revision;
+    this.#status = {state: 'building'};
     try {
-      while (this.#status.completed < this.#status.requested) {
-        const version = this.#status.requested;
-        try {
-          await this.#run();
-          this.#status.completed = version;
-        } catch (e) {
-          // A save during a build invalidates the pipeline fingerprint; retry the newest snapshot.
-          if (version !== this.#status.requested) continue;
-          this.#status.state = 'error';
-          this.#status.error = e instanceof Error ? e.message : String(e);
-          return;
-        }
-      }
-      this.#status.state = 'ready';
-    } finally { this.#running = false; }
+      await this.#run();
+      this.#status = {state: revision === this.#revision ? 'ready' : 'pending'};
+    } catch (e) {
+      this.#status = {state: 'error', error: e instanceof Error ? e.message : String(e)};
+    }
   }
 }

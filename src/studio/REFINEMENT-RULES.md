@@ -1,6 +1,6 @@
 # Sillamäe building refinement rules
 
-Current repository edition. Consolidated from the established refinement rules and subsequent lessons; operational commands live in README.md.
+Current repository edition. Consolidated from the established refinement rules and subsequent lessons; see the [local checks and capture commands](PROCESS.md#local-checks).
 
 Apply this workflow to every subsequent building and to corrections of previously refined buildings. The aim is an identifiable, reference-faithful building at close range, with efficient rendering at town scale. Kesk 1 provides lessons about the process; its architectural details are not a template to copy onto other buildings.
 
@@ -116,7 +116,7 @@ Anton’s approval and any agreed exceptions:
 
 ## Local verification and preservation
 
-Use the current studio commands in [README.md](README.md). Keep all evidence and approvals outside the checkout. Never overwrite an original baseline or turn a pending finding into a pass. A source change invalidates earlier visual sign-off. Automated capture is not visual inspection.
+Use the current studio commands in the [local checks guide](PROCESS.md#local-checks). Keep all evidence and approvals outside the checkout. Never overwrite an original baseline or turn a pending finding into a pass. A source change invalidates earlier visual sign-off. Automated capture is not visual inspection.
 
 ### Lessons from the 24 October close-detail regressions
 
@@ -130,7 +130,7 @@ Use the current studio commands in [README.md](README.md). Keep all evidence and
 - Test shadows over the entire road/grass footprint at morning, midday and late afternoon, after toggling off/on, with vegetation hidden/restored. Repeat at different zooms and viewport proportions. Camera motion and rapid rotation need separate checks.
 - Preserve approved components independently from building status. Record superseding user instructions explicitly; an old accepted colour must not override a later requested change. Never regenerate the refinement log from a stale hardcoded description.
 
-Finalize an inspected run using `studio:finalize`; see README.md. This validates the evidence record and unchanged hashes, not architectural correctness.
+Finalize an inspected run using `studio:finalize`; see the [local checks guide](PROCESS.md#local-checks). This validates the evidence record and unchanged hashes, not architectural correctness.
 
 ## Reopened seam defects — 25 October 2026
 

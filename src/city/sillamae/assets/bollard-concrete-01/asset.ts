@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import type {AssetDefinition} from '../../../../engine/types.ts';
 import {assemble, cylinder, palette} from '../../assets/palette.ts';
 
-// Round concrete bollard with a domed top, as used to keep cars off footways.
 export const asset: AssetDefinition = {
   id: 'bollard-concrete-01',
   name: 'Concrete bollard',

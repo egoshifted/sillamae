@@ -127,7 +127,6 @@ export class Engine {
     return Promise.all(ready);
   }
 
-  // Objects placed in the studio; the city supplies its asset library, which the engine knows nothing about.
   addPlacements(placements: Placement[], assets: ReadonlyMap<string, AssetDefinition>) {
     if (this.#placements || !placements.length) return;
     this.#placements = addPlacements(this.#scene, placements, assets, this.frame);
@@ -135,7 +134,6 @@ export class Engine {
     this.#redraw = true;
   }
 
-  // Fences, hedges, walls and kerbs drawn in the studio, already stood on the ground.
   addLines(lines: BuiltLine[]) {
     if (!lines.length) return;
     this.#scene.add(lineMeshes(lines));

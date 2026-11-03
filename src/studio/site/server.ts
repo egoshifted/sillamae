@@ -53,6 +53,7 @@ export function studioSites(run = rebuildAtlas): Plugin {
         const parts = (request.url ?? '').split('?')[0].split('/').filter(Boolean);
         void (async () => {
           if (parts[0] === 'atlas-build' && parts.length === 1 && request.method === 'GET') return send(response, 200, builds.status());
+          if (parts[0] === 'atlas-build' && parts.length === 1 && request.method === 'POST') return send(response, 202, builds.request());
           if (parts[0] === 'sites' && parts.length === 1 && request.method === 'GET') {
             const dir = path.join(root, SITES);
             const sites = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
@@ -73,9 +74,13 @@ export function studioSites(run = rebuildAtlas): Plugin {
             if (site.version !== 1 || site.id !== id || !Array.isArray(site.placements)) return send(response, 400, {error: 'Not a placement site'});
             fs.mkdirSync(path.join(root, SITES), {recursive: true});
             const file = path.join(root, SITES, id + '.json'), temporary = file + '.tmp';
-            fs.writeFileSync(temporary, JSON.stringify(site, null, 1) + '\n');
-            fs.renameSync(temporary, file);
-            return send(response, 200, {saved: site.placements.length, build: builds.request()});
+            const contents = JSON.stringify(site, null, 1) + '\n';
+            if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== contents) {
+              fs.writeFileSync(temporary, contents);
+              fs.renameSync(temporary, file);
+              builds.saved();
+            }
+            return send(response, 200, {saved: site.placements.length, build: builds.status()});
           }
           if (parts[0] === 'assets' && parts.length === 3 && request.method === 'POST' && ASSET_ID.test(parts[1])) {
             const [, id, action] = parts, draft = path.join(root, DRAFTS, id), approved = path.join(root, ASSETS, id);

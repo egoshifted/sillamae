@@ -127,7 +127,6 @@ export interface SiteTree {
 }
 
 export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed' | 'worn-grass' | 'worn-paving';
-// An area drawn on the ground in the studio, laid like a footway.
 export interface SiteSurface {
   id: string;
   finish: SurfaceFinish;
@@ -135,7 +134,6 @@ export interface SiteSurface {
 }
 
 export type LineKind = 'fence' | 'hedge' | 'wall' | 'kerb';
-// A fence, hedge, low wall or kerb drawn along the ground in the studio.
 export interface SiteLine {
   id: string;
   kind: LineKind;
@@ -154,7 +152,6 @@ export interface SiteRoad {
   footways?: boolean; // a path along each side
 }
 
-// One studio square and what was placed in it.
 export interface PlacementSite {
   version: 1;
   id: string;

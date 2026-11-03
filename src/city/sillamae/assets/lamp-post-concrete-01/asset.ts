@@ -1,8 +1,7 @@
 import type {AssetDefinition} from '../../../../engine/types.ts';
 import {assemble, box, cylinder, palette, rod, type Part} from '../../assets/palette.ts';
 
-// Street lamp: a tapered octagonal concrete pole with a short raked arm and a
-// flat luminaire. The arm reaches out along +z, over the road.
+// The lamp arm faces +z, over the road.
 export const asset: AssetDefinition = {
   id: 'lamp-post-concrete-01',
   name: 'Concrete street lamp',

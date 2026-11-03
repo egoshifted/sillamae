@@ -52,7 +52,7 @@ npm run studio:capture -- --url http://127.0.0.1:5174 --id <building-id> --stage
 
 Capture defaults to the selected building's draft, production assembly or original survey, in that order. It includes the selected building's atlas context, eight study directions, lighting/shadow matrix, texture/plain-material restoration, distances and available stages. Capture `--compare <previous-views>` requires equal named images and pixels. Keep intentional differences explained; preserve the old baseline.
 
-Inspect close features, matching reference angles, roof/ground contacts and motion in addition to these overview captures. Add local evidence and findings as described in [README.md](README.md). Exit 2 from `studio:check` means technical checks passed but visual review is pending. No tool grants architectural approval.
+Inspect close features, matching reference angles, roof/ground contacts and motion in addition to these overview captures. Add local evidence and findings using the [local checks and capture commands](PROCESS.md#local-checks). Exit 2 from `studio:check` means technical checks passed but visual review is pending. No tool grants architectural approval.
 
 ## Integrate after review
 

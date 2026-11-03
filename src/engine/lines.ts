@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import type {BuiltLine} from './data.ts';
 import type {LineKind} from './types.ts';
 
-// Fences, hedges, low walls and kerbs drawn in the studio. Each run follows the
-// ground point by point, so its foot never floats on a slope.
 export const LINE_HEIGHT: Record<LineKind, number> = {fence: 1.2, hedge: 1.1, wall: .6, kerb: .12};
 const LOOK: Record<LineKind, {color: string; roughness: number; width: number}> = {
   fence: {color: '#3d4a3d', roughness: .6, width: .04},
@@ -46,7 +44,6 @@ export function lineMeshes(lines: BuiltLine[], {lifted = true, depthLift = DEPTH
         next = travelled + POST.every;
       }
     } else for (let i = 1; i < p.length; i++) {
-      // Hedges are trimmed unevenly; walls and kerbs are not.
       const top = line.kind === 'hedge' ? h * (.92 + .16 * hash(p[i][0], p[i][2])) : h;
       run(p[i - 1], p[i], width, -FOOT, top, out);
     }

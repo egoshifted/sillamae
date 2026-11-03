@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createServer} from 'vite';
 import {studioSites} from './server.ts';
 
-test('saving separate squares persists both files and queues atlas updates without blocking reads', async () => {
+test('saving separate squares persists both files without rebuilding until explicitly requested', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-save-'));
   const release: (() => void)[] = [];
   const server = await createServer({root, configFile: false, plugins: [studioSites(() => new Promise<void>(resolve => release.push(resolve)))], server: {host: '127.0.0.1', port: 0}, logLevel: 'silent'});
@@ -20,8 +20,12 @@ test('saving separate squares persists both files and queues atlas updates witho
     for (const site of [first, second]) {
       const response = await fetch(base + '/sites/' + site.id, {method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(site)});
       assert.equal(response.status, 200);
-      assert.equal((await response.json()).build.state, 'building');
+      assert.equal((await response.json()).build.state, 'pending');
     }
+    assert.equal(release.length, 0);
+    const update = await fetch(base + '/atlas-build', {method: 'POST'});
+    assert.equal(update.status, 202);
+    assert.equal((await update.json()).state, 'building');
     assert.equal(release.length, 1);
     for (const site of [first, second]) {
       const response = await fetch(base + '/sites/' + site.id);
@@ -31,10 +35,8 @@ test('saving separate squares persists both files and queues atlas updates witho
     }
     release[0]();
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(release.length, 2);
-    release[1]();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(await fetch(base + '/atlas-build').then(r=>r.json()), {state:'ready',requested:2,completed:2});
+    assert.equal(release.length, 1);
+    assert.deepEqual(await fetch(base + '/atlas-build').then(r=>r.json()), {state:'ready'});
     const bad = await fetch(base + '/sites/' + first.id, {method:'PUT',headers:{'content-type':'application/json'},body:'{}'});
     assert.equal(bad.status,400);
     assert.deepEqual(await fetch(base + '/sites/' + first.id).then(r=>r.json()),first);

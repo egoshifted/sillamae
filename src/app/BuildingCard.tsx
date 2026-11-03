@@ -9,8 +9,6 @@ const area = (g: Building['g']) => Math.abs(g.reduce((s, p, i) => {
   return s + p[0] * q[1] - q[0] * p[1];
 }, 0)) / 2;
 
-// A click without a drag selects the building under the pointer; Esc or a
-// click on empty ground clears it.
 export function BuildingCard({engine}: {engine: Engine}) {
   const [building, setBuilding] = useState(engine.selected);
 

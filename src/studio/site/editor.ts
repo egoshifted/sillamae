@@ -68,10 +68,8 @@ let loaded: Loaded | undefined, site: PlacementSite | undefined, sun: THREE.Dire
 let terrain: TerrainEdit | undefined, built: TerrainEdit | undefined;
 let tool: Tool = 'select', brush: Brush | null = null, gesture: Gesture | null = null, dirty = false, treesChanged = false, detailsChanged = false, space = false;
 let selection = new Set<string>(); // 'p:<placement id>', 'area:<id>', 'line:<id>', or a tree key from trees.ts
-// Points of the path, area or line being drawn.
 const undo: string[] = [], redo: string[] = [], path: THREE.Vector3[] = [];
 let details: THREE.Group | null = null;
-// Survey buildings by id, for the Hide tool.
 const pickOf = new Map<string, number>(), footprintOf = new Map<string, Point2[]>();
 const hoverBox = new THREE.Box3Helper(new THREE.Box3(), '#d33a2c');
 hoverBox.visible = false;
@@ -82,7 +80,6 @@ const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spi
   roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true, snapLine: true};
 // The town's streets in source x/z, for drawn roads to join; from the data build.
 let streetLines: Point2[][] = [];
-// Where a road point will join a street or another drawn road's end, while drawing.
 const ENDPOINT_RADIUS = .9;
 const snapMark = new THREE.Mesh(new THREE.RingGeometry(.6, ENDPOINT_RADIUS, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#e07b00', depthTest: false, side: THREE.DoubleSide}));
 snapMark.renderOrder = 999;
@@ -90,7 +87,6 @@ snapMark.visible = false;
 let roadDraft: THREE.Group | null = null, hoverDraft: THREE.Group | null = null;
 const roadSnaps: THREE.Vector3[] = []; // where each road point would snap, by index in path
 
-// Flat on the ground round the selection; dragging it turns the selection, as in The Sims.
 const ring = new THREE.Mesh(new THREE.RingGeometry(.86, 1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#f0a400', transparent: true, opacity: .85, depthTest: false, side: THREE.DoubleSide}));
 ring.add(new THREE.Mesh(new THREE.CircleGeometry(.09, 16).rotateX(-Math.PI / 2).translate(0, 0, .93), new THREE.MeshBasicMaterial({color: '#233e36', depthTest: false})));
 ring.renderOrder = ring.children[0].renderOrder = 998;
@@ -146,7 +142,6 @@ function inSquare(x: number, z: number) {
   return Math.abs(x + ox - cx) <= half && Math.abs(z + oz - cz) <= half;
 }
 
-// Where an asset would go: on the ground, or flat against a wall facing out.
 function target(clientX: number, clientY: number, asset: AssetDefinition, ignore?: THREE.Object3D) {
   if (!loaded || !site) return null;
   const caster = raycaster(clientX, clientY), floor = loaded.heights.intersect(caster.ray);
@@ -189,7 +184,6 @@ function toggleHidden(id: string) {
   showOptions();
 }
 
-// The placed object or tree under the pointer, nearest first.
 function itemAt(clientX: number, clientY: number) {
   const caster = raycaster(clientX, clientY), hit = caster.intersectObject(placed, true)[0], tree = trees?.group.visible ? pickTree(caster.ray, treeList(), loaded!.frame) : null;
   if (hit && (!tree || hit.distance <= tree.distance)) {
@@ -461,7 +455,6 @@ function step(from: string[], to: string[]) {
 let opened = '', saved = '';
 function reset() {
   if (!site || snapshot() === opened || !confirm(translate('All changes will be lost. Do you want to reset?'))) return;
-  // Kept on the undo stack all the same, so a reset clicked by mistake can be taken back.
   undo.push(snapshot());
   redo.length = 0;
   restore(opened);
@@ -523,7 +516,6 @@ function settle() {
   reshaped.clear();
   treesChanged = true;
 }
-// One touch of the terrain brush; objects and added trees on the ground ride with it.
 function dab(at: THREE.Vector3, target: number | null) {
   if (!terrain || !loaded) return;
   const [ox, oz] = loaded.frame.origin, r = options.radius, near = (x: number, z: number) => Math.hypot(x - at.x, z - at.z) < r;
@@ -613,7 +605,6 @@ function pathSpots(points: THREE.Vector3[]) {
   }
   return out;
 }
-// Tools that are drawn point by point, finished with Enter or a double-click.
 const drawing = (t: Tool) => t === 'path' || t === 'area' || t === 'line' || t === 'road';
 function updatePreview() {
   preview.clear();
@@ -666,8 +657,6 @@ function roadFootprint(at: THREE.Vector3) {
   }
   return group;
 }
-// Before the first click, the chosen line's width and height as a faint post, so a
-// hedge or wall can be judged against the paths beside it.
 function lineFootprint(at: THREE.Vector3) {
   const width = lineWidth(options.lineKind), height = options.lineHeight, box = new THREE.BoxGeometry(width, height, width).translate(at.x, at.y + height / 2, at.z);
   const fill = new THREE.Mesh(box, new THREE.MeshBasicMaterial({color: '#ffffff', transparent: true, opacity: .2, depthWrite: false}));
@@ -786,7 +775,6 @@ function showBrushRing(at: THREE.Vector3 | null) {
 
 // ---- Selection edits -------------------------------------------------------------
 
-// Turns the selection round its centre; a lone object turns on the spot.
 const startOf = (key: string): Start => ({p: spotOf(key)!, heading: headingOf(key), points: pointsOf(key)?.map(p => [...p] as Point2)});
 function turn(by: number, start?: Map<string, Start>, centre?: THREE.Vector3) {
   const [ox, oz] = loaded!.frame.origin, keys = [...selection].map(own);
@@ -795,7 +783,6 @@ function turn(by: number, start?: Map<string, Start>, centre?: THREE.Vector3) {
   const cos = Math.cos(by), sin = Math.sin(by);
   for (const [key, {p, heading, points}] of from) {
     if (placementOf(key)?.attach === 'wall') continue;
-    // Areas and lines turn their outline, round the group centre or their own.
     if (points) {
       const [px, pz] = from.size > 1 && !options.inPlace ? [c.x + ox, c.z + oz] : p;
       const turned = points.map(([x, z]): Point2 => { const dx = x - px, dz = z - pz; return [round(px + dx * cos + dz * sin), round(pz - dx * sin + dz * cos)]; });
@@ -837,7 +824,6 @@ function duplicate() {
         const list = (a ? site!.surfaces ??= [] : l ? site!.lines ??= [] : site!.roads ??= []) as {id: string}[];
         list.push({...structuredClone(a ?? l ?? r!), id});
         const [cx, cz] = centroid(pointsOf(copyKey)!);
-        // A copied road sits beside the original, a road's width over.
         const by = r ? roadWidth(r) + 1 : 1;
         if (moveTo(copyKey, cx + right.x * by, cz + right.z * by)) copies.add(copyKey); else list.pop();
         detailsChanged = true;
@@ -867,7 +853,6 @@ function selectAll() {
   selection = new Set([...site!.placements.map(p => 'p:' + p.id), ...(site!.surfaces ?? []).map(s => 'area:' + s.id), ...(site!.lines ?? []).map(l => 'line:' + l.id), ...(site!.roads ?? []).map(r => 'road:' + r.id), ...list.filter(i => { const a = anchorOf(i.key, list)!.at; return inSquare(a.x, a.z); }).map(i => i.key)]);
   sync();
 }
-// Alt-click picks the clicked object's asset and variant, or the tree's size, as the brush.
 function eyedrop(clientX: number, clientY: number) {
   const key = itemAt(clientX, clientY);
   if (!key) return;
@@ -1485,7 +1470,6 @@ function group(name: string, rows: HTMLElement[], searching: boolean) {
 }
 const heading = (text: string) => Object.assign(document.createElement('h3'), {textContent: text});
 const button = (text: string, onclick: () => void) => Object.assign(document.createElement('button'), {textContent: text, type: 'button', onclick});
-// A palette row: its picture opens the preview, its name picks it as the brush.
 function item(name: string, detail: string, active: boolean, onclick: () => void, picture: string, open?: () => void) {
   const row = document.createElement('div'), label = document.createElement('div');
   row.className = 'asset' + (active ? ' active' : '');
@@ -1631,10 +1615,17 @@ function showStatus() {
 let saving = false;
 function showAtlasBuild(build: AtlasBuildStatus) {
   const output = element<HTMLOutputElement>('atlas-build'), link = element<HTMLAnchorElement>('atlas');
-  output.textContent = build.state === 'building' ? 'Square saved · rebuilding atlas… You can keep editing.' : build.state === 'ready' ? 'Atlas updated · open atlas to view your saved edits.' : build.state === 'error' ? 'Square saved, but atlas update failed. Save again to retry.' : '';
+  element<HTMLButtonElement>('update-atlas').disabled = build.state === 'building';
+  output.textContent = build.state === 'building' ? 'Rebuilding atlas… You can keep editing.' : build.state === 'ready' ? 'Atlas updated · open atlas to view your saved edits.' : build.state === 'pending' ? 'Square saved · atlas update pending.' : build.state === 'error' ? 'Atlas update failed. Choose Update atlas to retry.' : '';
   output.title = build.error ?? '';
   link.setAttribute('aria-disabled', String(build.state === 'building'));
   link.onclick = event => { if (link.getAttribute('aria-disabled') === 'true') event.preventDefault(); };
+}
+async function updateAtlas() {
+  if (!confirm(translate('Rebuild the atlas from all saved squares? This can take several minutes. Unsaved edits are excluded. You can keep editing while it runs.'))) return;
+  const response = await fetch('/__studio/atlas-build', {method: 'POST'});
+  if (!response.ok) throw Error(translate('Could not start the atlas update.'));
+  showAtlasBuild(await response.json() as AtlasBuildStatus);
 }
 async function pollAtlasBuild() {
   try {
@@ -1701,6 +1692,7 @@ element('trees').onchange = () => { if (trees) { trees.group.visible = element<H
 element('grid').onchange = () => render();
 element('undo').onclick = () => step(undo, redo);
 element('redo').onclick = () => step(redo, undo);
+element('update-atlas').onclick = () => action(updateAtlas);
 element('save').onclick = () => action(save);
 element('reset').onclick = reset;
 const action = (run: () => Promise<unknown>) => { void run().catch(e => { error.textContent = String(e instanceof Error ? e.message : e); }); };
