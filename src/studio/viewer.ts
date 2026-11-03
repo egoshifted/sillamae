@@ -64,18 +64,24 @@ async function load(reset = true) {
     if (reset) view(); resize(); ready = true;
   } catch (e) { if (ticket === generation) { error.textContent = String(e); status.textContent = 'Study failed'; } throw e; }
 }
+function rememberStudy() {
+  const query = new URLSearchParams(location.search);
+  query.set('building', building.value); query.set('mode', mode.value);
+  history.replaceState(null, '', '?' + query);
+  sessionStorage.setItem('studio-building', building.value); sessionStorage.setItem('studio-mode', mode.value);
+}
 function saveView() {
   const query = new URLSearchParams({building: building.value, mode: mode.value, light: element<HTMLSelectElement>('light').value, position: camera.position.toArray().join(','), target: controls.target.toArray().join(',')});
   for (const id of ['shadows', 'textures', 'plain', 'ground']) query.set(id, String(checked(id)));
   history.replaceState(null, '', '?' + query); return location.href;
 }
 const action = (run: () => Promise<unknown>) => { void run().catch(e => { error.textContent = String(e); }); };
-building.onchange = () => { modes(''); action(() => load()); };
+building.onchange = () => { modes(''); rememberStudy(); action(() => load()); };
 element<HTMLInputElement>('search').oninput = event => {
   const query = (event.target as HTMLInputElement).value.toLowerCase();
   for (const option of building.options) option.hidden = !option.text.toLowerCase().includes(query);
 };
-mode.onchange = () => action(() => load(false));
+mode.onchange = () => { rememberStudy(); action(() => load(false)); };
 element('reload').onclick = () => action(() => load(false));
 element('home').onclick = () => view();
 element('rotate').onclick = () => { camera.position.sub(controls.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4).add(controls.target); controls.update(); };
@@ -87,7 +93,7 @@ element('save').onclick = saveView;
 element('capture').onclick = () => { render(); const a = document.createElement('a'); a.download = `study-${building.value}-${Date.now()}.png`; a.href = renderer.domElement.toDataURL('image/png'); a.click(); };
 
 export const studio = {get stages() { return stages(building.value); }, get ready() { return ready; }, get error() { return error.textContent; }, view, render, saveView,
-  async select(id: string, assembly?: string) { if (!buildings.some(b => b.id === id)) throw Error('Unknown building ID'); if (assembly && !stages(id).some(s => s.id === assembly)) throw Error('Unknown study stage: ' + assembly); building.value = id; modes(assembly ?? ''); await load(); },
+  async select(id: string, assembly?: string) { if (!buildings.some(b => b.id === id)) throw Error('Unknown building ID'); if (assembly && !stages(id).some(s => s.id === assembly)) throw Error('Unknown study stage: ' + assembly); building.value = id; modes(assembly ?? ''); rememberStudy(); await load(); },
   options(options: {light?: string; shadows?: boolean; textures?: boolean; plain?: boolean; ground?: boolean}) {
     if (options.light) element<HTMLSelectElement>('light').value = options.light;
     for (const id of ['shadows', 'textures', 'plain', 'ground'] as const) if (options[id] !== undefined) element<HTMLInputElement>(id).checked = options[id];
@@ -102,7 +108,8 @@ lighting();
 action(async () => {
   const data = await world; buildings = data.buildings;
   for (const b of [...buildings].sort((a,b) => a.name.localeCompare(b.name))) building.add(new Option(label(b), b.id));
-  building.value = buildings.some(b => b.id === params.get('building')) ? params.get('building')! : buildings[0].id; modes(params.get('mode') ?? '');
+  const remembered = params.get('building') || sessionStorage.getItem('studio-building');
+  building.value = buildings.some(b => b.id === remembered) ? remembered! : buildings[0].id; modes(params.get('mode') || sessionStorage.getItem('studio-mode') || ''); rememberStudy();
   await load();
   const vector = (key: string) => { const values = params.get(key)?.split(',').map(Number); return values?.length === 3 && values.every(Number.isFinite) ? values : null; };
   const position = vector('position'), target = vector('target');
