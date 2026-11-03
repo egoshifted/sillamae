@@ -32,7 +32,8 @@ export function createAnnex(context:OverrideContext,datum:number,masonry?:THREE.
   const felt=surfaces(),feltMaps=[felt.maps['felt-colour-v1'][0],felt.maps['felt-relief-v1'][0]] as const;
   [materials.roof.map,materials.roof.bumpMap]=feltMaps;materials.roof.bumpScale=.028;
   let ready=felt.ready.then(()=>{});
-  const concreteMap=typeof document==='undefined'?null:new THREE.Texture();
+  // The data build stubs document with inert canvases, so only window marks a browser that can load images.
+  const concreteMap=typeof window==='undefined'?null:new THREE.Texture();
   if(concreteMap)ready=Promise.all([ready,new THREE.TextureLoader().loadAsync(new URL('../kesk1/textures/concrete-v1-0.png',import.meta.url).href).then(t=>{concreteMap.image=t.image;concreteMap.needsUpdate=true;t.dispose();})]).then(()=>{});
   if(concreteMap){concreteMap.wrapS=concreteMap.wrapT=THREE.RepeatWrapping;concreteMap.colorSpace=THREE.SRGBColorSpace;concreteMap.anisotropy=8;materials.concrete.map=concreteMap;materials.concrete.bumpMap=concreteMap;materials.concrete.bumpScale=.018;materials.concrete.color.set('#b7b2a7');}
   const Y=(source:number)=>source-datum;

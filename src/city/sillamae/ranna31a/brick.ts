@@ -4,7 +4,7 @@ import {frontDesign as d,frontSchedule} from './front-design.ts';
 import {rearDesign as r} from './rear-design.ts';
 
 export function brickSurface() {
-  const loader=typeof document==='undefined'?null:new THREE.TextureLoader(),pending:Promise<unknown>[]=[];
+  const loader=typeof window==='undefined'?null:new THREE.TextureLoader(),pending:Promise<unknown>[]=[];
   function map(url:URL,colour:boolean) {
     const canvas=loader?document.createElement('canvas'):null;
     if(canvas){canvas.width=canvas.height=1;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#808080';ctx.fillRect(0,0,1,1);}
