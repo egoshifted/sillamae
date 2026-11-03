@@ -1,9 +1,12 @@
+import {finishSlabRoof} from '../shared/slab-roof.ts';
+import {panelTexture, roughcast} from '../shared/slab-surfaces.ts';
+import {frameOpening} from '../shared/opening-frame.ts';
 import * as THREE from 'three';
 import {createBrickTexture as brickTexture,acquirePaleMasonry} from '../shared/masonry.ts';
 import {createOffsetSlabStudy} from './offset-slab.ts';
 import {splitWallAtHeight} from './split-wall.ts';
 import {applyWindowLintels} from './lintel-surfaces.ts';
-import type {BalconySchedule, Design, Rows} from './types.ts';
+import type {BalconySchedule, Design} from './types.ts';
 
 // Materials and frames are an initial September 2023 entrance-side pass, not
 // a claim that individual windows or terrain are fully surveyed.
@@ -15,9 +18,7 @@ export function createEntranceDetailStudy(spec: Design, balconySchedule?: Balcon
  const root=createOffsetSlabStudy(spec), audit=root.userData.audit, pale=acquirePaleMasonry();
  audit.detailDoorWidth={width:spec.doorWidth,basis:'Inner red-jamb faces; Anton 28 October 2026',inferred:true};
  // Illustrative brick bond with a provisional metre-scale module.
- function panelTexture(){const w=256,h=128,data=new Uint8Array(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const rib=y<112&&(x%16<2),c=rib?142:164,i=(y*w+x)*4;data.set([c,c+2,c+1,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=THREE.RepeatWrapping;t.wrapT=THREE.ClampToEdgeWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  function roofTexture(){const w=256,h=256,data=new Uint8Array(w*h*4);let seed=1459;for(let y=0;y<h;y++)for(let x=0;x<w;x++){seed=(seed*1664525+1013904223)>>>0;const grain=((seed>>>24)/255-.5)*12,c=Math.round(131+grain),i=(y*w+x)*4;data.set([c,c+1,c,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
- function roughcast(relief=false){const w=256,h=256,data=new Uint8Array(w*h*4);let seed=733;for(let y=0;y<h;y++)for(let x=0;x<w;x++){seed=(seed*1664525+1013904223)>>>0;const grain=((seed>>>24)/255-.5)*24,wave=5*Math.sin(y*.09+Math.sin(x*.04)),v=Math.max(0,Math.min(255,Math.round((relief?143:182)+grain+wave))),i=(y*w+x)*4;data.set([v,v,v-2,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;if(!relief)t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  function canopyTexture(){const w=256,h=64,data=new Uint8Array(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const v=x%16<3?60:76,i=(y*w+x)*4;data.set([v,v+4,v+3,255],i);}const t=new THREE.DataTexture(data,w,h);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;}
  const textures: THREE.Texture[]=[pale.maps[0],brickTexture(true),panelTexture(),roofTexture(),pale.maps[1],brickTexture(true,true),roughcast(),roughcast(true),canopyTexture()];
  if(sharedMasonry){textures[1].dispose();textures[5].dispose();textures[1]=sharedMasonry[0];textures[5]=sharedMasonry[1];for(const [i,index] of [[1,0],[5,1]])textures[i].userData.sharedSurface={key:'masonry-v1',index};}
@@ -62,17 +63,9 @@ export function createEntranceDetailStudy(spec: Design, balconySchedule?: Balcon
  applyWindowLintels(root,spec,mats.lintel);
  function solid(edge: number,x: number,y: number,w: number,h: number,offset: number,depth: number,mat: keyof typeof mats,name: string){const a=g[edge],b=g[(edge+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=[(b[0]-a[0])/L,(b[1]-a[1])/L],n=area<0?[-u[1],u[0]]:[u[1],-u[0]];const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,depth),mats[mat]);mesh.position.set(a[0]+u[0]*(x+w/2)+n[0]*offset,y+h/2,a[1]+u[1]*(x+w/2)+n[1]*offset);mesh.rotation.y=-Math.atan2(u[1],u[0]);mesh.name=name;mesh.castShadow=true;mesh.receiveShadow=true;root.add(mesh);}
  for(const o of audit.openings.filter(o=>o.kind==='window'||o.kind==='stair'||o.kind==='entrance')){
-  const fw=o.kind==='stair'?.065:.055, z=-.16, d=.04;
-  if(o.kind!=='entrance'){
-   const r=.025,ix=o.x+r,iy=o.y+r,iw=o.w-2*r,ih=o.h-2*r;
-   for(const x of [o.x,o.x+o.w-r])solid(o.edge,x,o.y,r,o.h,-.11,.22,'reveal','detail-'+o.kind+'-reveal');
-   for(const y of [o.y,o.y+o.h-r])solid(o.edge,ix,y,iw,r,-.11,.22,'reveal','detail-'+o.kind+'-reveal');
-   for(const x of [ix,ix+iw-fw])solid(o.edge,x,iy,fw,ih,z,d,'frame','detail-'+o.kind+'-frame');
-   for(const y of [iy,iy+ih-fw])solid(o.edge,ix+fw,y,iw-2*fw,fw,z,d,'frame','detail-'+o.kind+'-frame');
-   if(o.kind==='window'){// Dated entrance images show broad centre panes in many wider three-light windows.
-   // These proportions are inferred; per-apartment replacements remain uncertain.
-   const positions=(o.column===1||o.column===4)?[.28,.72]:[.5];for(const fraction of positions)solid(o.edge,ix+iw*fraction-fw/2,iy,fw,ih,z,d,'frame','detail-window-mullion');solid(o.edge,o.x-.04,o.y-.065,o.w+.08,.065,.025,.05,'sill','detail-window-sill');}
-   else {for(let y=iy+1.2;y<iy+ih-.2;y+=1.2)solid(o.edge,ix+fw,y,iw-2*fw,fw,z,d,'frame','detail-stair-transom');}
+  if(o.kind==='stair'||o.kind==='window'){
+   const mullions=o.kind==='window'&&(o.column===1||o.column===4)?[.28,.72]:[.5];
+   frameOpening({...o,kind:o.kind},solid,mullions);
   }else {
    const section=spec.facades.find(f=>f.edge===o.edge)!.section,observed=section<=3;
    const backing=root.children.find(m=>m.name==='backing-'+o.edge+'-entrance');
@@ -146,40 +139,7 @@ export function createEntranceDetailStudy(spec: Design, balconySchedule?: Balcon
  // Kajaka 8 structural comparison; individual finish remains approximate.
  for(const row of balconySchedule?.rows||[]){const facade=spec.facades.find(f=>f.type==='loggia'&&f.section===row.section)!,o=audit.openings.find(v=>v.edge===facade.edge&&v.kind==='loggia'&&v.floor===row.floor)!;let cursor=0;for(const seg of [...row.segments,{from:1,to:1}]){if(seg.from-cursor>.01)solid(o.edge,o.x+o.w*cursor,o.y+spec.loggiaParapet,o.w*(seg.from-cursor),.035,-.06,.05,'openRail','detail-open-balcony-rail');cursor=seg.to;}}
 
- // Roof finish replaces faces on their owning solids. No overlay cap or
- // duplicated lining is added over the already closed plain geometry.
- {
-  root.updateMatrixWorld(true);
-  const bodies=root.children.filter(m=>m.name.startsWith('parapet-')||m.name.startsWith('roof-divider-'));
-  const deck=root.children.find(m=>m.name==='roof')!,dg=deck.geometry.index?deck.geometry.toNonIndexed():deck.geometry.clone();dg.applyMatrix4(deck.matrixWorld);
-  const dp=dg.attributes.position,deckTriangles: THREE.Vector3[][]=[],xCuts=new Set<number>(),zCuts=new Set<number>();
-  for(let i=0;i<dp.count;i+=3){const tri=[0,1,2].map(j=>new THREE.Vector3().fromBufferAttribute(dp,i+j));if(Math.abs(tri[0].y-spec.roofDatum)<1e-4){deckTriangles.push(tri);for(const p of tri){xCuts.add(p.x);zCuts.add(p.z);}}}
-  dg.dispose();
-  const overDeck=(p: THREE.Vector3)=>deckTriangles.some(t=>{const a=t[0],b=t[1],c=t[2],det=(b.z-c.z)*(a.x-c.x)+(c.x-b.x)*(a.z-c.z);if(Math.abs(det)<1e-12)return false;const u=((b.z-c.z)*(p.x-c.x)+(c.x-b.x)*(p.z-c.z))/det,v=((c.z-a.z)*(p.x-c.x)+(a.x-c.x)*(p.z-c.z))/det;return u>=-1e-8&&v>=-1e-8&&u+v<=1+1e-8;});
-  const topAt=(p: THREE.Vector3)=>{const hits=new THREE.Raycaster(new THREE.Vector3(p.x,spec.roofDatum+2,p.z),new THREE.Vector3(0,-1,0),0,3).intersectObjects(bodies);return hits[0]?.point.y??spec.roofDatum;};
-  const clip=(poly: THREE.Vector3[],axis: 'x'|'y'|'z',value: number,positive: boolean)=>{const result=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=(a[axis]-value)*(positive?1:-1),db=(b[axis]-value)*(positive?1:-1),ina=da>=-1e-10,inb=db>=-1e-10;if(ina)result.push(a);if(ina!==inb)result.push(a.clone().lerp(b,da/(da-db)));}return result;};
-  const split=(parts: THREE.Vector3[][],axis: 'x'|'y'|'z',value: number)=>parts.flatMap(poly=>{const vs=poly.map(p=>p[axis]);return Math.min(...vs)<value-1e-8&&Math.max(...vs)>value+1e-8?[clip(poly,axis,value,false),clip(poly,axis,value,true)]:[poly];});
-  const stats={sourceMeshes:bodies.length,masonryFaces:0,liningFaces:0,metalFaces:0,foldReturn:.06,membraneTileMetres:16,dimensions:'Inferred from direct 2023 finish and user June2012 red-end relationship; retained roof/body levels'};
-  for(const mesh of bodies){
-   const world=mesh.geometry.index?mesh.geometry.toNonIndexed():mesh.geometry.clone();world.applyMatrix4(mesh.matrixWorld);const p=world.attributes.position,groups=new Map<string,Rows>();
-   const match=mesh.name.match(/^parapet-(?:rear-)?(\d+)$/),edge=match?Number(match[1]):null;
-   let red=true;if(edge!==null&&edge%2===0){const a=g[edge],b=g[(edge+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),along=((mesh.position.x-a[0])*(b[0]-a[0])+(mesh.position.z-a[1])*(b[1]-a[1]))/L;red=!mesh.name.startsWith('parapet-rear-')&&(along<.6||along>L-.6);}
-   function emit(poly: THREE.Vector3[],normal: THREE.Vector3,kind: 'masonry'|'lining'|'metal'){if(poly.length<3)return;const rows=groups.get(kind)||{p:[],n:[],uv:[]};for(let k=1;k<poly.length-1;k++){const tri=[poly[0],poly[k],poly[k+1]],cross=tri[1].clone().sub(tri[0]).cross(tri[2].clone().sub(tri[0]));if(cross.lengthSq()<1e-16)continue;for(const v of tri){rows.p.push(v.x,v.y,v.z);rows.n.push(normal.x,normal.y,normal.z);const horizontal=Math.abs(normal.y)>.5,u=horizontal?v.x:Math.abs(normal.x)>.5?v.z:v.x;rows.uv.push(u/(kind==='lining'?16:2.2),(horizontal?v.z:v.y)/(kind==='lining'?16:.996));}stats[kind==='masonry'?'masonryFaces':kind==='lining'?'liningFaces':'metalFaces']++;}groups.set(kind,rows);}
-   for(let i=0;i<p.count;i+=3){const tri=[0,1,2].map(j=>new THREE.Vector3().fromBufferAttribute(p,i+j)),normal=tri[1].clone().sub(tri[0]).cross(tri[2].clone().sub(tri[0])).normalize();if(normal.lengthSq()<.5)continue;
-    if(Math.abs(normal.y)>.5){emit(tri,normal,normal.y>0?'metal':red?'masonry':'metal');continue;}
-    let parts=[tri];for(const x of xCuts)parts=split(parts,'x',x-normal.x*.02);for(const z of zCuts)parts=split(parts,'z',z-normal.z*.02);
-    for(const part of parts){if(part.length<3)continue;const c=part.reduce((v,p)=>v.add(p),new THREE.Vector3()).multiplyScalar(1/part.length),inside=overDeck(c.clone().addScaledVector(normal,.02)),kind=inside?'lining':red?'masonry':'metal',height=topAt(c.clone().addScaledVector(normal,-.01)),cut=height-.06;
-     if(kind==='metal')emit(part,normal,'metal');else{emit(clip(part,'y',cut,false),normal,kind);emit(clip(part,'y',cut,true),normal,'metal');}
-    }
-   }
-   world.dispose();
-   for(const [kind,rows]of groups){if(!rows.p.length)continue;const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(rows.p,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(rows.n,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(rows.uv,2));const m=new THREE.Mesh(geometry,kind==='masonry'?mats.red:kind==='lining'?mats.roofFinish:mats.roofEdgeMetal);m.name='roof-finish-'+mesh.name+'-'+kind;m.userData.roofFinishKind=kind;m.userData.roofOwner=mesh.name;m.castShadow=true;m.receiveShadow=true;root.add(m);}
-  }
-  for(const mesh of bodies){root.remove(mesh);mesh.geometry.dispose();}
-  for(const m of root.children.filter(m=>m.name==='detail-roof-upstand-cap'))m.material=mats.roofEdgeMetal;
-  audit.roofFinish=stats;
- }
-
+ finishSlabRoof(root,spec,{red:mats.red,roofFinish:mats.roofFinish,roofEdgeMetal:mats.roofEdgeMetal},'Inferred from direct 2023 finish and user June2012 red-end relationship; retained roof/body levels');
  // Direct undated aerial: one small bent pipe beside each paired upstand,
  // and two conspicuous pale dish forms. Positions/profiles are approximate,
  // not a survey or evidence of the plumbing/equipment function.

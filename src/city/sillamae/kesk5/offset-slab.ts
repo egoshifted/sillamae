@@ -44,7 +44,7 @@ export function createOffsetSlabStudy(spec: Design){
   const edgeThickness=spec.roofEdgeThickness??.18;
   if(!(edgeThickness>0&&Number.isFinite(edgeThickness)))throw Error('Invalid roof edge thickness');
   const relief=spec.facadeRelief;
-  if(relief&&(!(['edgeWidth','edgeProjection','jambWidth','jambProjection','headHeight'] as const).every(k=>Number.isFinite(relief[k])&&relief[k]>0)||!Number.isFinite(relief.baseDatum)||relief.baseDatum>0))throw Error('Invalid facade relief');
+  if(relief&&(!(['edgeWidth','edgeProjection','jambWidth','jambProjection','headHeight'] as const).every(k=>Number.isFinite(relief[k])&&(k==='edgeProjection'?relief[k]>=0:relief[k]>0))||!Number.isFinite(relief.baseDatum)||relief.baseDatum>0))throw Error('Invalid facade relief');
   const materials={frame:new THREE.MeshStandardMaterial({color:0xdddcd5,roughness:1}),wall:new THREE.MeshStandardMaterial({color:0xd5d1c8,roughness:1}),end:new THREE.MeshStandardMaterial({color:0xbdb7ac,roughness:1}),roof:new THREE.MeshStandardMaterial({color:0x92948e,roughness:1}),glass:new THREE.MeshStandardMaterial({color:0x6b7d82,roughness:.8}),base:new THREE.MeshStandardMaterial({color:0xb0b0a6,roughness:1})};
   const audit: Audit={lightwells:[],projections:[],openings:[],canopies:[],roofs:[],vents:[],roofDividers:[],facadeEdges:spec.facades,fit,localFootprint:g,importedLocal,sectionAlignmentMovement:Math.max(...g.map((p,i)=>Math.hypot(p[0]-importedLocal[i][0],p[1]-importedLocal[i][1]))),roofEdgeThickness:edgeThickness};
   function box(x: number,y: number,z: number,w: number,h: number,d: number,m: keyof typeof materials,label: string){if(!(w>0&&h>0&&d>0))throw Error('Invalid solid '+label);const mesh: ModelMesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),materials[m]);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;mesh.name=label;root.add(mesh);return mesh;}
@@ -211,3 +211,4 @@ export function createStudyGroundGeometry(audit: Pick<Audit,'lightwells'>){
  for(const well of audit.lightwells||[])shape.holes.push(new THREE.Path(well.corners.map(p=>new THREE.Vector2(p[0],-p[1]))));
  const geo=new THREE.ShapeGeometry(shape);geo.rotateX(-Math.PI/2);return geo;
 }
+

@@ -29,7 +29,9 @@ export async function buildStudy(world: WorldData, id: string, mode: string) {
   const building = world.buildings.find(b => b.id === id);
   if (!building) throw Error('Unknown study building: ' + id);
   const scene = new THREE.Scene(), frame = {...city.frame, base: world.base};
-  let groundTriangles = world.siteGround[id] ?? await surveyGround(building);
+  const definition = definitions.find(s => s.id === id);
+  const useSurvey = mode !== 'assembled' && definition?.studyGroundSource === 'survey';
+  let groundTriangles = useSurvey ? await surveyGround(building) : world.siteGround[id] ?? await surveyGround(building);
   const context: OverrideContext = {scene, building: structuredClone(building), terrain: world.terrain, frame, ground: groundTriangles, changed() {}};
   let model: StudyModel;
   if (mode === 'survey') model = await createSurveyStudy(building, frame);
@@ -40,9 +42,10 @@ export async function buildStudy(world: WorldData, id: string, mode: string) {
     const built = override.build(context);
     model = {root: built.root, setTextures: built.setTextures, ready: Promise.all([built.ready, built.root.userData.ready]), dispose: () => built.root.userData.dispose()};
   } else {
-    const stage = definitions.find(s => s.id === id)?.stages[mode];
+    const stage = definition?.stages[mode];
     if (!stage) throw Error('Unknown study stage: ' + mode);
     model = await stage.build(context);
+    groundTriangles = model.studyGround ?? groundTriangles;
     if (stage.cutsGround) groundTriangles = cutGround(groundTriangles, model.root.userData.groundPatches ?? []);
   }
   try { await model.ready; if (model.root.userData.detailError) throw Error(model.root.userData.detailError); }
@@ -64,3 +67,4 @@ export async function buildStudy(world: WorldData, id: string, mode: string) {
     if (disposed) return; disposed = true; model.dispose(); geometry.dispose(); material.dispose(); scene.clear();
   }};
 }
+
