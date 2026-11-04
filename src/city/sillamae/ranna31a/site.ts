@@ -69,13 +69,6 @@ function ribbon(ground:GroundTriangle[],datum:number,line:Point2[],width:number,
 // The study's survey ground reaches 15 m past the building, so the sidewalk stops at x 26 on its way to the OSM node at x 43.9.
 const sidewalkEast:Point2[]=[[-1.2,-9.9],[19.2,-11.4],[26,-11.26]],sidewalkZ=-10.6;
 
-// Survey tree register (scene trees) along the Ranna grass strip east of the tower, and two lindens in front of the tower's rear that the 2021 register lacks
-// (owner street photos, either side of the lamp post). The atlas draws register trees itself; this study shows them for context.
-export const streetTrees:({p:Point2,z:number,h:number,r:number}|{local:Point2,h:number,r:number})[]=[
-  {p:[1207.47,644.47],h:13.7,r:3.4,z:7.7576},{p:[1212.15,645.94],h:12.8,r:3.4,z:7.8967},{p:[1221.73,644.34],h:14.3,r:3.7,z:7.8472},{p:[1226.87,645.03],h:13.5,r:3.4,z:7.9024},{p:[1232.36,645.15],h:14.4,r:3.6,z:7.8884},
-  {local:[7.5,-13.3],h:12.5,r:3.2},{local:[.3,-13.3],h:12,r:3.1},
-];
-
 export function createRearSite(ground:GroundTriangle[],datum:number) {
   const root=new THREE.Group();root.name='annex-rear-site';
   const f1=frame(1),f2=frame(2),f3=frame(3),east=annex.wings.find(w=>w.edge===1)!,sea=annex.wings.find(w=>w.edge===3)!;

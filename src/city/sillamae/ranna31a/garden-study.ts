@@ -7,9 +7,7 @@ import {asset as lampPost} from '../assets/lamp-post-concrete-01/asset.ts';
 import {createFrontStudy} from './front.ts';
 import {sourcePoint} from './front-design.ts';
 import {createAnnex} from './annex.ts';
-import {createRearSite,streetTrees} from './site.ts';
-import {addTrees} from '../../../engine/vegetation/trees.ts';
-import type {Tree} from '../../../engine/types.ts';
+import {createRearSite} from './site.ts';
 
 export function createGarden(context:OverrideContext) {
   const building=createFrontStudy(context),root=new THREE.Group(),garden=new THREE.Group();root.add(building.root,garden);
@@ -49,18 +47,4 @@ export function createGarden(context:OverrideContext) {
   }
   let disposed=false;
   return {...building,root,datum:building.root.userData.audit.datum as number,ready:Promise.all([building.ready,annex.ready]),setTextures(enabled:boolean){building.setTextures?.(enabled);annex.setTextures(enabled);site.setTextures(enabled);},groundCuts:[...(building.groundCuts??[]),...annex.groundCuts,...site.groundCuts],dispose(){if(disposed)return;disposed=true;building.dispose();annex.dispose();site.dispose();garden.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry.dispose();});foliage.forEach(m=>m.dispose());garden.removeFromParent();root.removeFromParent();}};
-}
-
-// The atlas draws the street trees itself, from the survey register and the town's saved site edits.
-export function createGardenStudy(context:OverrideContext) {
-  const model=createGarden(context),trees=new THREE.Group();trees.name='ranna-street-trees';model.root.add(trees);
-  const list:Tree[]=streetTrees.map(t=>{
-    const p='local' in t?sourcePoint(...t.local):t.p,z='z' in t?t.z:entranceDatum(context.ground,[p]);
-    if(z===null)throw Error('Street tree needs survey land');
-    return {p,h:t.h,r:t.r,type:'Lehtpuu',year:2021,z};
-  });
-  // Near crowns only: the studio camera stays close, and the engine's level switching needs the atlas loop.
-  addTrees(trees,list,context.frame).update(new THREE.Vector3(list[0].p[0]-context.frame.origin[0],0,list[0].p[1]-context.frame.origin[1]),10);
-  let disposed=false;
-  return {...model,dispose(){if(disposed)return;disposed=true;trees.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();for(const m of [o.material].flat())m.dispose();}});trees.removeFromParent();model.dispose();}};
 }
