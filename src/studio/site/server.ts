@@ -8,8 +8,8 @@ import type {Plugin} from 'vite';
 // Development-server endpoints for the site editor: it saves placements into
 // data/source and moves reviewed drafts. Only the local dev server has them;
 // the published build is static.
-const SITES = 'data/source/placements', ASSETS = 'src/city/sillamae/assets', DRAFTS = 'src/city/sillamae/asset-drafts';
-const SITE_ID = /^-?\d+_-?\d+_\d+$/, ASSET_ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*-\d{2}$/;
+const SITES = 'data/source/placements', BUILDINGS = 'data/source/buildings', ASSETS = 'src/city/sillamae/assets', DRAFTS = 'src/city/sillamae/asset-drafts';
+const SITE_ID = /^-?\d+_-?\d+_\d+$/, BUILDING_ID = /^\d+$/, ASSET_ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*-\d{2}$/;
 
 const body = (request: IncomingMessage) => new Promise<string>((resolve, reject) => {
   let text = '';
@@ -42,7 +42,7 @@ export function studioSites(run = rebuildAtlas): Plugin {
   return {
     name: 'studio-sites',
     apply: 'serve',
-    config: () => ({server: {watch: {ignored: ['**/public/data', '**/public/data/**', '**/public/.data-*', '**/public/.data-*/**', '**/public/.data-build.lock', '**/data/source/placements/**']}}}),
+    config: () => ({server: {watch: {ignored: ['**/public/data', '**/public/data/**', '**/public/.data-*', '**/public/.data-*/**', '**/public/.data-build.lock', '**/data/source/placements/**', '**/data/source/buildings/**']}}}),
     configureServer(server) {
       const root = server.config.root, builds = new AtlasBuildQueue(() => run(root));
       server.middlewares.use((request, response, next) => {
@@ -81,6 +81,25 @@ export function studioSites(run = rebuildAtlas): Plugin {
               builds.saved();
             }
             return send(response, 200, {saved: site.placements.length, build: builds.status()});
+          }
+          if (parts[0] === 'buildings' && parts.length === 2 && BUILDING_ID.test(parts[1]) && request.method === 'GET') {
+            const file = path.join(root, BUILDINGS, parts[1] + '.json');
+            if (!fs.existsSync(file)) return send(response, 404, {error: 'No saved record'});
+            return send(response, 200, JSON.parse(fs.readFileSync(file, 'utf8')));
+          }
+          if (parts[0] === 'buildings' && parts.length === 2 && request.method === 'PUT') {
+            const id = parts[1];
+            if (!BUILDING_ID.test(id)) return send(response, 400, {error: 'Bad building id'});
+            const record = JSON.parse(await body(request));
+            const designOk = record.design == null || typeof record.design === 'object';
+            const editsOk = record.edits == null || Array.isArray(record.edits);
+            // A studio version stays in data/source/buildings. It must not queue an atlas rebuild.
+            if (record.version !== 1 || record.id !== id || !designOk || !editsOk || (record.design == null && record.edits == null)) return send(response, 400, {error: 'Not a building record'});
+            fs.mkdirSync(path.join(root, BUILDINGS), {recursive: true});
+            const file = path.join(root, BUILDINGS, id + '.json'), temporary = file + '.tmp';
+            fs.writeFileSync(temporary, JSON.stringify(record, null, 2) + '\n');
+            fs.renameSync(temporary, file);
+            return send(response, 200, {saved: id});
           }
           if (parts[0] === 'assets' && parts.length === 3 && request.method === 'POST' && ASSET_ID.test(parts[1])) {
             const [, id, action] = parts, draft = path.join(root, DRAFTS, id), approved = path.join(root, ASSETS, id);

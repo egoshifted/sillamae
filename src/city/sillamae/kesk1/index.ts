@@ -4,7 +4,7 @@ import {orthogonalPlan} from './plan.ts';
 import {addSteppedApartment} from './model.ts';
 import {concat, readTriangle, splitPolygon, type SurveyVertex} from '../../../engine/survey/carve.ts';
 import {entranceDatum, lowered} from '../../../studio/assembly/seat.ts';
-import {TRIANGLE, type Building, type BuildingOverride, type Point2} from '../../../engine/types.ts';
+import {TRIANGLE, type Building, type BuildingOverride, type OverrideContext, type Point2} from '../../../engine/types.ts';
 
 // Floor indices are zero-based (L1 = 0).
 // These settings are not evidence for other addresses.
@@ -40,6 +40,25 @@ const design = {
 };
 export const kesk1Design: Readonly<typeof design> = Object.freeze(design);
 
+// The studio edits a copy of this record and rebuilds through the same generator.
+export function buildStepped({scene, building, terrain, frame, ground, changed}: OverrideContext, design: typeof kesk1Design = kesk1Design) {
+  // Kesk 1 and its rear access were drafted at a fixed 12.8 m; they stand on
+  // the ground at the entrances, built against ground (site triangles and
+  // the decimetre terrain grid) lowered by the difference and then raised.
+  const lift = (entranceDatum(ground, kesk1.entrances!(building)) ?? design.foundationLevel) - design.foundationLevel;
+  const siteGround = lowered(ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10), lift);
+  const grid = {...terrain, values: terrain.values.map(v => v - lift * 10)};
+  const root = addSteppedApartment(scene, building, {...grid, siteGround}, design, frame);
+  const surroundings = createRearSurroundings(building, grid, frame, siteGround);
+  root.position.y += lift;
+  surroundings.position.y += lift;
+  scene.add(surroundings);
+  const dispose = root.userData.dispose;
+  root.userData.dispose = () => { surroundings.userData.dispose(); dispose(); };
+  root.userData.ready.then(() => changed?.());
+  return {root, groundPatchMinHeight: 10, groundPatches: [...(root.userData.groundPatches ?? []), ...surroundings.userData.groundPatches], setTextures: root.userData.setTextures};
+}
+
 export const kesk1: BuildingOverride = {
   id: '213321385',
   carveSurvey(vertices, building) {
@@ -47,23 +66,7 @@ export const kesk1: BuildingOverride = {
     return carveEntrancePit(vertices, building);
   },
   preload: preloadSurfaces,
-  build({scene, building, terrain, frame, ground, changed}) {
-    // Kesk 1 and its rear access were drafted at a fixed 12.8 m; they stand on
-    // the ground at the entrances, built against ground (site triangles and
-    // the decimetre terrain grid) lowered by the difference and then raised.
-    const lift = (entranceDatum(ground, kesk1.entrances!(building)) ?? kesk1Design.foundationLevel) - kesk1Design.foundationLevel;
-    const siteGround = lowered(ground.filter(t => Math.max(t[2], t[5], t[8]) >= 10), lift);
-    const grid = {...terrain, values: terrain.values.map(v => v - lift * 10)};
-    const root = addSteppedApartment(scene, building, {...grid, siteGround}, kesk1Design, frame);
-    const surroundings = createRearSurroundings(building, grid, frame, siteGround);
-    root.position.y += lift;
-    surroundings.position.y += lift;
-    scene.add(surroundings);
-    const dispose = root.userData.dispose;
-    root.userData.dispose = () => { surroundings.userData.dispose(); dispose(); };
-    root.userData.ready.then(() => changed?.());
-    return {root, groundPatchMinHeight: 10, groundPatches: [...(root.userData.groundPatches ?? []), ...surroundings.userData.groundPatches], setTextures: root.userData.setTextures};
-  },
+  build: context => buildStepped(context),
   entrances: building => [facePoint(building, 6, .2394, 3), facePoint(building, 16, .5, 2.7)],
   view: {offset: [110, 80, 45], span: 65},
   detailShadows: true,

@@ -1,8 +1,17 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas site editor</title><link rel="icon" href="data:,"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas site editor</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"></head>
 <body class="site">
-<header><strong>Site editor</strong><span id="where">Choose a square</span><a href="../">Building studio</a><a id="atlas" href="/" target="_blank" rel="noopener">Open atlas</a><a href="../ASSETS.md">Asset guide</a></header>
+<header>
+  <i class="fa-solid fa-vector-square bar-mark" aria-hidden="true"></i>
+  <span class="bar-name">Site editor</span>
+  <span id="where">Choose a square</span>
+  <span class="bar-spacer"></span>
+  <a class="bar-icon" href="../" title="Building studio" aria-label="Building studio"><i class="fa-solid fa-city" aria-hidden="true"></i></a>
+  <a id="atlas" class="bar-icon" href="/" target="_blank" rel="noopener" title="Open atlas" aria-label="Open atlas"><i class="fa-solid fa-map" aria-hidden="true"></i></a>
+  <a class="bar-icon" href="../ASSETS.md" title="Asset guide" aria-label="Asset guide"><i class="fa-solid fa-book" aria-hidden="true"></i></a>
+  <span id="language-slot"></span>
+</header>
 <nav aria-label="Site controls">
   <button id="choose">Choose square…</button>
   <button id="undo" title="Ctrl+Z">Undo</button><button id="redo" title="Ctrl+Y">Redo</button>

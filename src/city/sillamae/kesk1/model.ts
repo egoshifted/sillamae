@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {partId} from './part-id.ts';
 import {surfaces} from './surfaces.ts';
 import type {Building, GroundTriangle, Polygon, TerrainGrid, WorldFrame} from '../../../engine/types.ts';
 import type {kesk1Design} from './index.ts';
@@ -8,6 +9,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   const surface=surfaces(),sharedTextures=new Set(Object.values(surface.maps).flat());
   const root=new THREE.Group() as THREE.Group & {children: THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>[]; userData: {groundPatches?: Polygon[]; setTextures(enabled: boolean): void; ready: Promise<void[]>; dispose(): void; [key: string]: unknown}};root.position.set(0,level-frame.base,0);scene.add(root);
   const batches=new Map<THREE.MeshStandardMaterial,THREE.BufferGeometry[]>(),g=building.g,pendingCaps: {material: THREE.MeshStandardMaterial; points: THREE.Vector3[]}[]=[];
+  let partSerial=0;
   const closedConstructionAudit=design.closedConstructionAudit===true;
   const mat=(color: THREE.ColorRepresentation,roughness=.85)=>new THREE.MeshStandardMaterial({color,roughness,shadowSide:THREE.DoubleSide});
   const brick=mat('#c18460'),concrete=mat('#95958e'),trim=mat('#dddcd4'),glass=mat('#65818a',.3),dark=mat('#323b3b'),wood=mat('#6c4933'),metal=mat('#575c59'),roof=mat('#464b48'),redWood=mat('#834c38'),green=mat('#4d6938'),flower=mat('#eee9ca');
@@ -24,10 +26,12 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   const canopyMembrane=roof.clone();canopyMembrane.map=surface.maps['canopy-felt-v1'][0];canopyMembrane.bumpScale=.003;canopyMembrane.userData.localUV=true;membraneMaterials.add(canopyMembrane);
   [brick.map,brick.bumpMap]=surface.maps['masonry-v1'];brick.bumpScale=.016;concrete.map=surface.maps['concrete-v1'][0];concrete.bumpMap=concrete.map;concrete.bumpScale=.025;
   const stepConcrete=concrete.clone(),apronConcrete=concrete.clone();apronConcrete.userData.groundSurface=true;
+  brick.name='Masonry';concrete.name='Concrete';trim.name='Trim';glass.name='Glazing';dark.name='Frames';wood.name='Wood';metal.name='Metal';roof.name='Roof';redWood.name='Stained wood';green.name='Planting';flower.name='Flowers';foundation.name='Foundation';
+  sillMetal.name='Sills';paleMetal.name='Cladding';roofEdgeMetal.name='Flashings';lintelMaterial.name='Lintels';stepConcrete.name='Steps';apronConcrete.name='Apron';canopyMembrane.name='Canopy';
   // Site survey vertices keep layer 0; a 1 m apron bias draws it through the foundation.
   function lift(material: THREE.MeshStandardMaterial,bias=1){material.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * '+(bias===1?'1.':bias)+';');};material.customProgramCacheKey=()=>'kesk1-ground-lift-'+bias;return material;}
   lift(stepConcrete);lift(apronConcrete,.01);
-  function emit(geo: THREE.BufferGeometry,m: THREE.MeshStandardMaterial,matrix: THREE.Matrix4){geo=geo.index?geo.toNonIndexed():geo.clone();geo.applyMatrix4(matrix);if(m===foundation){const p=geo.attributes.position,c=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const v=foundationStain?foundationStain(p.getX(i),p.getY(i),p.getZ(i)):1;c.set([v,v,v],i*3);}geo.setAttribute('color',new THREE.BufferAttribute(c,3));}if(m===brick||m===concrete||m===stepConcrete||m===apronConcrete||m===foundation||membraneMaterials.has(m)){const p=geo.attributes.position,n=geo.attributes.normal,uv=geo.attributes.uv,isFelt=membraneMaterials.has(m);for(let i=0;i<p.count;i++){if(m.userData.localUV)continue;const horizontal=Math.abs(n.getY(i))>.5;uv.setXY(i,(horizontal?p.getX(i):Math.abs(n.getX(i))>.5?p.getZ(i):p.getX(i))/(isFelt?16:m===brick?2.2:m===foundation?2:.8),(horizontal?p.getZ(i):p.getY(i))/(isFelt?16:m===brick?.996:m===foundation?2:.8));}}if(!batches.has(m))batches.set(m,[]);batches.get(m)!.push(geo);}
+  function emit(geo: THREE.BufferGeometry,m: THREE.MeshStandardMaterial,matrix: THREE.Matrix4){geo=geo.index?geo.toNonIndexed():geo.clone();geo.applyMatrix4(matrix);if(m===foundation){const p=geo.attributes.position,c=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const v=foundationStain?foundationStain(p.getX(i),p.getY(i),p.getZ(i)):1;c.set([v,v,v],i*3);}geo.setAttribute('color',new THREE.BufferAttribute(c,3));}if(m===brick||m===concrete||m===stepConcrete||m===apronConcrete||m===foundation||membraneMaterials.has(m)){const p=geo.attributes.position,n=geo.attributes.normal,uv=geo.attributes.uv,isFelt=membraneMaterials.has(m);for(let i=0;i<p.count;i++){if(m.userData.localUV)continue;const horizontal=Math.abs(n.getY(i))>.5;uv.setXY(i,(horizontal?p.getX(i):Math.abs(n.getX(i))>.5?p.getZ(i):p.getX(i))/(isFelt?16:m===brick?2.2:m===foundation?2:.8),(horizontal?p.getZ(i):p.getY(i))/(isFelt?16:m===brick?.996:m===foundation?2:.8));}}if(root.parent?.userData.keepParts){geo.computeBoundingBox();const centre=geo.boundingBox!.getCenter(new THREE.Vector3());geo.translate(-centre.x,-centre.y,-centre.z);const mesh=new THREE.Mesh(geo,m);mesh.position.copy(centre);mesh.castShadow=!m.userData.groundSurface;mesh.receiveShadow=true;mesh.userData.part=++partSerial;mesh.userData.id=partId(import.meta.url);root.add(mesh);return;}if(!batches.has(m))batches.set(m,[]);batches.get(m)!.push(geo);}
   const dummy=new THREE.Object3D();
   function box(x: number,y: number,z: number,w: number,h: number,d: number,m: THREE.MeshStandardMaterial,angle=0){dummy.position.set(x,y,z);dummy.rotation.set(0,angle,0);dummy.scale.set(1,1,1);dummy.updateMatrix();const stain=m===foundation&&foundationStain;emit(new THREE.BoxGeometry(w,h,d,stain?Math.ceil(w/.3):1,stain?Math.ceil(h/.15):1,stain?Math.ceil(d/.3):1),m,dummy.matrix);}
   function edge(index: number){const a=g[index],b=g[(index+1)%g.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]),u=new THREE.Vector3((b[0]-a[0])/L,0,(b[1]-a[1])/L);let n=new THREE.Vector3(-u.z,0,u.x);const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];if(n.x*(mid[0]-building.c[0])+n.z*(mid[1]-building.c[1])<0)n.negate();
@@ -472,7 +476,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   const lining=Math.min(access,0)-(access-1.14);
   annex.block(4.29,access-1.14,annex.L-4.29,lining,.12,stepConcrete,-.12);
   annex.block(annex.L,access-1.14,pathStart-annex.L,lining,.12,stepConcrete,pathOffset-.12);
-  const rail=design.annexRail==='metal'?mat('#5d6a5f',.6):redWood;
+  const rail=design.annexRail==='metal'?mat('#5d6a5f',.6):redWood;if(rail!==redWood)rail.name='Rails';
   for(let x=annexEndX+.1;x<=pathStart;x+=2)beam(annex.at(x,access,annexDepth),annex.at(x,access+.95,annexDepth),.025,rail);
   beam(annex.at(annexEndX+.1,access+.95,annexDepth),annex.at(pathStart,access+.95,annexDepth),.025,rail);
   const rear=edge(16),rx=.12,rw=rear.L-.24;
@@ -498,7 +502,7 @@ export function addSteppedApartment(scene: THREE.Scene, building: Building, terr
   for(let j=0;j<24;j++){const a=j*Math.PI/48,b=(j+1)*Math.PI/48;beam(grille.at(gx0+.98*Math.cos(a),gy0+.98*Math.sin(a),gd),grille.at(gx0+.98*Math.cos(b),gy0+.98*Math.sin(b),gd),.012,trim);}
   }
   const signWall=edge(design.plaque?.edge??1);
-  function plaque(text: string,x: number,y: number,w: number,h: number){const c=document.createElement('canvas');c.width=512;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle='#f3f2e8';ctx.fillRect(0,0,512,256);ctx.fillStyle='#263130';ctx.font=`bold ${text===design.number?200:105}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,133);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;const m=mat('#ffffff');m.map=t;m.userData.flushPlaque=true;const right=new THREE.Vector3(signWall.n.z,0,-signWall.n.x),matrix=new THREE.Matrix4().makeBasis(right,new THREE.Vector3(0,1,0),signWall.n);matrix.setPosition(signWall.at(x,y,(design.plaque?.depth??0)+.0045));emit(new THREE.BoxGeometry(w,h,.003),m,matrix);}
+  function plaque(text: string,x: number,y: number,w: number,h: number){const c=document.createElement('canvas');c.width=512;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle='#f3f2e8';ctx.fillRect(0,0,512,256);ctx.fillStyle='#263130';ctx.font=`bold ${text===design.number?200:105}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,133);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;const m=mat('#ffffff');m.name='Signs';m.map=t;m.userData.flushPlaque=true;const right=new THREE.Vector3(signWall.n.z,0,-signWall.n.x),matrix=new THREE.Matrix4().makeBasis(right,new THREE.Vector3(0,1,0),signWall.n);matrix.setPosition(signWall.at(x,y,(design.plaque?.depth??0)+.0045));emit(new THREE.BoxGeometry(w,h,.003),m,matrix);}
   if(design.plaque){const {x,y,streetWidth}=design.plaque;plaque(design.number,signWall.L+x,y,.42,.4);plaque(design.street,signWall.L+x,y-.38,streetWidth,.25);}
   const fp=edge(8),fx=fp.L*.1;if(design.flowerBox)fp.block(fx,5.65,1.3,.22,.3,wood,-.12);
   // Position and length are approximate, referenced to the lowest balcony frame.

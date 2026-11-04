@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import {acceleratePick} from './pick.ts';
+
+test('a heavy mesh is picked from the triangle under the ray, not by scanning every triangle each time', () => {
+  const geometry = new THREE.BufferGeometry();
+  const positions: number[] = [];
+  for (let i = 0; i < 5000; i++) positions.push(i, 0, -1, i + .2, 0, -1, i, 1, -1);
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.position.set(10, 0, 0);
+  mesh.updateWorldMatrix(true, true);
+  const root = new THREE.Group();
+  root.add(mesh);
+  acceleratePick(root);
+  const raycaster = new THREE.Raycaster();
+  raycaster.ray.origin.set(10.05, .2, 2);
+  raycaster.ray.direction.set(0, 0, -1);
+  const hits: THREE.Intersection[] = [];
+  mesh.raycast(raycaster, hits);
+  assert.equal(hits.length, 1);
+  assert.ok(Math.abs(hits[0].point.z + 1) < 1e-4);
+  assert.ok(Math.abs(hits[0].point.x - 10.05) < 1e-3);
+  raycaster.ray.origin.set(10.05, 3, 2);
+  const miss: THREE.Intersection[] = [];
+  mesh.raycast(raycaster, miss);
+  assert.equal(miss.length, 0);
+  geometry.dispose();
+});

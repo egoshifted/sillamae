@@ -1,8 +1,12 @@
 import type {AtlasBuildStatus} from './atlas-build.ts';
 import {installLanguage, translate} from '../i18n.ts';
+import {physicalKey} from '../keys.ts';
+import {installMenus} from '../ui/menu.ts';
+import {installScrollbars} from '../ui/scroll.ts';
 /// <reference types="vite/client" />
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {useBlenderOrbit} from '../blender-orbit.ts';
 import {assetById, drafts, library} from '../../city/sillamae/assets/library.ts';
 import type {SurveyManifest, WorldData} from '../../engine/data.ts';
 import {snapToRoadEdge} from '../../engine/road-kerbs.ts';
@@ -23,6 +27,8 @@ import '../style.css';
 import './site.css';
 
 const disposeLanguage = installLanguage();
+const disposeMenus = installMenus();
+installScrollbars();
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const main = document.querySelector('main')!, status = element<HTMLOutputElement>('status'), error = element<HTMLParagraphElement>('error');
 const STEP = Math.PI / 12, GRID = .25, CLICK = 5; // radians, metres, pixels a click may move
@@ -44,9 +50,18 @@ renderer.toneMappingExposure = 1.05;
 renderer.setClearColor('#e0e6d9');
 main.prepend(renderer.domElement);
 const camera = new THREE.PerspectiveCamera(40, 1, .2, 3000), controls = new OrbitControls(camera, renderer.domElement);
+useBlenderOrbit(controls);
 controls.maxPolarAngle = Math.PI / 2 - .05;
 controls.zoomToCursor = true;
-controls.addEventListener('change', () => render());
+let persist = false, rememberTimer = 0;
+function remember() {
+  if (!persist || !site) return;
+  const coordinate = (value: number) => String(round(value, 2));
+  const query = new URLSearchParams({x: String(site.square.centre[0]), z: String(site.square.centre[1]), size: String(site.square.size), position: camera.position.toArray().map(coordinate).join(','), target: controls.target.toArray().map(coordinate).join(',')});
+  const next = '?' + query;
+  if (next !== location.search) history.replaceState(null, '', next);
+}
+controls.addEventListener('change', () => { render(); window.clearTimeout(rememberTimer); rememberTimer = window.setTimeout(remember, 300); });
 
 type Loaded = Awaited<ReturnType<typeof loadSquare>>;
 type Brush = {kind: 'asset'; asset: AssetDefinition; variant: string} | {kind: 'tree'; type: string; h: number; r: number};
@@ -1189,9 +1204,9 @@ renderer.domElement.addEventListener('contextmenu', event => {
 
 const TOOL_KEYS: Record<string, Tool> = {v: 'select', a: 'place', p: 'path', b: 'scatter', u: 'terrain', l: 'area', k: 'line', w: 'road', x: 'hide', d: 'bulldoze', i: 'measure', r: 'orbit', h: 'pan'};
 addEventListener('keydown', event => {
-  if (!site || (event.target as HTMLElement).closest('input, select, textarea, dialog')) return;
-  if (gesture?.kind === 'extend') { if (event.key === 'Escape') { cancelExtension(); event.preventDefault(); } return; }
-  const key = event.key.toLowerCase(), ctrl = event.ctrlKey || event.metaKey, by = event.shiftKey ? 10 : 1;
+  if (!site || (event.target as HTMLElement).closest('input, select, textarea, dialog, .menu, .menu-pop')) return;
+  if (gesture?.kind === 'extend') { if (event.code === 'Escape') { cancelExtension(); event.preventDefault(); } return; }
+  const key = physicalKey(event), ctrl = event.ctrlKey || event.metaKey, by = event.shiftKey ? 10 : 1;
   if (key === ' ') { if (!space) { space = true; navigation(); } }
   else if (ctrl && key === 'z' && !event.shiftKey) step(undo, redo);
   else if (ctrl && (key === 'y' || key === 'z')) step(redo, undo);
@@ -1221,7 +1236,7 @@ addEventListener('keydown', event => {
   else return;
   event.preventDefault();
 });
-addEventListener('keyup', event => { if (event.key === ' ') { space = false; navigation(); } });
+addEventListener('keyup', event => { if (event.code === 'Space') { space = false; navigation(); } });
 
 // ---- Tools and views -------------------------------------------------------------
 
@@ -1256,7 +1271,7 @@ const TOOLS: [Tool, string, string][] = [
   ['bulldoze', 'Bulldozer (D)', 'Click objects or trees to remove them · click a road or footway to clear a 2 m section · hold and drag to clear continuously · each stroke is one Undo step · Save keeps the demolition'],
   ['hide', 'Hide survey objects (X)', 'Click a survey building, shed or kiosk to leave it out of the town; click again, or use the list, to bring it back · refined buildings cannot be hidden'],
   ['measure', 'Measure (I)', 'Click points along the ground for lengths on plan, height changes and slope · double-click or Enter ends · Esc clears'],
-  ['orbit', 'Orbit view (R)', 'Drag to orbit · in any tool, hold Space or drag with the middle button to orbit, right-drag to pan, scroll to zoom'],
+  ['orbit', 'Orbit view (R)', 'Middle mouse orbits · Shift+middle pans · Ctrl+middle and the wheel zoom toward the cursor · hold Space to orbit with the left button'],
   ['pan', 'Pan view (H)', 'Drag to pan · scroll zooms toward the pointer'],
 ];
 function showTools() {
@@ -1291,7 +1306,9 @@ function setTool(next: Tool) {
 }
 function navigation() {
   const left = space || tool === 'orbit' ? THREE.MOUSE.ROTATE : tool === 'pan' ? THREE.MOUSE.PAN : null;
-  controls.mouseButtons = {LEFT: left as THREE.MOUSE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN};
+  controls.mouseButtons.LEFT = left as THREE.MOUSE;
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+  controls.mouseButtons.RIGHT = null as unknown as THREE.MOUSE;
   renderer.domElement.style.cursor = left === THREE.MOUSE.ROTATE ? 'grab' : left === THREE.MOUSE.PAN ? 'move' : tool === 'select' ? 'default' : 'crosshair';
 }
 
@@ -1814,6 +1831,11 @@ async function open(square: Square) {
   scene.add(sun, sun.target);
   scene.add(squareOutline(square, loaded));
   resetView();
+  const vector = (key: string) => { const values = params.get(key)?.split(',').map(Number); return values?.length === 3 && values.every(Number.isFinite) ? values : null; };
+  const position = vector('position'), target = vector('target');
+  if (position && target) { camera.position.fromArray(position); controls.target.fromArray(target); controls.update(); }
+  persist = true;
+  remember();
   lighting();
   element('where').textContent = `Square ${square.size} m at ${square.centre.join(', ')} · ${id}.json`;
   element<HTMLAnchorElement>('atlas').href = `/#x=${(square.centre[0] - ox).toFixed(1)}&y=6&z=${(square.centre[1] - oz).toFixed(1)}&s=120&zoom=1&h=140&e=35`;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {carveGroundPatches, concat, groundWithin} from '../../../engine/survey/carve.ts';
-import type {BuildingOverride, GroundTriangle, Point2} from '../../../engine/types.ts';
+import type {BuildingOverride, GroundTriangle, OverrideContext, Point2} from '../../../engine/types.ts';
 import {design, balconySchedule} from './config.ts';
 import {createOffsetSlabStudy} from './offset-slab.ts';
 import {createEntranceDetailStudy} from './entrance-detail.ts';
@@ -52,10 +52,17 @@ export const kesk5: BuildingOverride = {
     return concat([carveGroundPatches(vertices, [ground.patch as Point2[]], 10), ground.vertices]);
   },
   preload: preloadSurfaces,
-  build({scene, frame, ground, changed}) {
-    const {masonry, roof, ready} = surfaces(), datum = kesk5Datum(ground), base = foundationBase(ground, datum);
-    const spec = {...design, basement: {...design.basement, wallBase: base}, facadeRelief: {...design.facadeRelief, baseDatum: base}};
-    const root = createEntranceDetailStudy(spec, balconySchedule, masonry, roof);
+  build: context => assemble(context),
+  entrances: () => entrancePoints(),
+  view: {offset: [85, 55, -110], span: 80},
+  detailShadows: true,
+  seatsOnGround: true,
+};
+
+export function assemble({scene, frame, ground, changed}: OverrideContext, source: typeof design = design) {
+  const {masonry, roof, ready} = surfaces(), datum = kesk5Datum(ground), base = foundationBase(ground, datum);
+  const spec = {...source, basement: {...source.basement, wallBase: base}, facadeRelief: {...source.facadeRelief, baseDatum: base}};
+  const root = createEntranceDetailStudy(spec, balconySchedule, masonry, roof);
     const stepMaterials = new Map<THREE.Material, THREE.Material>();
     root.traverse((o: THREE.Object3D) => {
       if (!(o instanceof THREE.Mesh) || !['landing', 'detail-entry-step'].includes(o.name)) return;
@@ -74,7 +81,7 @@ export const kesk5: BuildingOverride = {
     root.userData.dispose = () => { dispose(); stepMaterials.forEach(m => m.dispose()); };
     batchDetailStudy(root);
     root.name = 'kesk5';
-    root.position.set(design.origin[0] - frame.origin[0], datum - frame.base, design.origin[1] - frame.origin[1]);
+    root.position.set(source.origin[0] - frame.origin[0], datum - frame.base, source.origin[1] - frame.origin[1]);
     root.rotation.y = -audit.fit.angle;
     scene.add(root);
     const materials = new Set<THREE.MeshStandardMaterial>();
@@ -82,16 +89,11 @@ export const kesk5: BuildingOverride = {
     for (const m of materials) Object.assign(m.userData, {map: m.map, bumpMap: m.bumpMap});
     // Texture downloads must not delay the plain preview or make the town fail to start.
     root.userData.ready = ready.then(() => changed?.());
-    return {root, groundPatches: [], setTextures(enabled) {
+    return {root, groundPatches: [], setTextures(enabled: boolean) {
       for (const m of materials) {
         m.map = enabled ? m.userData.map : null;
         m.bumpMap = enabled ? m.userData.bumpMap : null;
         m.needsUpdate = true;
       }
     }};
-  },
-  entrances: () => entrancePoints(),
-  view: {offset: [85, 55, -110], span: 80},
-  detailShadows: true,
-  seatsOnGround: true,
-};
+}

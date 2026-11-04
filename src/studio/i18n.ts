@@ -33,13 +33,11 @@ export function installLanguage() {
   language = saved === 'ru' ? 'ru' : 'en';
   const records = new WeakMap<Node, Map<string, {source: string; rendered: string}>>();
   const attributes = ['title', 'aria-label', 'placeholder', 'alt'];
-  const control = document.createElement('label');
-  control.className = 'language'; control.dataset.noI18n = '';
-  control.append('English / Русский');
-  const select = document.createElement('select');
-  select.id = 'language'; select.setAttribute('aria-label', 'Language / Язык');
-  select.add(new Option('English', 'en')); select.add(new Option('Русский', 'ru'));
-  control.append(select); document.querySelector('header')?.append(control);
+  const control = document.createElement('button');
+  control.type = 'button'; control.className = 'bar-icon language'; control.dataset.noI18n = '';
+  control.innerHTML = '<i class="fa-solid fa-language" aria-hidden="true"></i><span></span>';
+  const code = control.querySelector('span')!;
+  (document.getElementById('language-slot') ?? document.querySelector('header'))?.append(control);
   const update = (node: Node, key: string, current: string, write: (value: string) => void) => {
     let entries = records.get(node);
     if (!entries) records.set(node, entries = new Map());
@@ -61,7 +59,9 @@ export function installLanguage() {
     }
   };
   const apply = (next: Language) => {
-    language = next; select.value = next; document.documentElement.lang = next;
+    language = next; code.textContent = next === 'ru' ? 'RU' : 'EN';
+    control.setAttribute('aria-label', next === 'ru' ? 'Язык' : 'Language');
+    document.documentElement.lang = next;
     localize(document.documentElement);
   };
   // Text nodes keep their English source so switching language never rebuilds the editor or loses a draft.
@@ -73,8 +73,8 @@ export function installLanguage() {
   });
   apply(language);
   observer.observe(document.documentElement, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: attributes});
-  select.onchange = () => {
-    const next = select.value === 'ru' ? 'ru' : 'en';
+  control.onclick = () => {
+    const next = language === 'ru' ? 'en' : 'ru';
     try { localStorage.setItem(KEY, next); } catch { /* Language switching also works when storage is disabled. */ }
     apply(next);
   };

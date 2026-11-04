@@ -1,19 +1,66 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas building studio</title><link rel="icon" href="data:,"></head>
-<body>
-<header><strong>Building studio</strong><span>Reference → plain shape → detail → atlas verification</span><a href="/">Open atlas</a><a href="./site/">Site editor</a><a href="./README.md">Workflow</a></header>
-<nav aria-label="Study controls">
-  <label>Find <input id="search" type="search" placeholder="Address or building ID"></label><label>Building <select id="building"></select></label>
-  <label>Assembly <select id="mode"></select></label>
-  <button id="home">Reset view</button><button id="rotate">Rotate 45°</button><button id="plan">Plan</button>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atlas building studio</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"></head>
+<body class="editor">
+<header>
+  <button type="button" id="file-menu" class="bar-text" aria-haspopup="menu" aria-expanded="false">File</button>
+  <div id="file-pop" class="menu-pop" hidden>
+    <button type="button" id="export-version">Export</button>
+    <button type="button" id="import-version">Import</button>
+  </div>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <button type="button" id="mcp" class="bar-text" aria-haspopup="menu" aria-expanded="false" aria-label="Model connection"></button>
+  <div id="mcp-pop" class="menu-pop" data-no-i18n hidden>
+    <p id="mcp-status">Waiting for a model</p>
+    <p id="mcp-channels"></p>
+    <button type="button" id="mcp-toggle">Disconnect</button>
+  </div>
+  <button type="button" id="studio-title" class="bar-building" aria-haspopup="listbox" aria-expanded="false"><i class="fa-solid fa-city" aria-hidden="true"></i><span id="where">Choose a building</span><i class="fa-solid fa-chevron-down caret" aria-hidden="true"></i></button>
+  <select id="mode" aria-label="Assembly"></select>
+  <span class="bar-spacer"></span>
+  <a class="bar-icon" href="./site/" data-tip="Site editor" data-note="Opens the editor for the ground around the building." aria-label="Site editor"><i class="fa-solid fa-pen-ruler" aria-hidden="true"></i></a>
+  <a class="bar-icon" href="/" data-tip="Open atlas" data-note="Leaves the studio and opens the map." aria-label="Open atlas"><i class="fa-solid fa-map" aria-hidden="true"></i></a>
+  <span id="language-slot"></span>
+</header>
+<div id="picker" hidden>
+  <input id="search" type="search" placeholder="Address or building ID">
+  <div id="list" role="listbox" aria-label="Buildings"></div>
+  <select id="building" hidden></select>
+</div>
+<div class="workspace">
+  <aside id="toolbox" class="toolbox" aria-label="Toolbox"></aside>
+  <main aria-label="Building study">
+    <div id="views" role="toolbar" aria-label="Views">
+      <button id="home" data-tip="Reset view" data-note="Puts the camera back on the whole building." aria-label="Reset view"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i></button>
+      <button id="plan" data-tip="Plan" data-note="Opens a flat plan beside the view." aria-label="Plan" aria-pressed="false"><i class="fa-solid fa-border-all" aria-hidden="true"></i></button>
+      <button id="grid" data-tip="Grid" data-note="Shows or hides the ground grid." aria-label="Grid" aria-pressed="false"><i class="fa-solid fa-table-cells" aria-hidden="true"></i></button>
+      <button id="toolbox-toggle" class="on" data-tip="Toolbox" data-note="Shows or hides the parts you can place." aria-label="Toolbox" aria-pressed="true"><i class="fa-solid fa-toolbox" aria-hidden="true"></i></button>
+      <button id="explorer-toggle" class="on" data-tip="Explorer" data-note="Shows or hides the list of parts." aria-label="Explorer" aria-pressed="true"><i class="fa-solid fa-folder-tree" aria-hidden="true"></i></button>
+      <button id="hints" class="on" data-tip="Hints" data-note="Shows or hides the shortcut list." aria-label="Hints" aria-pressed="true"><i class="fa-solid fa-circle-question" aria-hidden="true"></i></button>
+    </div>
+    <div id="hint-corner">
+      <p id="cheat-note" data-no-i18n hidden></p>
+      <div id="cheats"></div>
+    </div>
+    <p id="error" role="alert"></p>
+  </main>
+  <aside id="explorer" class="explorer" aria-label="Explorer"></aside>
+</div>
+<footer><output id="status" data-no-i18n>Loading…</output><span id="hint"></span><output id="cost" data-no-i18n></output></footer>
+<div id="inspector" hidden>
   <label>Distance <select id="distance"><option value="1">Nearby</option><option value="2">Medium</option><option value="4">Far</option></select></label>
   <label>Light <select id="light"><option value="midday">Midday</option><option value="morning">Morning</option><option value="late">Late afternoon</option></select></label>
-  <label><input id="shadows" type="checkbox" checked>Shadows</label><label><input id="textures" type="checkbox" checked>Textures</label>
-  <label><input id="plain" type="checkbox">Plain materials</label><label><input id="ground" type="checkbox" checked>Ground</label>
-  <button id="reload">Rebuild</button><button id="save">Save view URL</button><button id="capture">Download PNG</button>
-</nav>
-<main aria-label="Building study"><p id="error" role="alert"></p></main>
-<footer><output id="status">Loading…</output><span>Drag to orbit · right-drag to pan · scroll to zoom. Study ground is diagnostic; verify contacts and shadows in the atlas.</span></footer>
+  <label><input id="shadows" type="checkbox" checked>Shadows</label>
+  <label><input id="textures" type="checkbox" checked>Textures</label>
+  <label><input id="plain" type="checkbox">Plain materials</label>
+  <label><input id="ground" type="checkbox" checked>Ground</label>
+  <p id="record-note"></p>
+  <div id="fields"></div>
+  <button id="reload">Rebuild</button>
+  <button id="revert">Revert</button>
+  <button id="save-record">Save record</button>
+  <button id="save-view">Save view URL</button>
+  <button id="capture">Download PNG</button>
+</div>
 <script type="module" src="./viewer.ts"></script>
 </body></html>
