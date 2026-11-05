@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {disposeDraw, markDrawDirty, markDrawStructure, syncDraw} from './draw.ts';
 
+test('instanced meshes stay on the camera layer instead of collapsing into a batch', () => {
+  disposeDraw();
+  const scene = new THREE.Scene(), root = new THREE.Group(), material = new THREE.MeshStandardMaterial();
+  scene.add(root);
+  const instanced = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, 3);
+  root.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material), new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material), instanced);
+  syncDraw(scene, root);
+  assert.equal(instanced.layers.mask, 1);
+  const batch = scene.children.find((object): object is THREE.BatchedMesh => object instanceof THREE.BatchedMesh);
+  assert.equal(batch?.instanceCount, 2);
+  disposeDraw();
+});
+
 test('many meshes of one material draw as a single batch and follow later moves', () => {
   disposeDraw();
   const scene = new THREE.Scene(), root = new THREE.Group(), material = new THREE.MeshStandardMaterial();

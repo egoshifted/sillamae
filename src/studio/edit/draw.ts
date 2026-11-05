@@ -29,7 +29,8 @@ function signature(mesh: THREE.Mesh) {
 function collect(root: THREE.Object3D) {
   const list: THREE.Mesh[] = [];
   root.traverse(object => {
-    if (!(object instanceof THREE.Mesh) || Array.isArray(object.material) || !object.geometry.getAttribute('position')) return;
+    // An instanced mesh has to draw itself: a batch would keep one copy and drop the instance matrices.
+    if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh || Array.isArray(object.material) || !object.geometry.getAttribute('position')) return;
     list.push(object);
   });
   return list;
