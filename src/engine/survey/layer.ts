@@ -60,10 +60,10 @@ const RELIEF_EXAGGERATION = 6;
 const LAYER_LIFT = .3;
 const RELIEF_COLOURS = ['#2f6b3f', '#7fa65a', '#e3d27c', '#c98a4a', '#8a4b2f'].map(c => new THREE.Color(c));
 
-// The survey paints grass one washed-out olive town-wide. Patches of lusher and
-// drier grass at several scales, in linear colour, keep the survey's brightness
-// so shading and its own darker areas still read. Grass is told apart by vertex
-// colour because the overview mesh merges every surface into one material.
+// The survey paints 73% of its grass one pale olive, about 35% brighter than the orthophoto's
+// lawns. Lusher, drier and thin worn areas at several scales, in linear colour, replace that
+// paint but follow its brightness, so shading and its own darker areas still read. Grass is
+// told apart by vertex colour because the overview mesh merges every surface into one material.
 // Finer scales fade out once a cell shrinks below a few pixels, so they do not shimmer.
 const GRASS_NOISE = `
 float grassHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -72,19 +72,23 @@ float grassNoise(vec2 p) {
   return mix(mix(grassHash(i), grassHash(i + vec2(1, 0)), u.x), mix(grassHash(i + vec2(0, 1)), grassHash(i + vec2(1, 1)), u.x), u.y);
 }
 vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
-  // Vivid paint is a sports pitch or artificial turf, which keeps its colour.
-  float ratio = painted.g / max(painted.r, 1e-3), grass = smoothstep(1.03, 1.15, ratio) * (1. - smoothstep(1.45, 1.8, ratio)) * step(painted.b, painted.g);
+  // Vivid paint is a sports pitch or artificial turf, which keeps its colour. The town's main grass
+  // paint is only 1.066 green to red, and grey paving is as high, so blue is what separates them.
+  float ratio = painted.g / max(painted.r, 1e-3), grass = smoothstep(1.02, 1.055, ratio) * (1. - smoothstep(1.45, 1.8, ratio)) * smoothstep(1.08, 1.2, painted.g / max(painted.b, 1e-3));
   if (grass <= 0.) return colour;
   float pixel = length(fwidth(p));
-  float wide = grassNoise(p / 210. + 3.7) * .6 + grassNoise(p / 70.) * .4;
+  float broad = grassNoise(p / 210. + 3.7), local = grassNoise(p / 70.);
   float patchy = grassNoise(p / 18. + 9.1), clumps = grassNoise(p / 3.5 + 1.3), blades = grassNoise(p / 1.1);
-  vec3 lush = vec3(.12, .19, .065), meadow = vec3(.17, .22, .085), dry = vec3(.27, .26, .13);
-  float d = clamp(wide + (patchy - .5) * .35, 0., 1.);
+  vec3 lush = vec3(.085, .19, .05), meadow = vec3(.135, .21, .07), dry = vec3(.23, .25, .11), soil = vec3(.27, .24, .15);
+  // Value noise gathers around .5, so it is stretched to reach the lush and dry ends. The offset
+  // keeps most ground green, as in the orthophoto, with dry and worn areas as the exception.
+  float d = clamp(.38 + (broad * .6 + local * .4 - .5) * 2.4 + (patchy - .5) * .5, 0., 1.);
   vec3 tint = d < .5 ? mix(lush, meadow, d * 2.) : mix(meadow, dry, (d - .5) * 2.);
+  tint = mix(tint, soil, smoothstep(.58, .76, local * .55 + patchy * .45) * .4);
   const vec3 LUMA = vec3(.2126, .7152, .0722);
-  vec3 varied = tint * dot(colour, LUMA) / dot(tint, LUMA);
+  vec3 varied = tint * dot(colour, LUMA) / dot(tint, LUMA) * (.62 + .24 * d);
   varied *= 1. + (patchy - .5) * .22 + (clumps - .5) * .16 * (1. - smoothstep(.4, 1.2, pixel)) + (blades - .5) * .12 * (1. - smoothstep(.15, .5, pixel));
-  return mix(colour, varied, grass * .7);
+  return mix(colour, varied, grass * .92);
 }
 `;
 
