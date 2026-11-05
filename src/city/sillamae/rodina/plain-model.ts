@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import {accessDesign,addAccess,exitLevel} from './access.ts';
 import {addShell} from './shell.ts';
 import {addRodinaServices} from './services.ts';
+import {front,garden,plinthTop} from './facade.ts';
+import type {FacadeLayout} from './facade.ts';
 import type {Feature, MeshGroup, ModelMesh, Opening} from './types.ts';
 
 interface PlainRodina extends MeshGroup {
@@ -15,23 +17,23 @@ interface PlainRodina extends MeshGroup {
 
 type Wing = {u: number[]; v: number[]; eave: number; ridge: number; ridgeU?: number; ridgeV?: number};
 
-export const dimensions={main:{u:[0,21.4],v:[0,21.65],eave:10,ridge:13.8,ridgeU:11.3,ridgeV:10.95},westWing:{u:[-23.92,0],v:[3.93,17.43],eave:7.3,ridge:9.95,ridgeV:10.78},southWing:{u:[3.95,17.8],v:[21.65,45.47],eave:7.3,ridge:9.95,ridgeU:11.15},datum:14.5};
+export const dimensions={main:{u:[0,21.4],v:[0,21.65],eave:10,ridge:13.8,ridgeU:front.centre,ridgeV:garden.centre},westWing:{u:[-23.92,0],v:[3.93,17.43],eave:7.3,ridge:9.95,ridgeV:10.78},southWing:{u:[3.95,17.8],v:[21.65,45.47],eave:7.3,ridge:9.95,ridgeU:11.15},datum:14.5};
 
-const observedGardenLayout=[
- {id:'NNE-D1',x:8.35,w:1.15,b:.7,t:4.1,type:'door'},
- {id:'NNE-D2',x:10.7,w:1.85,b:.7,t:4.1,type:'door'},
- {id:'NNE-D3',x:13.05,w:1.15,b:.7,t:4.1,type:'door'},
- {id:'NNE-L2-C1',x:8.1,w:1.05,b:6.05,t:8.45,type:'window'},
- {id:'NNE-L2-C2',x:10.7,w:2.15,b:6.05,t:8.45,type:'window'},
- {id:'NNE-L2-C3',x:13.3,w:1.05,b:6.05,t:8.45,type:'window'},
- ...[2.15,19.25].flatMap((x,i)=>[
-  {id:`NNE-B${i+1}`,x,w:1.8,b:.05,t:1.5,type:'basement'},
-  {id:`NNE-L1-S${i+1}`,x,w:1.7,b:3.1,t:5.25,type:'window'},
-  {id:`NNE-L2-S${i+1}`,x,w:1.7,b:7,t:8.45,type:'window'}
+const facadeOpenings=(face: string,{centre,bays,sideDoors,sideWindows}: FacadeLayout)=>[
+ {id:face+'-D1',x:sideDoors[0],w:1,b:.7,t:4.1,type:'door'},
+ {id:face+'-D2',x:centre,w:1.5,b:.7,t:4.1,type:'door'},
+ {id:face+'-D3',x:sideDoors[1],w:1,b:.7,t:4.1,type:'door'},
+ {id:face+'-L2-C1',x:sideWindows[0],w:.7,b:6.05,t:8.45,type:'window'},
+ {id:face+'-L2-C2',x:centre,w:1.5,b:6.05,t:8.45,type:'window'},
+ {id:face+'-L2-C3',x:sideWindows[1],w:.7,b:6.05,t:8.45,type:'window'},
+ ...bays.flatMap((x,i)=>[
+  {id:`${face}-B${i+1}`,x,w:1.3,b:.75,t:2,type:'basement'},
+  {id:`${face}-L1-S${i+1}`,x,w:1.3,b:3.7,t:5.6,type:'window'},
+  {id:`${face}-L2-S${i+1}`,x,w:1.25,b:7,t:8.45,type:'window'}
  ])
 ];
-export const gardenOpenings=observedGardenLayout.map(o=>({...o,id:o.id.replace('NNE','ESE'),x:o.x+.15,b:o.type==='basement'?.12:o.b}));
-export const frontOpenings=observedGardenLayout.filter(o=>!o.id.includes('-B')&&!o.id.includes('L1-S'));
+export const gardenOpenings=facadeOpenings('ESE',garden);
+export const frontOpenings=facadeOpenings('NNE',front).filter(o=>!o.id.includes('-B')&&!o.id.includes('L1-S'));
 export const courtyardOpenings={WNW:[{id:'COURT-WNW-D1',x:1.75,w:.95,b:.95,t:3.2,type:'door'},{id:'COURT-WNW-W1',x:1.75,w:1,b:5.5,t:7.3,type:'window'}],SSW:[{id:'COURT-SSW-W1',x:18.4,w:1.05,b:2.65,t:4.15,type:'window'},{id:'COURT-SSW-D1',x:18.4,w:.95,b:5.25,t:7.45,type:'door'}]};
 
 export function createRodina(){
@@ -39,7 +41,7 @@ export function createRodina(){
  const wall=new THREE.MeshStandardMaterial({color:0xb9c3c8,roughness:1}),roof=new THREE.MeshStandardMaterial({color:0x8497a3,roughness:1,flatShading:true}),infill=new THREE.MeshStandardMaterial({color:0x465d68,roughness:1}),frame=new THREE.MeshStandardMaterial({color:0x8399a5,roughness:1}),step=new THREE.MeshStandardMaterial({color:0xa9b4bb,roughness:1});
  function mesh(name: string,points: number[][],indices: number[],material: THREE.MeshStandardMaterial){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(points.flat(),3));g.setIndex(indices);g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.name=name;m.castShadow=m.receiveShadow=true;root.add(m);return m;}
  function block(name: string,x0: number,x1: number,y0: number,y1: number,z0: number,z1: number,material=wall){const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),material);m.name=name;m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);m.castShadow=m.receiveShadow=true;root.add(m);return m;}
- function entranceFace(name: string,openings: Opening[],width: number,start=0,{height=10,pilasters=true}={}){
+ function entranceFace(name: string,openings: Opening[],width: number,start=0,{height=10,pilasters=[] as FacadeLayout['pilasters']}={}){
   const first=root.children.length;
   const shape=new THREE.Shape();shape.moveTo(start,-2);shape.lineTo(width,-2);shape.lineTo(width,height);shape.lineTo(start,height);shape.closePath();
   for(const o of openings){const a=o.x-o.w/2,b=o.x+o.w/2,hole=new THREE.Path();hole.moveTo(a,o.b);hole.lineTo(a,o.t);hole.lineTo(b,o.t);hole.lineTo(b,o.b);hole.closePath();shape.holes.push(hole);}
@@ -53,21 +55,21 @@ export function createRodina(){
     for(const f of [.28,.65]){const y=o.b+(o.t-o.b)*f;block(o.id+'-grille-horizontal',a+.065,b-.065,y-.016,y+.016,.12,.15,frame);}
    }
   }
-  if(pilasters)for(const x of [4.15,5.55,15.85,17.25])block(name+'-pilaster',x-.38,x+.38,-.15,7.9,-.22,0);
+  for(const p of pilasters)block(name+'-pilaster',p.x-p.width/2,p.x+p.width/2,plinthTop,7.9,-.16,0);
   const face=new THREE.Group();face.name=name+'-assembly';face.add(...root.children.slice(first));root.add(face);return face;
  }
  function wingWalls(name: string,d: Wing,along: string){
   const[x0,x1]=d.u,[z0,z1]=d.v,h=d.eave;
   if(along==='u'){
    const exitN=accessDesign.exits[0],exitS=accessDesign.exits[1];
-   const north=entranceFace('WNW-wing-NNE',[{id:exitN.id,x:exitN.centre-x0,w:1.1,b:exitLevel(exitN),t:exitLevel(exitN)+2.35,type:'door'}],x1-x0,0,{height:h,pilasters:false});north.position.set(x0,0,z0);
-   const south=entranceFace('WNW-wing-SSW',[{id:exitS.id,x:-exitS.centre,w:1.1,b:exitLevel(exitS),t:exitLevel(exitS)+2.35,type:'door'}],x1-x0,0,{height:h,pilasters:false});south.rotation.y=Math.PI;south.position.set(0,0,z1);
-   block(name+'-end-wall',x0,x0+.4,-2,h,z0+.4,z1-.4);
+   const north=entranceFace('WNW-wing-NNE',[{id:exitN.id,x:exitN.centre-x0,w:1.1,b:exitLevel(exitN),t:exitLevel(exitN)+2.35,type:'door'}],x1-x0,0,{height:h});north.position.set(x0,0,z0);
+   const south=entranceFace('WNW-wing-SSW',[{id:exitS.id,x:-exitS.centre,w:1.1,b:exitLevel(exitS),t:exitLevel(exitS)+2.35,type:'door'}],x1-x0,0,{height:h});south.rotation.y=Math.PI;south.position.set(0,0,z1);
+   const w=accessDesign.wells[1],end=entranceFace('WNW-wing-end',w.windowCentres.map((c,i)=>({id:'WELL-W'+(i+1),x:z1-.4-c,w:w.width,b:w.sill,t:w.head,type:'well'})),z1-z0-.8,0,{height:h});end.rotation.y=Math.PI/2;end.position.set(x0,0,z1-.4);
    block(name+'-floor',x0+.4,x1,-2,-1.8,z0+.4,z1-.4);
   }else{
-   const exit=accessDesign.exits[2],east=entranceFace('SSW-wing-ESE',[{id:exit.id,x:exit.centre-z0,w:1.1,b:exitLevel(exit),t:exitLevel(exit)+2.35,type:'door'}],z1-z0,0,{height:h,pilasters:false});east.rotation.y=-Math.PI/2;east.position.set(x1,0,z0);
+   const exit=accessDesign.exits[2],east=entranceFace('SSW-wing-ESE',[{id:exit.id,x:exit.centre-z0,w:1.1,b:exitLevel(exit),t:exitLevel(exit)+2.35,type:'door'}],z1-z0,0,{height:h});east.rotation.y=-Math.PI/2;east.position.set(x1,0,z0);
    block(name+'-WNW-wall',x0,x0+.4,-2,h,z0,z1);
-   const w=accessDesign.well,end=entranceFace('SSW-wing-end',w.windowCentres.map((x,i)=>({id:'WELL-B'+(i+1),x:x1-.4-x,w:w.width,b:w.sill,t:w.head,type:'well'})),x1-x0-.8,0,{height:h,pilasters:false});end.rotation.y=Math.PI;end.position.set(x1-.4,0,z1);
+   const w=accessDesign.wells[0],end=entranceFace('SSW-wing-end',w.windowCentres.map((x,i)=>({id:'WELL-B'+(i+1),x:x1-.4-x,w:w.width,b:w.sill,t:w.head,type:'well'})),x1-x0-.8,0,{height:h});end.rotation.y=Math.PI;end.position.set(x1-.4,0,z1);
    block(name+'-floor',x0+.4,x1-.4,-2,-1.8,z0,z1-.4);
   }
  }
@@ -76,10 +78,10 @@ export function createRodina(){
   else{const mid=d.ridgeU!;mesh(name+'-gable-end',[[x0,h,z1],[x1,h,z1],[mid,r,z1]],[0,1,2],wall);mesh(name+'-roof',[[x0,h,z0],[x0,h,z1],[mid,r,z1],[mid,r,z0],[x1,h,z0],[x1,h,z1]],[0,1,2,0,2,3,3,2,5,3,5,4],roof);}
  }
  const d=dimensions.main,[x0,x1]=d.u,[z0,z1]=d.v,h=d.eave,r=d.ridge,x=d.ridgeU,z=d.ridgeV;
- entranceFace('NNE',frontOpenings,21.4);
- const garden=entranceFace('ESE',gardenOpenings,21.65,.4);garden.rotation.y=-Math.PI/2;garden.position.x=21.4;
- const courtW=entranceFace('COURT-WNW',courtyardOpenings.WNW,z1-.4,0,{pilasters:false});courtW.rotation.y=Math.PI/2;courtW.position.set(0,0,z1);
- const courtS=entranceFace('COURT-SSW',courtyardOpenings.SSW,x1-.8,0,{pilasters:false});courtS.rotation.y=Math.PI;courtS.position.set(x1-.4,0,z1);
+ entranceFace('NNE',frontOpenings,21.4,0,{pilasters:front.pilasters});
+ const gardenFace=entranceFace('ESE',gardenOpenings,21.65,.4,{pilasters:garden.pilasters});gardenFace.rotation.y=-Math.PI/2;gardenFace.position.x=21.4;
+ const courtW=entranceFace('COURT-WNW',courtyardOpenings.WNW,z1-.4);courtW.rotation.y=Math.PI/2;courtW.position.set(0,0,z1);
+ const courtS=entranceFace('COURT-SSW',courtyardOpenings.SSW,x1-.8);courtS.rotation.y=Math.PI;courtS.position.set(x1-.4,0,z1);
  block('COURT-corner-WNW',-.22,0,-2,7.9,20.65,21.65);
  block('COURT-corner-SSW',0,1,-2,7.9,21.65,21.87);
  block('pavilion-floor',x0+.4,x1-.4,-2,-1.8,.4,z1-.4);

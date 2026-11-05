@@ -1,3 +1,4 @@
+import {accessDesign,wellArea} from './access.ts';
 import {terrainHeight} from './terrain.ts';
 import type {Point2, Polygon} from '../../../engine/types.ts';
 
@@ -11,7 +12,7 @@ function subtract(poly: Ring,hole: Ring){if(area(hole)<0)hole=[...hole].reverse(
 function bounds(t: Ring){return [Math.min(...t.map(v=>v[0])),Math.min(...t.map(v=>v[1])),Math.max(...t.map(v=>v[0])),Math.max(...t.map(v=>v[1]))];}
 function height(t: Ring,p: Vertex){const [a,b,c]=t,den=(b[1]-c[1])*(a[0]-c[0])+(c[0]-b[0])*(a[1]-c[1]);if(Math.abs(den)<1e-12)return -Infinity;const u=((b[1]-c[1])*(p[0]-c[0])+(c[0]-b[0])*(p[1]-c[1]))/den,v=((c[1]-a[1])*(p[0]-c[0])+(a[0]-c[0])*(p[1]-c[1]))/den;return u*a[2]+v*b[2]+(1-u-v)*c[2];}
 function distance(p: Vertex,a: Vertex,b: Vertex){const dx=b[0]-a[0],dz=b[1]-a[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dz)/(dx*dx+dz*dz)));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dz);}
-export function prepareRodinaGround(vertices: Float32Array,spec: {origin: Point2},audit: {fit: {angle: number}; localFootprint: Polygon}){const angle=audit.fit.angle,cs=Math.cos(angle),sn=Math.sin(angle),origin=spec.origin,plan=audit.localFootprint,holes=[[[4.55,45.47],[17.2,45.47],[17.2,47.02],[4.55,47.02]]],limits=[-29,-5,27,51],source: {tri: Ring; bounds: number[]}[]=[];
+export function prepareRodinaGround(vertices: Float32Array,spec: {origin: Point2},audit: {fit: {angle: number}; localFootprint: Polygon}){const angle=audit.fit.angle,cs=Math.cos(angle),sn=Math.sin(angle),origin=spec.origin,plan=audit.localFootprint,holes=accessDesign.wells.map(well=>{const[x0,x1,z0,z1]=wellArea(well);return[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];}),limits=[-29,-5,27,51],source: {tri: Ring; bounds: number[]}[]=[];
  const local=(p: Vertex)=>{const x=p[0]-origin[0],z=p[1]-origin[1];return [x*cs+z*sn,-x*sn+z*cs,p[2],...p.slice(3)];},world=(p: Vertex)=>[origin[0]+p[0]*cs-p[1]*sn,origin[1]+p[0]*sn+p[1]*cs,p[2],...p.slice(3)];
  const patch: Polygon=[[limits[0],limits[1]],[limits[2],limits[1]],[limits[2],limits[3]],[limits[0],limits[3]]].map(([x,z])=>world([x,z,0]).slice(0,2) as Point2);
  for(let i=0;i<vertices.length;i+=21){if(vertices[i+6]!==0||Math.max(vertices[i+2],vertices[i+9],vertices[i+16])<10)continue;let tri=[0,7,14].map(j=>local(Array.from(vertices.subarray(i+j,i+j+7))));let b=bounds(tri);if(b[2]<limits[0]||b[0]>limits[2]||b[3]<limits[1]||b[1]>limits[3])continue;for(const f of [(p: Vertex)=>p[0]-limits[0],(p: Vertex)=>limits[2]-p[0],(p: Vertex)=>p[1]-limits[1],(p: Vertex)=>limits[3]-p[1]])tri=clip(tri,f);if(tri.length)for(let k=1;k<tri.length-1;k++){const t=[tri[0],tri[k],tri[k+1]];if(Math.abs(area(t))>1e-7)source.push({tri:t,bounds:bounds(t)});}}

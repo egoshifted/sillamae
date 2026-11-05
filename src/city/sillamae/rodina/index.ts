@@ -74,7 +74,7 @@ export const rodina: BuildingOverride = {
     scene.add(root);
     return {root, groundPatches: [], ready: root.userData.ready, setTextures(on) { textures = on; compact.userData.setTextures(on); full?.userData.setTextures(on); }};
   },
-  entrances() { return [[10.7,-.6],[22,10.85],[-.6,19.9]].map(p => toSource(p as Point2)); },
+  entrances() { return [[10.7,-.6],[22,10.825],[-.6,19.9]].map(p => toSource(p as Point2)); },
   view: {offset: [75,50,-90], span:85},
   detailShadows: true,
 };

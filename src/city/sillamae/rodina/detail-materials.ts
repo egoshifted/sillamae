@@ -16,8 +16,20 @@ export function rodinaMaterials(){
   const state={detail:{value:1},kind:{value:kind}};uniforms.push(state.detail);
   m.onBeforeCompile=s=>{s.uniforms.rodinaDetail=state.detail;s.uniforms.rodinaKind=state.kind;s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vRodinaP;').replace('#include <begin_vertex>','#include <begin_vertex>\nvRodinaP=position;');s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform float rodinaDetail; uniform float rodinaKind;\n'+common).replace('#include <color_fragment>',`#include <color_fragment>
  vec3 p=vRodinaP;float n=rn(p.xz*2.3+p.y*.19),fine=rn(vec2(p.x+p.z,p.y)*23.);
+ // Unrolled wall position, so wear runs on around corners; the worst damage is at the north-east corner.
+ float wallS=p.x+p.z,neCorner=exp(-length(vec2(p.x-21.4,p.z))*.4);
+ float drip=smoothstep(.56,.86,rn(vec2(wallS*4.3,3.)))*(.3+.7*rn(vec2(wallS*1.6,p.y*.55)));
  if(rodinaKind==1.){
-  float base=1.-smoothstep(.53,.58,p.y);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.48,.205,.16),base);
+  float pavilion=step(-.3,p.x)*step(p.z,21.9),baseTop=mix(.53,.70,pavilion);float base=1.-smoothstep(baseTop,baseTop+.05,p.y);
+  float blotch=rn(vec2(wallS,p.y)*.55)*.7+rn(vec2(wallS,p.y)*2.2)*.3;
+  diffuseColor.rgb*=1.+rodinaDetail*(blotch-.5)*.07;
+  diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.93,.88,.70),smoothstep(.42,.8,blotch)*.14*rodinaDetail);
+  diffuseColor.rgb*=1.-rodinaDetail*drip*.07*(1.-base)*(1.-smoothstep(6.,8.5,p.y));
+  vec3 red=vec3(.48,.205,.16)*(.8+.34*rn(vec2(wallS*.9,p.y*1.2)));
+  float bare=smoothstep(.5,.72,rn(vec2(wallS*1.5,p.y*1.9))*.65+rn(vec2(wallS*6.,p.y*2.))*.35+neCorner*.26);
+  float runs=smoothstep(.6,.84,rn(vec2(wallS*7.,5.)))*smoothstep(-.3,baseTop,p.y);
+  red=mix(red,vec3(.47,.45,.41)*(.86+.24*fine),max(bare,runs*.55)*rodinaDetail);
+  diffuseColor.rgb=mix(diffuseColor.rgb,red,base);
   float low=exp(-max(p.y,0.)*1.5)*(.3+.7*n);
   float court=rodinaPatch(p.zy,vec2(18.6,3.3),vec2(2.,5.))*exp(-abs(p.x)*8.)+rodinaPatch(p.xy,vec2(-.7,3.7),vec2(1.2,5.))*exp(-abs(p.z-17.43)*8.);
   float garden=rodinaPatch(p.zy,vec2(43.7,2.7),vec2(1.7,4.2))*exp(-abs(p.x-17.8)*8.);
@@ -30,14 +42,22 @@ export function rodinaMaterials(){
   vec2 br=vec2(p.x/.25,p.y/.082);br.x+=mod(floor(br.y),2.)*.5;vec2 f=fract(br);float mortar=step(f.x,.032)+step(f.y,.07);vec3 bc=mix(vec3(.32,.095,.055)*( .7+.4*rh(floor(br))),vec3(.16,.145,.10),clamp(mortar,0.,1.));
   diffuseColor.rgb=mix(diffuseColor.rgb,bc,brick*rodinaDetail);
  }else if(rodinaKind==2.){
-  float dirt=(.08+.12*n)+.25*exp(-max(p.y,0.)*1.8);diffuseColor.rgb*=1.-dirt*rodinaDetail;
+  float dirt=(.04+.08*n)+.25*exp(-max(p.y-.7,0.)*1.8);diffuseColor.rgb*=1.-dirt*rodinaDetail;
   diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.19,.18,.15),smoothstep(.86,.97,fine)*.12*rodinaDetail);
+  diffuseColor.rgb*=1.-rodinaDetail*(drip*.06+.1*smoothstep(9.6,10.1,p.y)*n);
+  float low=1.-smoothstep(1.1,3.4,p.y),flake=smoothstep(.55,.63,rn(vec2(wallS,p.y)*2.5)*.7+rn(vec2(wallS,p.y)*10.)*.3+neCorner*.2-.16*(1.-low));
+  diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.5,.49,.44)*(.86+.24*fine),flake*low*(.42+neCorner)*rodinaDetail);
  }else if(rodinaKind==3.){
   diffuseColor.rgb*=1.-rodinaDetail*(.035+.055*n);vec3 rnrm=normalize(cross(dFdx(p),dFdy(p)));float coordinate=abs(rnrm.x)>abs(rnrm.z)?p.z:p.x;float sf=abs(fract(coordinate/.6+.5)-.5);float seam=1.-smoothstep(.006,.006+max(fwidth(coordinate/.6),.006),sf);diffuseColor.rgb*=1.-rodinaDetail*.1*seam;
  }else if(rodinaKind==4.){
   diffuseColor.rgb*=1.-rodinaDetail*(.14*rn(vec2(p.x+p.z,p.y*25.))+.08*n);
  }else if(rodinaKind==5.){
   float moss=(.10+.20*n)*exp(-max(p.y,0.)*.4);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.11,.14,.075),moss*rodinaDetail);
+  vec3 faceNormal=normalize(cross(dFdx(p),dFdy(p)));float tread=step(.7,abs(faceNormal.y))*step(p.y,1.),nearGround=step(p.y,1.);
+  float growth=smoothstep(.3,.68,rn(p.xz*1.3)*.7+rn(p.xz*7.)*.3);
+  vec3 soil=mix(vec3(.17,.145,.10),vec3(.13,.18,.075),rn(p.xz*3.1));
+  diffuseColor.rgb=mix(diffuseColor.rgb,soil,tread*(.42+.52*growth)*rodinaDetail);
+  diffuseColor.rgb*=1.-rodinaDetail*nearGround*(1.-tread)*(.14+.26*rn(vec2(wallS*5.,p.y*8.)));
  }else if(rodinaKind==6.){
   float rust=smoothstep(.36,.68,n)*(.35+.2*fine);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.19,.10,.045),rust*rodinaDetail);
  }else if(rodinaKind==7.){
@@ -49,12 +69,12 @@ export function rodinaMaterials(){
  if(rodinaKind==1.){vec3 bp=vRodinaP;vec2 bc=vec2(bp.x/.25,bp.y/.082);bc.x+=mod(floor(bc.y),2.)*.5;vec2 bf=fract(bc);float height=rodinaExposure(bp,0.)*.006*smoothstep(.015,.045,bf.x)*smoothstep(.03,.09,bf.y)*smoothstep(.01,.04,1.-bf.x)*smoothstep(.02,.07,1.-bf.y)*rodinaDetail;normal=perturbNormalArb(-vViewPosition,normal,vec2(dFdx(height),dFdy(height)),faceDirection);}
  #endif
  `);};
-  m.customProgramCacheKey=()=> 'rodina-surfaces-v1';m.userData.maps={map:colour,bumpMap:relief,bump};materials[name]=m;return m;
+  m.customProgramCacheKey=()=> 'rodina-surfaces-v2';m.userData.maps={map:colour,bumpMap:relief,bump};materials[name]=m;return m;
  }
- make('plaster',0xe6ca9f,.94,1,0,.006);make('trim',0xe4e4de,.9,2,0,.003);make('roof',0xa1a8aa,.9,3,.15,0);make('roofFold',0x969e9f,.9,3,.15,0);
+ make('plaster',0xeed9a6,.94,1,0,.006);make('trim',0xf1f1ec,.9,2,0,.003);make('roof',0xa1a8aa,.9,3,.15,0);make('roofFold',0x969e9f,.9,3,.15,0);
  make('wood',0x5a4b40,.86,4,0,.003);make('door',0x662d32,.82,4,0,.0025);make('board',0xb98c52,.95,4,0,.003);
  make('glass',0x354e55,.24,7,.22,0);make('paleGlass',0x87948a,.5,7,.1,0);make('void',0x101713,1,0,0,0);
- make('iron',0x454b44,.86,6,.15,.002);make('metal',0x8a9391,.72,6,.35,.0015);make('palePipe',0xb0b5ad,.8,2,.15,.0015);
+ make('iron',0x454b44,.86,6,.15,.002);make('railing',0x7d3f33,.86,6,.15,.002);make('metal',0x8a9391,.72,6,.35,.0015);make('palePipe',0xb0b5ad,.8,2,.15,.0015);
  make('concrete',0x939286,.98,5,0,.012);make('brick',0x95614c,.98,4,0,.008);make('sign',0x263b32,.8,6,.2,.001);
  make('grass',0x65744c,1,0,0,.014);
  let environment: THREE.CubeTexture | null=null;

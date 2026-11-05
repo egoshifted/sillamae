@@ -24,7 +24,7 @@ export function createDetailedRodina(plain: ReturnType<typeof createPlainRodina>
  const root=new THREE.Group() as DetailedRodina;root.name='rodina-detailed';const resources=rodinaMaterials(),b=detailBuilder(resources.materials,{compact});
  const batches=new Map(plain.children.map(m=>[m.name.replace('rodina-',''),m.geometry])),offsets: Record<string,number>={shell:0,roof:0,frames:0,access:0,backings:0};
  function classify(f: Feature){const n=f.name;if(f.material==='roof')return'roof';if(f.material==='access')return'concrete';if(f.material==='backings')return /^WELL/.test(n)?'glass':'void';if(f.material==='frames'){
-  if(/court-corner-pipe/.test(n))return'palePipe';if(/ladder|guard|grille|louvre/.test(n))return'iron';if(/vent|hood|bowl|pipe|terminal|cap/.test(n))return'metal';return'wood';
+  if(/court-corner-pipe|NE-corner-downpipe/.test(n))return'palePipe';if(/well-guard-(rail|bar)/.test(n))return'railing';if(/ladder|guard|grille|louvre/.test(n))return'iron';if(/vent|hood|bowl|pipe|terminal|cap/.test(n))return'metal';return'wood';
  }if(/well-|retaining|cheek/.test(n))return'concrete';if(/stack-wall/.test(n))return'brick';if(/pilaster|COURT-corner|bay-|frieze|eave-|rake|pediment-|sign-band|arch/.test(n))return'trim';return'plaster';}
  for(const f of plain.userData.audit.features){const source=batches.get(f.material)!,start=offsets[f.material];offsets[f.material]+=f.vertices;if(/-bay-.*-(left|right)$/.test(f.name))continue;
   const g=new THREE.BufferGeometry();for(const a of ['position','normal'])g.setAttribute(a,new THREE.BufferAttribute(source.attributes[a].array.slice(start*3,(start+f.vertices)*3),3));b.add('base/'+f.name,g,classify(f));

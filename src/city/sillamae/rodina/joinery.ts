@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {frontOpenings,gardenOpenings,courtyardOpenings} from './plain-model.ts';
+import {garden} from './facade.ts';
 import type {Face, ModelOptions, Opening} from './types.ts';
 import type {detailBuilder} from './detail-tools.ts';
 import type {createRodina as createPlainRodina} from './plain-model.ts';
@@ -20,7 +21,7 @@ export function addRodinaJoinery(b: ReturnType<typeof detailBuilder>,plain: Retu
   inventory.push({id:o.id,face,type:'window',a,bottom:o.b,top:o.t,columns:cols,rows:ys.length-1,broken:face==='ESE'&&o.id.includes('L2-C2'),recess:.282});
  }
  function door(face: Face,o: Opening,a=o.x,mode='solid'){
-  const count=o.w>1.5?2:1,leafW=(o.w-.14)/count;
+  const count=o.w>=1.5?2:1,leafW=(o.w-.14)/count;
   for(let c=0;c<count;c++){const x=a-o.w/2+.07+(c+.5)*leafW,left=x-leafW/2,right=x+leafW/2,bottom=o.b+.07,top=o.t-.07,glassBottom=bottom+.55;
    for(const[s,e]of [[left,left+.07],[right-.07,right]])box(o.id+'-door-stile',s,e,bottom,top,-.285,-.19,'door',face);
    box(o.id+'-door-bottom-rail',left+.07,right-.07,bottom,bottom+.12,-.285,-.19,'door',face);box(o.id+'-door-top-rail',left+.07,right-.07,top-.11,top,-.285,-.19,'door',face);
@@ -39,10 +40,10 @@ export function addRodinaJoinery(b: ReturnType<typeof detailBuilder>,plain: Retu
   line(o.id+'-grille-perimeter',[[a-w/2,y-h/2+.12,d],[a-w/2+.13,y-h/2,d],[a+w/2-.13,y-h/2,d],[a+w/2,y-h/2+.12,d],[a+w/2,y+h/2-.12,d],[a+w/2-.13,y+h/2,d],[a-w/2+.13,y+h/2,d],[a-w/2,y+h/2-.12,d],[a-w/2,y-h/2+.12,d]],.018,'iron',face,16,6);
   inventory.push({id:o.id,face,type:'ornate double grille',leaves:2,fullRadialRange:true});
  }
- for(const[face,openings]of [['NNE',frontOpenings],['ESE',gardenOpenings]] as const)for(const o of openings){if(o.type==='door')door(face,o,o.x,face==='NNE'?(o.w>1.5?'board':'pale'):'wire');else if(o.type==='basement'){pane(face,o.id,o.x,o.b+.07,o.w-.14,o.t-o.b-.14);grille(o);}else window(face,o);}
+ for(const[face,openings]of [['NNE',frontOpenings],['ESE',gardenOpenings]] as const)for(const o of openings){if(o.type==='door')door(face,o,o.x,face==='NNE'?(o.w>=1.5?'board':'pale'):'wire');else if(o.type==='basement'){pane(face,o.id,o.x,o.b+.07,o.w-.14,o.t-o.b-.14);grille(o);}else window(face,o);}
  for(const o of courtyardOpenings.WNW){const a=21.65-o.x;if(o.type==='door')door('WNW',o,a);else window('WNW',o,a);}
  for(const o of courtyardOpenings.SSW){const a=21-o.x;if(o.type==='door')door('SSW',o,a);else window('SSW',o,a);}
  for(const e of plain.userData.audit.access.exits)door(e.face,{id:e.id,x:e.centre,w:1.1,b:e.top,t:e.top+2.35},e.centre);
- for(const a of [8.5,13.2]){box('ESE-entrance-light-bracket',a-.025,a+.025,4.42,4.52,.02,.18,'iron','ESE');box('ESE-entrance-light',a-.14,a+.14,4.43,4.57,.14,.27,'metal','ESE');box('ESE-entrance-light-lens',a-.105,a+.105,4.45,4.55,.27,.279,'paleGlass','ESE');}
+ for(const a of garden.sideDoors){box('ESE-entrance-light-bracket',a-.025,a+.025,4.42,4.52,.02,.18,'iron','ESE');box('ESE-entrance-light',a-.14,a+.14,4.43,4.57,.14,.27,'metal','ESE');box('ESE-entrance-light-lens',a-.105,a+.105,4.45,4.55,.27,.279,'paleGlass','ESE');}
  return inventory;
 }

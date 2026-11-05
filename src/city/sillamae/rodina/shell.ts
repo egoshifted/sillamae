@@ -1,3 +1,4 @@
+import {front,garden,plinthTop} from './facade.ts';
 import type {Block, Emit, Face, Point3, ShellMaterials} from './types.ts';
 
 export const shellDesign={
@@ -16,6 +17,8 @@ export const shellDesign={
  ladder:{u:-1.3,v:17.75,bottom:3.75,top:7.8,width:.6},
  limits:'Plain envelopes only. Bay widths, band levels, hood size/depth and ladder anchors inferred. Unseen outer courtyard bay, main-roof stacks and ornament remain unresolved.'
 };
+
+export const bayBase=(face: Face)=>face==='SSW-end'?.65:face==='WNW-end'?.55:.2;
 
 export function facadePoint(face: Face,a: number,y: number,d=0): Point3{
  if(face==='WNW-NNE')return[a,y,3.93-d];
@@ -39,16 +42,16 @@ export function addShell(block: Block,emit: Emit,materials: ShellMaterials){
  }
  function box(face: Face,name: string,a0: number,a1: number,b: number,t: number,d0: number,d1: number,material=wall){const p=facadePoint(face,a0,b,d0),q=facadePoint(face,a1,t,d1);return block(name,Math.min(p[0],q[0]),Math.max(p[0],q[0]),b,t,Math.min(p[2],q[2]),Math.max(p[2],q[2]),material);}
  for(const row of shellDesign.bays)for(const a of row.centres){
-  const open=a===row.exit,width=open?1.85:2.3,b=row.face==='SSW-end'?.65:.2,t=4.5,j=.22,id=row.face+'-bay-'+a;
+  const open=a===row.exit,width=open?1.85:2.3,b=bayBase(row.face),t=4.5,j=.22,id=row.face+'-bay-'+a;
   box(row.face,id+'-left',a-width/2-j,a-width/2,b,t,-.025,.105);
   box(row.face,id+'-right',a+width/2,a+width/2+j,b,t,-.025,.105);
   const lintel=box(row.face,id+'-lintel',a-width/2-j,a+width/2+j,t,t+.22,-.025,.12),g=lintel.geometry,indices=g.index!.array,normals=g.attributes.normal,keep=[];
   // The continuous band owns the shared top; retaining the lintel cap creates opposite coplanar faces.
   for(let i=0;i<indices.length;i+=3)if(normals.getY(indices[i])<.9)keep.push(...indices.slice(i,i+3));g.setIndex(keep);
-  if(!open)box(row.face,id+'-sill',a-width/2,a+width/2,b,b+.14,-.025,.15);
+  if(!open&&row.face!=='WNW-end')box(row.face,id+'-sill',a-width/2,a+width/2,b,b+.14,-.025,.15);
   inventory.push({id,face:row.face,centre:a,type:open?'exit surround':'blind surround',width,bottom:b,top:t+.22});
  }
- const paths={WNW:(d: number)=>[[0,3.93-d],[-23.92-d,3.93-d],[-23.92-d,17.43+d],[0,17.43+d]],SSW:(d: number)=>[[3.95-d,21.65],[3.95-d,45.47+d],[17.8+d,45.47+d],[17.8+d,21.65]],pavilion:(d: number)=>[[-d,-d],[21.4+d,-d],[21.4+d,21.65+d],[-d,21.65+d],[-d,-d]]};
+ const paths={WNW:(d: number)=>[[0,3.93-d],[-23.92-d,3.93-d],[-23.92-d,17.43+d],[0,17.43+d]],SSW:(d: number)=>[[3.95-d,21.65],[3.95-d,45.47+d],[17.8+d,45.47+d],[17.8+d,21.65]],pavilion:(d: number)=>[[-d,-d],[21.4+d,-d],[21.4+d,21.65+d],[-d,21.65+d],[-d,-d]],plinth:(d: number)=>[[-d,3.93],[-d,-d],[21.4+d,-d],[21.4+d,21.65+d],[17.8,21.65+d]]};
  function band(name: string,path: (d: number)=>number[][],y0: number,y1: number,projection: number,{top=true,under=-.025}={}){
   const inner=path(-.025),outer=path(projection);
   for(let i=1;i<outer.length;i++){
@@ -59,18 +62,20 @@ export function addShell(block: Block,emit: Emit,materials: ShellMaterials){
    const lower=path(under);surface(name+'-under-'+i,[[a[0],y0,a[1]],[b[0],y0,b[1]],[lower[i][0],y0,lower[i][1]],[lower[i-1][0],y0,lower[i-1][1]]],[0,-1,0]);
   }
  }
- for(const wing of ['WNW','SSW'] as const)for(const[b,t,p,label,profile]of [[4.72,4.88,.14,'lower-frieze',{}],[5.9,6.12,.17,'upper-frieze',{}],[6.98,7.14,.12,'eave-bed',{top:false}],[7.14,7.3,.28,'eave-crown',{under:.12}]] as const)band(wing+'-'+label,paths[wing],b,t,p,profile);
- for(const[b,t,p,label,profile]of [[8.55,8.78,.18,'sign-band',{}],[9.65,9.82,.18,'pediment-bed',{top:false}],[9.82,10,.3,'pediment-crown',{under:.18}]] as const)band('pavilion-'+label,paths.pavilion,b,t,p,profile);
+ for(const wing of ['WNW','SSW'] as const)for(const[b,t,p,label,profile]of [[4.72,4.88,.06,'lower-frieze',{}],[5.9,6.12,.09,'upper-frieze',{}],[6.98,7.14,.06,'eave-bed',{top:false}],[7.14,7.3,.16,'eave-crown',{under:.06}]] as const)band(wing+'-'+label,paths[wing],b,t,p,profile);
+ for(const[b,t,p,label,profile]of [[8.55,8.78,.08,'sign-band',{}],[9.65,9.82,.1,'pediment-bed',{top:false}],[9.82,10,.18,'pediment-crown',{under:.1}]] as const)band('pavilion-'+label,paths.pavilion,b,t,p,profile);
+ // The piers and pilasters stand on this plinth, which runs straight across both fronts.
+ band('pavilion-plinth',paths.plinth,-2,plinthTop,.18);
  function rake(face: Face,start: number,end: number,peak: number,h: number,r: number){
   const normal=facadePoint(face,0,0,1).map((v,i)=>v-facadePoint(face,0,0,0)[i]);
   for(const[a,b,ya,yb]of [[start,peak,h,r],[peak,end,r,h]]){
-   const poly=[[a,ya],[b,yb],[b,yb-.3],[a,ya-.3]],front=poly.map(([x,y])=>facadePoint(face,x,y,.2)),back=poly.map(([x,y])=>facadePoint(face,x,y,0));
+   const poly=[[a,ya],[b,yb],[b,yb-.3],[a,ya-.3]],front=poly.map(([x,y])=>facadePoint(face,x,y,.1)),back=poly.map(([x,y])=>facadePoint(face,x,y,0));
    surface(face+'-rake-face',front,normal);
    for(const i of [0,2]){const j=(i+1)%4;surface(face+'-rake-edge', [front[i],front[j],back[j],back[i]],[0,i===0?1:-1,0]);}
   }
  }
  rake('WNW-end',3.93,17.43,10.78,7.3,9.95);rake('SSW-end',3.95,17.8,11.15,7.3,9.95);
- for(const[face,end,peak]of [['NNE',21.4,11.3],['ESE',21.65,10.95],['SSW',21.4,11.3],['WNW',21.65,10.95]] as const)rake(face,0,end,peak,10,13.8);
+ for(const[face,end,peak]of [['NNE',21.4,front.centre],['ESE',21.65,garden.centre],['SSW',21.4,front.centre],['WNW',21.65,garden.centre]] as const)rake(face,0,end,peak,10,13.8);
  function roofY(d: typeof shellDesign.dormers[number],depth: number){return d.wing==='WNW'?7.3+(17.43-d.front+depth)*2.65/(17.43-10.78):7.3+(d.front+depth-3.95)*2.65/(11.15-3.95);}
  for(const d of shellDesign.dormers){
   const point=(a: number,y: number,s: number)=>d.wing==='WNW'?[d.centre+a,y,d.front-s]:[d.front+s,y,d.centre+a],normal=d.wing==='WNW'?[0,0,1]:[-1,0,0],y=roofY(d,0),n=12,arc=Array.from({length:n+1},(_,i)=>{const t=Math.PI-i*Math.PI/n;return[d.radius*Math.cos(t),d.jamb+d.radius*Math.sin(t)];});

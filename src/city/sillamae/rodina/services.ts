@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {front,garden} from './facade.ts';
 import type {Block, Emit, Point3, ShellMaterials} from './types.ts';
 
 export const rodinaServices={
@@ -15,19 +16,21 @@ export const rodinaServices={
   {id:'S1',u:11.97,v:44.05,type:'wing vent',width:.28,depth:.28,rise:.65}
  ],
  drains:[
-  {id:'court-hopper',face:'WNW-SSW',centre:-.5,rim:7.2,bowlBottom:6.72,depth:.65,bottom:3.55,pipeDepth:.3,radius:.07,brackets:[4.05,5.45]},
-  {id:'WNW-NNE-end-drain',face:'WNW-NNE',centre:-23.55,rim:7.22,bowlBottom:6.74,depth:.6,bottom:4.05,pipeDepth:.3,radius:.07,brackets:[4.45,5.75]},
-  {id:'SSW-ESE-end-drain',face:'SSW-ESE',centre:43.7,rim:7.35,bowlBottom:6.87,depth:.6,bottom:3.05,pipeDepth:.3,radius:.07,brackets:[3.55,5.6]},
-  {id:'SSW-WNW-end-pipe',face:'SSW-WNW',centre:44.05,top:7.05,bottom:3.7,pipeDepth:.3,radius:.075,brackets:[4.25,5.75]}
+  {id:'court-hopper',face:'WNW-SSW',centre:-.5,rim:7.2,bowlBottom:6.72,depth:.42,bottom:3.55,pipeDepth:.16,radius:.07,brackets:[4.05,5.45]},
+  {id:'WNW-NNE-end-drain',face:'WNW-NNE',centre:-23.55,rim:7.22,bowlBottom:6.74,depth:.42,bottom:4.05,pipeDepth:.16,radius:.07,brackets:[4.45,5.75]},
+  {id:'SSW-ESE-end-drain',face:'SSW-ESE',centre:43.7,rim:7.35,bowlBottom:6.87,depth:.42,bottom:3.05,pipeDepth:.16,radius:.07,brackets:[3.55,5.6]},
+  {id:'SSW-WNW-end-pipe',face:'SSW-WNW',centre:44.05,top:7.05,bottom:3.7,pipeDepth:.16,radius:.075,brackets:[4.25,5.75]}
  ],
  cornerPipe:{id:'court-corner-pipe',u:-.39,v:21.35,top:10.08,bottom:5.05,radius:.065,brackets:[5.65,7.25,8.85]},
+ // Summer photo of the north-east corner: a funnel beyond the eaves, a pipe stopping well above the plinth.
+ frontPipe:{id:'NE-corner-downpipe',path:[[21.74,10.3,-.34],[21.74,10.05,-.34],[21.6,9.45,-.2],[21.6,2.4,-.2]],radius:.07,funnel:.17,brackets:[3.5,6,8.5]},
  limits:'All dimensions and roof anchors inferred. Four rectangular stacks, three narrow pavilion terminals and two wing vents are visible proxies, not claims of function. December 2025 broken drain condition retained; hidden continuations, exact bends and collector connections unresolved.'
 };
 
 export function rodinaRoofY(u: number,v: number){
  if(u<0)return 7.3+2.65*Math.min((v-3.93)/(10.78-3.93),(17.43-v)/(17.43-10.78));
  if(v>21.65)return 7.3+2.65*Math.min((u-3.95)/(11.15-3.95),(17.8-u)/(17.8-11.15));
- return Math.max(10+3.8*Math.min(u/11.3,(21.4-u)/(21.4-11.3)),10+3.8*Math.min(v/10.95,(21.65-v)/(21.65-10.95)));
+ return Math.max(10+3.8*Math.min(u,21.4-u)/front.centre,10+3.8*Math.min(v,21.65-v)/garden.centre);
 }
 
 function drainPoint(d: {face: string; centre: number},y: number,offset: number): Point3{
@@ -82,5 +85,8 @@ export function addRodinaServices(block: Block,emit: Emit,{wall,frame,infill}: S
  }
  const p=rodinaServices.cornerPipe;tube(p.id,[[p.u,p.top,p.v],[p.u,p.bottom,p.v]],p.radius);
  for(const y of p.brackets)block(p.id+'-wall-bracket',p.u+p.radius,-.19,y-.018,y+.018,p.v-.018,p.v+.018,frame);
- audit.drains.push({...p,path:[[p.u,p.top,p.v],[p.u,p.bottom,p.v]]});return audit;
+ audit.drains.push({...p,path:[[p.u,p.top,p.v],[p.u,p.bottom,p.v]]});
+ const f=rodinaServices.frontPipe,[top]=f.path;tube(f.id,f.path,f.radius);tube(f.id+'-funnel',[[top[0],top[1]+.25,top[2]],top],f.funnel);
+ for(const y of f.brackets)block(f.id+'-wall-bracket',21.4,21.6,y-.018,y+.018,-.218,-.182,frame);
+ audit.drains.push({...f});return audit;
 }
