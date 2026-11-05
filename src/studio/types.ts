@@ -3,6 +3,7 @@ import type {GroundTriangle, OverrideContext} from '../engine/types.ts';
 
 export interface StudyModel {
   root: THREE.Object3D;
+  shadowDetail?: {radius: number; normalBias: number};
   studyGround?: GroundTriangle[];
   dispose(): void;
   setTextures?(enabled: boolean): void;

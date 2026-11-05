@@ -87,7 +87,7 @@ export async function buildStudy(world: WorldData, id: string, mode: string, cus
   const material = new THREE.MeshStandardMaterial({color: '#a5ad91', roughness: 1, side: THREE.DoubleSide});
   const mesh = new THREE.Mesh(geometry, material); mesh.receiveShadow = true; ground.add(mesh); scene.add(ground);
   let disposed = false;
-  return {scene, root: model.root, ground, bounds, textures: (on: boolean) => model.setTextures?.(on), dispose() {
+  return {scene, root: model.root, ground, bounds, shadowDetail: model.shadowDetail, textures: (on: boolean) => model.setTextures?.(on), dispose() {
     if (disposed) return; disposed = true; model.dispose(); geometry.dispose(); material.dispose(); scene.clear();
   }};
 }

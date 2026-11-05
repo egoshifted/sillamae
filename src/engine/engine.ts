@@ -384,7 +384,9 @@ export class Engine {
 function tagBuilding(root: THREE.Object3D, pick: number) {
   root.traverse(o => {
     const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh || (mesh.material as THREE.Material).userData.groundSurface) return;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    if (materials.every(material => material.userData.groundSurface)) return;
     const count = mesh.geometry.attributes.position.count;
     mesh.geometry.setAttribute('building', new THREE.BufferAttribute(new Uint16Array(count).fill(pick), 1));
   });

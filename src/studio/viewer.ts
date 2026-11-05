@@ -209,9 +209,9 @@ async function load(reset = true) {
     const mapSize = Math.min(renderer.capabilities.maxTextureSize, buildingShadows.mapSize);
     sun.shadow.mapSize.set(mapSize, mapSize);
     sun.shadow.bias = buildingShadows.bias;
-    sun.shadow.normalBias = buildingShadows.normalBias;
+    sun.shadow.normalBias = next.shadowDetail?.normalBias ?? buildingShadows.normalBias;
     sun.shadow.radius = buildingShadows.filterRadius;
-    setShadowCoverage(sun, Math.max(buildingShadows.radius, radius));
+    setShadowCoverage(sun, Math.max(next.shadowDetail?.radius ?? buildingShadows.radius, radius * (next.shadowDetail ? 1.05 : 1)));
     next.scene.add(sun, sun.target); next.textures(checked('textures'));
     refreshParts();
     element<HTMLOutputElement>('where').textContent = buildings.find(s => s.id === id)?.name ?? '';
