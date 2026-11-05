@@ -3,17 +3,31 @@ import {design as sister} from '../kesk5/config.ts';
 import * as THREE from 'three';
 import {surfaces} from '../kesk5/surfaces.ts';
 import {acquirePaleMasonry} from '../shared/masonry.ts';
-import {panelTexture, roughcast} from '../shared/slab-surfaces.ts';
+import {roughcast} from '../shared/slab-surfaces.ts';
 import type {ModelMesh, Study} from '../kesk5/types.ts';
+
+// Pale corrugated sheet with 6.25 cm ribs, streaked towards the bottom; May 2024 Street View.
+function corrugatedSheet() {
+  const w=256,h=128,data=new Uint8Array(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const rib=Math.sin(x/16*Math.PI*2),stain=Math.sin(x*.041+1.3)*Math.sin(x*.117)*y/h,v=Math.round(192+rib*8-stain*16-y/h*10),i=(y*w+x)*4;
+    data.set([v,v+2,v,255],i);
+  }
+  const t=new THREE.DataTexture(data,w,h);t.wrapS=THREE.RepeatWrapping;t.wrapT=THREE.ClampToEdgeWrapping;t.colorSpace=THREE.SRGBColorSpace;
+  t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;
+}
 
 export function finishSurfaces(root: Study) {
   const shared = surfaces(), pale = acquirePaleMasonry();
-  const panel = panelTexture(), concrete = roughcast(), relief = roughcast(true);
+  const panel = corrugatedSheet(), concrete = roughcast(), relief = roughcast(true);
   const material = (map: THREE.Texture, bumpMap?: THREE.Texture, bumpScale = .018) =>
     new THREE.MeshStandardMaterial({map, bumpMap: bumpMap ?? null, bumpScale, roughness: .94});
-  const white = material(pale.maps[0],pale.maps[1]), red = material(shared.masonry[0],shared.masonry[1]);
+  // Same maps, tint, relief and roughness as the Kesk 5 brick.
+  const white = material(pale.maps[0],pale.maps[1],.024), red = material(shared.masonry[0],shared.masonry[1],.016);
+  white.roughness = red.roughness = 1;
   const base = material(concrete,relief,.025), felt = material(shared.roof[0],shared.roof[1],.012);
-  red.color.setHex(0xb77858); felt.color.setHex(0x8c908b);
+  red.color.setHex(0xc8a58a); felt.color.setHex(0x8c908b);
+  const rearWall = new THREE.MeshStandardMaterial({color:0xd9c083,roughness:1});
   const ribs = material(panel), coping = new THREE.MeshStandardMaterial({color:0xa2a5a0,roughness:.78,metalness:.18});
   const vent = new THREE.MeshStandardMaterial({color:0xa6aaa5,roughness:.89});
   const p = new THREE.Vector3(), n = new THREE.Vector3();
@@ -53,6 +67,8 @@ export function finishSurfaces(root: Study) {
       mesh.material=coping;
     } else if(mesh.name==='roof-vent') {
       mesh.material=vent;
+    } else if(mesh.name==='rear-window-wall') {
+      mesh.material=rearWall;
     }
   }
   const position=root.position.clone(),rotation=root.quaternion.clone();
@@ -66,7 +82,7 @@ export function finishSurfaces(root: Study) {
   return {coping, ready:shared.ready, toggle(on:boolean){
     for(const {m,map,bump} of textured){m.map=on?map:null;m.bumpMap=on?bump:null;m.needsUpdate=true;}
   },dispose(){
-    for(const m of [white,red,base,felt,ribs,coping,vent])m.dispose();
+    for(const m of [white,red,base,felt,ribs,coping,vent,rearWall])m.dispose();
     panel.dispose();concrete.dispose();relief.dispose();pale.release();
   }};
 }
