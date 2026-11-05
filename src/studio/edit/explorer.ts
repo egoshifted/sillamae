@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import {groupParts, isLocked, lockOwner, userNamed, type GroupNode} from './group.ts';
+import {flattenRows, revealRow, ROW_PITCH, rowWindow, type Row} from './rows.ts';
 
 export function mountExplorer(options: {
   host: HTMLElement;
@@ -26,6 +27,9 @@ export function mountExplorer(options: {
   const tree = document.createElement('div');
   tree.className = 'tree';
   tree.role = 'tree';
+  const sizer = document.createElement('div');
+  sizer.className = 'tree-rows';
+  tree.append(sizer);
   options.host.append(title, input, tree);
   options.host.addEventListener('contextmenu', event => event.preventDefault());
   const open = new Set<string>();
@@ -34,7 +38,10 @@ export function mountExplorer(options: {
   let paintedQuery = '';
   let paintedNames = '';
   let members: THREE.Object3D[] = [];
-  let rows: {el: HTMLElement; node: GroupNode}[] = [];
+  let flat: Row<GroupNode>[] = [];
+  // A model can list thousands of parts, and every row in the page slows each frame, so only rows near the viewport exist.
+  const mounted = new Map<number, HTMLElement>();
+  let drawing = 0;
   let seen: THREE.Object3D | null = null;
   let pendingLayout: {open: string[]; collapsed: string[]} | null = null;
   let fromList = false;
@@ -129,21 +136,47 @@ export function mountExplorer(options: {
     const icon = eye.querySelector('i');
     if (icon) icon.className = off ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
   };
-  const restyle = () => { for (const row of rows) mark(row.el, row.node); };
-  const paint = (objects: THREE.Object3D[], nodesIn: GroupNode[]) => {
-    const focus = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('.row')?.dataset.key ?? '' : '';
-    const q = query;
-    const nodes = nodesIn.map(node => prune(node, q)).filter((node): node is GroupNode => node != null);
-    rows = [];
-    tree.replaceChildren();
-    const add = (node: GroupNode, depth: number) => {
+  const restyle = () => { for (const index of mounted.keys()) mark(mounted.get(index)!, flat[index].node); };
+  const activeRow = () => {
+    const row = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('.row') : null;
+    return row && sizer.contains(row) ? Number(row.dataset.index) : -1;
+  };
+  // keep stays mounted outside the window: removing the focused row or a rename field would lose it.
+  const draw = (keep = activeRow()) => {
+    const [first, last] = rowWindow(tree.scrollTop, tree.clientHeight, flat.length);
+    for (const [index, row] of mounted) if ((index < first || index >= last) && index !== keep) { row.remove(); mounted.delete(index); }
+    const mount = (index: number) => {
+      if (mounted.has(index) || !flat[index]) return;
+      const row = createRow(flat[index], index);
+      mounted.set(index, row);
+      sizer.append(row);
+    };
+    for (let index = first; index < last; index++) mount(index);
+    if (keep >= 0) mount(keep);
+  };
+  const queueDraw = () => {
+    if (drawing) return;
+    drawing = requestAnimationFrame(() => { drawing = 0; draw(); });
+  };
+  const focusRow = (index: number) => {
+    if (!flat[index]) return;
+    tree.scrollTop = revealRow(tree.scrollTop, tree.clientHeight, index);
+    draw(index);
+    mounted.get(index)?.focus();
+  };
+  const createRow = ({node, depth, position, siblings}: Row<GroupNode>, index: number) => {
       const row = document.createElement('div');
       row.className = 'row' + (node.objects[0]?.userData.studioGroup ? ' section' : '');
       row.role = 'treeitem';
       row.tabIndex = -1;
       row.onpointerdown = () => row.focus();
       row.dataset.key = node.key;
+      row.dataset.index = String(index);
+      row.style.top = `${index * ROW_PITCH}px`;
       row.style.paddingLeft = `${depth * 14}px`;
+      row.setAttribute('aria-level', String(depth + 1));
+      row.setAttribute('aria-posinset', String(position));
+      row.setAttribute('aria-setsize', String(siblings));
       const twist = document.createElement('button');
       twist.type = 'button';
       twist.className = 'twist';
@@ -217,22 +250,30 @@ export function mountExplorer(options: {
         options.frame(node.objects);
       };
       mark(row, node);
-      tree.append(row);
-      rows.push({el: row, node});
-      if (opened) for (const child of node.children) add(child, depth + 1);
-    };
-    for (const node of nodes) add(node, 0);
-    if (!rows.length) {
+      return row;
+  };
+  const paint = (objects: THREE.Object3D[], nodesIn: GroupNode[]) => {
+    const focus = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('.row')?.dataset.key ?? '' : '';
+    const q = query;
+    const nodes = nodesIn.map(node => prune(node, q)).filter((node): node is GroupNode => node != null);
+    flat = flattenRows(nodes, isOpen);
+    mounted.clear();
+    sizer.replaceChildren();
+    sizer.style.height = `${flat.length * ROW_PITCH}px`;
+    tree.querySelector(':scope > p')?.remove();
+    if (!flat.length) {
       const empty = document.createElement('p');
       empty.textContent = objects.length ? 'Nothing shown' : 'Empty';
       tree.append(empty);
     }
-    if (naming) {
-      const row = rows.find(item => item.node.objects[0] === naming);
-      const obj = naming;
-      naming = null;
-      if (row && obj) beginEdit(row.el, obj);
-    } else if (focus) tree.querySelector<HTMLElement>(`[data-key="${CSS.escape(focus)}"]`)?.focus();
+    const obj = naming;
+    naming = null;
+    const keep = obj ? flat.findIndex(row => row.node.objects[0] === obj) : focus ? flat.findIndex(row => row.node.key === focus) : -1;
+    if (obj && keep >= 0) tree.scrollTop = revealRow(tree.scrollTop, tree.clientHeight, keep);
+    draw(keep);
+    const row = mounted.get(keep);
+    if (obj && row) beginEdit(row, obj);
+    else row?.focus();
     members = objects;
     paintedQuery = q;
     paintedNames = namedSignature(objects);
@@ -269,37 +310,36 @@ export function mountExplorer(options: {
   };
   const editName = (obj: THREE.Object3D) => { naming = obj; fromList = true; sync(); };
   const onKey = (event: KeyboardEvent) => {
-    const list = [...tree.querySelectorAll<HTMLElement>('.row')];
-    const index = list.indexOf((document.activeElement instanceof Element ? document.activeElement.closest('.row') : null) as HTMLElement);
-    const row = list[index];
+    const index = activeRow();
+    const row = flat[index];
     if (!row) return;
-    if (event.code === 'ArrowDown') list[Math.min(list.length - 1, index + 1)]?.focus();
-    else if (event.code === 'ArrowUp') list[Math.max(0, index - 1)]?.focus();
+    const {node, depth} = row;
+    if (event.code === 'ArrowDown') focusRow(Math.min(flat.length - 1, index + 1));
+    else if (event.code === 'ArrowUp') focusRow(Math.max(0, index - 1));
     else if (event.code === 'ArrowRight' || event.code === 'ArrowLeft') {
-      const node = rows.find(item => item.el === row)?.node;
-      if (!node) return;
-      const depth = Number(row.style.paddingLeft.replace('px', '')) / 14;
       if (event.code === 'ArrowRight' && node.children.length && !isOpen(node.key, depth)) toggle(node.key, depth);
-      else if (event.code === 'ArrowRight' && node.children.length) list[index + 1]?.focus();
+      else if (event.code === 'ArrowRight' && node.children.length) focusRow(index + 1);
       else if (event.code === 'ArrowRight') options.frame(node.objects);
       else if (node.children.length && isOpen(node.key, depth)) toggle(node.key, depth);
-      else list.slice(0, index).reverse().find(item => Number(item.style.paddingLeft.replace('px', '')) < depth * 14)?.focus();
+      else {
+        let parent = index - 1;
+        while (parent >= 0 && flat[parent].depth >= depth) parent--;
+        focusRow(parent);
+      }
     } else if (event.code === 'F2') {
-      const obj = rows.find(item => item.el === row)?.node.objects[0];
+      const obj = node.objects[0];
       if (!obj || !userNamed(obj)) return;
       editName(obj);
-    } else if (event.code === 'Enter') { fromList = true; options.choose(rows.find(item => item.el === row)?.node.objects ?? [], 'set'); }
+    } else if (event.code === 'Enter') { fromList = true; options.choose(node.objects, 'set'); }
     else if (event.code === 'Space') {
       fromList = true;
-      const node = rows.find(item => item.el === row)?.node;
-      if (!node) return;
       const visible = node.objects.filter(obj => obj.visible);
       if (visible.length) options.hide(visible); else options.show(node.objects);
     } else return;
     event.preventDefault();
     event.stopPropagation();
   };
-  const blank = (event: Event) => event.target === tree;
+  const blank = (event: Event) => event.target === tree || event.target === sizer;
   tree.addEventListener('pointerdown', event => {
     if (event.button !== 0 || !blank(event)) return;
     options.choose([], 'set');
@@ -311,8 +351,11 @@ export function mountExplorer(options: {
     options.onCreate(event.clientX, event.clientY);
   });
   tree.addEventListener('keydown', onKey);
+  tree.addEventListener('scroll', queueDraw, {passive: true});
+  const resized = new ResizeObserver(queueDraw);
+  resized.observe(tree);
   input.oninput = () => { query = input.value.trim().toLowerCase(); fromList = true; const objects = current(); paint(objects, grouped(objects)); };
-  input.addEventListener('keydown', event => { if (event.code === 'ArrowDown') { tree.querySelector<HTMLElement>('.row')?.focus(); event.preventDefault(); } });
+  input.addEventListener('keydown', event => { if (event.code === 'ArrowDown') { focusRow(0); event.preventDefault(); } });
   const sync = () => {
     cancelAnimationFrame(scheduled);
     scheduled = requestAnimationFrame(() => {
@@ -326,7 +369,10 @@ export function mountExplorer(options: {
       if (!fromList) for (const key of selectedKeys) if (reveal(key)) revealed = true;
       if (!same(objects) || namedSignature(objects) !== paintedNames || revealed || query !== paintedQuery || naming) paint(objects, nodes);
       else restyle();
-      if (!fromList && selectedKeys.size) tree.querySelector('.row.on')?.scrollIntoView({block: 'nearest'});
+      if (!fromList && selectedKeys.size) {
+        const index = flat.findIndex(row => selectedKeys.has(row.node.key));
+        if (index >= 0) { tree.scrollTop = revealRow(tree.scrollTop, tree.clientHeight, index); draw(); }
+      }
       fromList = false;
     });
   };
@@ -337,5 +383,5 @@ export function mountExplorer(options: {
     for (const key of pendingLayout.collapsed) collapsed.add(key);
     sync();
   };
-  return {sync, editName, useLayout, layout: () => ({open: [...open], collapsed: [...collapsed]}), dispose() { cancelAnimationFrame(scheduled); tree.removeEventListener('keydown', onKey); options.host.replaceChildren(); }};
+  return {sync, editName, useLayout, layout: () => ({open: [...open], collapsed: [...collapsed]}), dispose() { cancelAnimationFrame(scheduled); cancelAnimationFrame(drawing); resized.disconnect(); tree.removeEventListener('keydown', onKey); options.host.replaceChildren(); }};
 }

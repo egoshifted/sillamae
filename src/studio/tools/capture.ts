@@ -20,9 +20,10 @@ const dataBefore = manifest(sourceRoot, ['public/data']);
 const sourceBefore = manifest(sourceRoot, sourcePaths), errors: string[] = [], images: Record<string, string> = {};
 const executablePath = process.env.STUDIO_BROWSER;
 const browser = await chromium.launch({...(executablePath ? {executablePath} : {}), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']});
-async function capture(page: Page, name: string) {
+// The study page has other canvases before its view: toolbox thumbnails and the plan.
+async function capture(page: Page, name: string, view = 'canvas') {
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  const bytes = await page.locator('canvas').first().screenshot({path: path.join(out, name + '.png')});
+  const bytes = await page.locator(view).first().screenshot({path: path.join(out, name + '.png')});
   images[name] = await page.evaluate(async png => {
     const image = new Image(); image.src = 'data:image/png;base64,' + png; await image.decode();
     const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
@@ -31,7 +32,7 @@ async function capture(page: Page, name: string) {
     return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
   }, bytes.toString('base64'));
 }
-const browserVersion = browser.version();
+const browserVersion = browser.version(), studyView = 'main > canvas';
 let failed = false;
 try {
   const page = await browser.newPage({viewport: {width: 1100, height: 800}, deviceScaleFactor: 1});
@@ -56,16 +57,16 @@ try {
     await page.waitForFunction(() => window.studio?.ready || window.studio?.error, undefined, {timeout: 180000});
     const studyError = await page.evaluate(() => window.studio.error); if (studyError) throw Error(studyError);
     for (const {id} of targets) {
-      for (let angle = 0; angle < 360; angle += 45) { await page.evaluate(angle => window.studio.view(angle), angle); await capture(page, id + '-' + angle); }
+      for (let angle = 0; angle < 360; angle += 45) { await page.evaluate(angle => window.studio.view(angle), angle); await capture(page, id + '-' + angle, studyView); }
       for (const light of ['morning', 'midday', 'late']) for (const shadows of [true, false]) {
         await page.evaluate(({light, shadows}) => { window.studio.view(); window.studio.options({light, shadows}); }, {light, shadows});
-        await capture(page, id + '-' + light + '-' + shadows);
+        await capture(page, id + '-' + light + '-' + shadows, studyView);
       }
-      await page.evaluate(() => window.studio.options({light: 'midday', shadows: true, textures: false, plain: true})); await capture(page, id + '-plain-materials');
-      await page.evaluate(() => window.studio.options({textures: true, plain: false})); await capture(page, id + '-restored');
-      for (const distance of [2, 4]) { await page.evaluate(distance => window.studio.view(0, distance), distance); await capture(page, id + '-distance-' + distance); }
+      await page.evaluate(() => window.studio.options({light: 'midday', shadows: true, textures: false, plain: true})); await capture(page, id + '-plain-materials', studyView);
+      await page.evaluate(() => window.studio.options({textures: true, plain: false})); await capture(page, id + '-restored', studyView);
+      for (const distance of [2, 4]) { await page.evaluate(distance => window.studio.view(0, distance), distance); await capture(page, id + '-distance-' + distance, studyView); }
       for (const stage of await page.evaluate(() => window.studio.stages)) {
-        await page.evaluate(({id, stage}) => window.studio.select(id, stage), {id, stage: stage.id}); await capture(page, id + '-stage-' + stage.id);
+        await page.evaluate(({id, stage}) => window.studio.select(id, stage), {id, stage: stage.id}); await capture(page, id + '-stage-' + stage.id, studyView);
       }
     }
   }

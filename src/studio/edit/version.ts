@@ -11,6 +11,7 @@ export interface PartVersion {
   visible: boolean;
   locked?: boolean;
   removed?: boolean;
+  cloneOf?: string;
 }
 
 interface Born {
@@ -22,6 +23,7 @@ interface Born {
   scale: [number, number, number];
   visible: boolean;
   locked?: boolean;
+  cloneOf?: string;
 }
 
 const near = (a: number[], b: number[]) => a.length === b.length && a.every((value, index) => Math.abs(value - b[index]) < 1e-4);
@@ -53,7 +55,25 @@ function pose(obj: THREE.Object3D, id: string): Born {
     scale: obj.scale.toArray() as [number, number, number],
     visible: obj.visible,
     locked: !!obj.userData.locked,
+    ...(typeof obj.userData.cloneOf === 'string' ? {cloneOf: obj.userData.cloneOf} : {}),
   };
+}
+
+// A saved edit must find the same object after a rebuild. Most generators author no ids, so the
+// rest take their path through the model; this holds only while that structure stays the same.
+export function identifyParts(root: THREE.Object3D) {
+  const walk = (obj: THREE.Object3D, path: string) => {
+    const seen = new Map<string, number>();
+    for (const child of obj.children) {
+      if (child.userData.fit) continue;
+      const label = child.name || child.type, n = (seen.get(label) ?? 0) + 1;
+      seen.set(label, n);
+      const own = `${path}/${label}${n === 1 ? '' : `#${n}`}`;
+      if (typeof child.userData.id !== 'string') child.userData.id = own;
+      walk(child, own);
+    }
+  };
+  walk(root, 'model');
 }
 
 export function rememberParts(root: THREE.Object3D) {
@@ -156,6 +176,8 @@ export function applyHistoryChange(root: THREE.Object3D, byId: Map<string, THREE
   let obj = byId.get(change.id);
   if (!obj) {
     if (!state.attached) return;
+    const source = change.nodes?.find(node => node.id === change.id)?.cloneOf;
+    if (source ? !byId.has(source) : change.kind === 'part') return;
     obj = createLogged(change, byId);
   }
   if (typeof state.locked === 'boolean') obj.userData.locked = state.locked;
@@ -170,6 +192,22 @@ export function applyHistoryChange(root: THREE.Object3D, byId: Map<string, THREE
   obj.updateMatrixWorld();
 }
 
+function restored(edit: PartVersion, source: THREE.Object3D | undefined) {
+  if (source) {
+    // Child copies have their own edits, so each one is restored separately.
+    const copy = source.clone(false);
+    copy.userData = {...source.userData, id: edit.id, cloneOf: edit.cloneOf, locked: false};
+    return copy;
+  }
+  const obj = edit.kind === 'group' ? new THREE.Group() : new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color: '#c8b898', roughness: .85, name: 'Element'}));
+  obj.name = edit.name;
+  obj.userData.id = edit.id;
+  if (edit.kind === 'group') obj.userData.studioGroup = true;
+  if (obj instanceof THREE.Mesh) obj.castShadow = obj.receiveShadow = true;
+  return obj;
+}
+
+// A model part that no longer exists stays out: a stand-in box would look like a real edit.
 export function applyParts(root: THREE.Object3D, edits: readonly PartVersion[]) {
   const byId = index(root);
   const pending = edits.filter(edit => !edit.removed && !byId.has(edit.id));
@@ -177,13 +215,9 @@ export function applyParts(root: THREE.Object3D, edits: readonly PartVersion[]) 
   while (pending.length && guard--) {
     for (let i = 0; i < pending.length;) {
       const edit = pending[i];
-      if (edit.parent && !byId.has(edit.parent)) { i++; continue; }
-      const obj = edit.kind === 'group' ? new THREE.Group() : new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color: '#c8b898', roughness: .85, name: 'Element'}));
-      obj.name = edit.name;
-      obj.userData.id = edit.id;
-      if (edit.kind === 'group') obj.userData.studioGroup = true;
-      if (obj instanceof THREE.Mesh) obj.castShadow = obj.receiveShadow = true;
-      byId.set(edit.id, obj);
+      const source = edit.cloneOf ? byId.get(edit.cloneOf) : undefined;
+      if ((edit.parent && !byId.has(edit.parent)) || (edit.cloneOf ? !source : edit.kind === 'part')) { i++; continue; }
+      byId.set(edit.id, restored(edit, source));
       pending.splice(i, 1);
     }
   }
@@ -201,4 +235,5 @@ export function applyParts(root: THREE.Object3D, edits: readonly PartVersion[]) 
     obj.updateMatrixWorld();
   }
   for (const edit of edits) if (edit.removed) byId.get(edit.id)?.removeFromParent();
+  return pending.map(edit => edit.id);
 }

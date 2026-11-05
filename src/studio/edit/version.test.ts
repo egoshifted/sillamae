@@ -1,7 +1,72 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import {applyHistoryChange, applyParts, diffParts, rememberParts, type HistoryStep} from './version.ts';
+import {applyHistoryChange, applyParts, diffParts, identifyParts, rememberParts, type HistoryStep} from './version.ts';
+
+function unidentified() {
+  const root = new THREE.Group();
+  const front = new THREE.Group();
+  front.name = 'front';
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(10, 3, .4));
+  wall.name = 'wall';
+  const other = new THREE.Mesh(new THREE.BoxGeometry(6, 3, .4));
+  other.name = 'wall';
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(10, .2, 8));
+  front.add(wall, other);
+  root.add(front, roof);
+  identifyParts(root);
+  return {root, wall, other, roof};
+}
+
+test('a generated model gets the same ids on every build and keeps authored ones', () => {
+  const first = unidentified(), second = unidentified();
+  assert.deepEqual([first.wall, first.other, first.roof].map(obj => obj.userData.id), ['model/front/wall', 'model/front/wall#2', 'model/Mesh']);
+  assert.equal(second.other.userData.id, first.other.userData.id);
+  const authored = new THREE.Group();
+  const part = new THREE.Mesh();
+  part.userData.id = 'src/model.ts:10';
+  authored.add(part);
+  identifyParts(authored);
+  assert.equal(part.userData.id, 'src/model.ts:10');
+  assert.equal(authored.userData.id, undefined);
+});
+
+test('a saved move on a generated model returns to that part, with no stand-in box', () => {
+  const first = unidentified(), born = rememberParts(first.root);
+  first.wall.position.x = 2;
+  const edits = diffParts(first.root, born);
+  assert.equal(edits[0].kind, 'part');
+  const second = unidentified();
+  assert.deepEqual(applyParts(second.root, edits), []);
+  assert.equal(second.wall.position.x, 2);
+  assert.equal(second.root.children.length, 2);
+  assert.equal(second.wall.parent?.children.length, 2);
+});
+
+test('an edit whose part is gone is reported and draws nothing', () => {
+  const {root} = unidentified();
+  const lost = applyParts(root, [{id: 'model/gone', name: 'gone', kind: 'part', parent: null, position: [1, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], visible: true}]);
+  assert.deepEqual(lost, ['model/gone']);
+  assert.equal(root.children.length, 2);
+  const byId = new Map<string, THREE.Object3D>();
+  const state = {parent: null, attached: true, visible: true, position: [1, 0, 0] as [number, number, number], quaternion: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number]};
+  applyHistoryChange(root, byId, {id: 'model/gone', kind: 'part', name: 'gone', before: state, after: state}, 'after');
+  assert.equal(root.children.length, 2);
+});
+
+test('a saved duplicate returns as a copy of its source part', () => {
+  const first = unidentified(), born = rememberParts(first.root);
+  const copy = first.roof.clone(false);
+  copy.userData = {id: 'studio:1', cloneOf: first.roof.userData.id};
+  copy.position.x = .4;
+  first.root.add(copy);
+  const edits = diffParts(first.root, born);
+  const second = unidentified();
+  assert.deepEqual(applyParts(second.root, edits), []);
+  const restored = second.root.children.find(child => child.userData.id === 'studio:1') as THREE.Mesh;
+  assert.equal(restored.geometry, second.roof.geometry);
+  assert.equal(restored.position.x, .4);
+});
 
 test('a local version keeps moves, new pieces and deletions, and skips untouched parts', () => {
   const root = new THREE.Group();

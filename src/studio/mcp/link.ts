@@ -10,10 +10,10 @@ export interface McpStatus {
   writes: string[];
 }
 
-export function connectStudio(host: StudioHost, onStatus: (status: McpStatus) => void) {
+export function connectStudio(host: StudioHost, onStatus: (status: McpStatus) => void, share = true) {
   let session = createSession(host);
   let socket: WebSocket | null = null;
-  let stopped = false;
+  let stopped = !share;
   let attempts = 0;
   let attached = false;
   const snapshot = (extra?: Partial<McpStatus>): McpStatus => {

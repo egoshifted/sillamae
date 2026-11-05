@@ -22,7 +22,7 @@ import {bindStudioHost} from './mcp/bind.ts';
 import {connectStudio, paintMcp, type McpStatus} from './mcp/link.ts';
 import {objectId, objectLabel} from './edit/group.ts';
 import {disposeDraw, markDrawStructure, syncDraw} from './edit/draw.ts';
-import {applyParts, diffParts, rememberParts, type HistoryLog, type PartVersion} from './edit/version.ts';
+import {applyParts, diffParts, identifyParts, rememberParts, type HistoryLog, type PartVersion} from './edit/version.ts';
 import {mountExplorer} from './edit/explorer.ts';
 import {city} from './project.ts';
 import {drawRecord, sameRecord} from './inspector.ts';
@@ -49,6 +49,7 @@ let buildings: WorldData['buildings'] = [];
 const drafts = new Map<string, Record<string, unknown>>(), saved = new Map<string, string>();
 const localEdits = new Map<string, PartVersion[]>(), editsLoaded = new Set<string>();
 let born = rememberParts(new THREE.Group());
+let lostEdits = 0;
 let incomingHistory: HistoryLog | null = null;
 let readHistory = (): HistoryLog => ({cursor: -1, steps: []});
 let writeHistory = (_log: HistoryLog) => {};
@@ -58,10 +59,11 @@ let readMode = (): 'translate' | 'rotate' | 'scale' => 'translate';
 function paintStatus() {
   const distance = translate(`${camera.position.distanceTo(controls.target).toFixed(1)} m`);
   const history = selectionFacts.editTotal ? translate(selectionFacts.editCount === selectionFacts.editTotal ? `${selectionFacts.editTotal} edits` : `${selectionFacts.editCount}/${selectionFacts.editTotal} edits`) : '';
-  if (!selectionFacts.count) { status.textContent = [translate('No selection'), history, distance].filter(Boolean).join(' · '); return; }
+  const lost = lostEdits ? `${translate('Saved edits not applied')}: ${lostEdits}` : '';
+  if (!selectionFacts.count) { status.textContent = [translate('No selection'), history, lost, distance].filter(Boolean).join(' · '); return; }
   const names = selectionFacts.labels.join(', ') + (selectionFacts.extra ? ` +${selectionFacts.extra}` : '');
   const mode = translate(readMode() === 'rotate' ? 'Rotate' : readMode() === 'scale' ? 'Scale' : 'Move');
-  status.textContent = [translate(`${selectionFacts.count} selected`), names, selectionFacts.id, selectionFacts.size ? translate(selectionFacts.size) : '', selectionFacts.center ? translate(`Centre ${selectionFacts.center}`) : '', mode, history, distance].filter(Boolean).join(' · ');
+  status.textContent = [translate(`${selectionFacts.count} selected`), names, selectionFacts.id, selectionFacts.size ? translate(selectionFacts.size) : '', selectionFacts.center ? translate(`Centre ${selectionFacts.center}`) : '', mode, history, lost, distance].filter(Boolean).join(' · ');
 }
 function countVerts(root: THREE.Object3D) {
   let count = 0;
@@ -194,9 +196,11 @@ async function load(reset = true) {
     const next = await buildStudy(await world, id, mode.value, custom);
     if (ticket !== generation || disposed) { next.dispose(); return; }
     disposeDraw(); sun?.shadow.map?.dispose(); dropGrid(); current?.dispose(); current = next; parts.clear();
+    identifyParts(next.root);
     born = rememberParts(next.root);
+    lostEdits = 0;
     if (incomingHistory) { writeHistory(incomingHistory); incomingHistory = null; }
-    else applyParts(next.root, localEdits.get(id) ?? []);
+    else lostEdits = applyParts(next.root, localEdits.get(id) ?? []).length;
     markDrawStructure();
     acceleratePick(next.root);
     centre.copy(next.bounds.getCenter(new THREE.Vector3())); radius = Math.max(10, next.bounds.getSize(new THREE.Vector3()).length() / 2);
@@ -574,6 +578,7 @@ placed.drop = placement.drop;
 placed.restore = placement.restore;
 const mcpNodes = {status: element<HTMLParagraphElement>('mcp-status'), channels: element<HTMLParagraphElement>('mcp-channels'), toggle: element<HTMLButtonElement>('mcp-toggle')};
 let mcpSharing = false;
+// A capture page must not take the session from the tab a model is connected to.
 const mcpLink = connectStudio(bindStudioHost({
   identity: () => ({id: building.value, name: buildings.find(item => item.id === building.value)?.name ?? building.value, stage: mode.value, ready}),
   root: () => current?.root,
@@ -596,7 +601,7 @@ const mcpLink = connectStudio(bindStudioHost({
   toolbox: () => toolboxItems.map(item => ({id: item.id, name: item.name})),
   place: (item, position) => placement.put(item, position as [number, number, number]),
   save: saveBuilding,
-}), (status: McpStatus) => { mcpSharing = status.sharing; paintMcp(status, mcpNodes); });
+}), (status: McpStatus) => { mcpSharing = status.sharing; paintMcp(status, mcpNodes); }, !params.has('capture'));
 mcpNodes.toggle.onclick = () => { closeMcp(); if (mcpSharing) mcpLink.disconnect(); else mcpLink.connect(); };
 element<HTMLButtonElement>('studio-title').onclick = () => {
   picker.hidden = !picker.hidden;

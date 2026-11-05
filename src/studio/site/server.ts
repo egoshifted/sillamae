@@ -84,7 +84,8 @@ export function studioSites(run = rebuildAtlas): Plugin {
           }
           if (parts[0] === 'buildings' && parts.length === 2 && BUILDING_ID.test(parts[1]) && request.method === 'GET') {
             const file = path.join(root, BUILDINGS, parts[1] + '.json');
-            if (!fs.existsSync(file)) return send(response, 404, {error: 'No saved record'});
+            // Most buildings have no record; a 404 would count as a browser error in every capture.
+            if (!fs.existsSync(file)) return send(response, 200, {});
             return send(response, 200, JSON.parse(fs.readFileSync(file, 'utf8')));
           }
           if (parts[0] === 'buildings' && parts.length === 2 && request.method === 'PUT') {

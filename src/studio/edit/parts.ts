@@ -71,7 +71,14 @@ export function mountPartEditor(options: {
   const history: Action[] = [];
   let cursor = -1;
   let studioSerial = 0;
-  const studioId = () => `studio:${++studioSerial}`;
+  // The serial restarts with the page, but saved edits bring their earlier studio ids back.
+  const studioId = () => {
+    const used = new Set<unknown>();
+    options.study()?.root.traverse(obj => used.add(obj.userData.id));
+    let id = '';
+    do id = `studio:${++studioSerial}`; while (used.has(id));
+    return id;
+  };
   const historyHost = document.createElement('div');
   historyHost.id = 'history';
   const historyTitle = document.createElement('h2');
@@ -783,11 +790,12 @@ export function mountPartEditor(options: {
       copy.userData = {...obj.userData, id: studioId(), cloneOf: typeof obj.userData.id === 'string' ? obj.userData.id : undefined, locked: false};
       for (const child of obj.children) copy.add(child.clone(true));
       copy.traverse(child => {
-        if (!(child instanceof THREE.Mesh)) return;
         const cloneOf = child === copy ? copy.userData.cloneOf : typeof child.userData.id === 'string' ? child.userData.id : undefined;
         const id = child === copy ? copy.userData.id : studioId();
+        child.userData = {...child.userData, id, cloneOf, locked: false};
+        if (!(child instanceof THREE.Mesh)) return;
         child.geometry = child.geometry.clone();
-        child.userData = {...child.userData, part: true, id, cloneOf, locked: false};
+        child.userData.part = true;
       });
       obj.parent?.add(copy);
       copy.position.x += .4;

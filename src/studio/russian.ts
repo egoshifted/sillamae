@@ -34,6 +34,7 @@ export const russian: Record<string, string> = {
   'Download this version. This does not update the city atlas.': 'Скачать эту версию. Атлас города не обновляется.',
   'Saved locally. The city atlas was not changed.': 'Сохранено локально. Атлас города не менялся.',
   'Exported a local file. The city atlas was not changed.': 'Файл версии скачан. Атлас города не менялся.',
+  'Saved edits not applied': 'Не применено сохранённых правок',
   'Nothing to save': 'Нечего сохранять',
   'Click the building to place the satellite dish. Delete removes the selected dish.': 'Щёлкните по зданию, чтобы поставить спутниковую тарелку. Delete убирает выбранную.',
   'This building is drawn by its source model. There is no separate record to edit yet.': 'Это здание рисуется исходной моделью. Отдельной записи для правки пока нет.',

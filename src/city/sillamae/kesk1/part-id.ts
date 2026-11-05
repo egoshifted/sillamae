@@ -1,5 +1,4 @@
 const helpers = new Set(['partId', 'emit', 'box', 'block', 'edge', 'beam', 'window', 'ring', 'apron', 'plaque']);
-const counts = new Map<string, number>();
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 let authored: number[] | null = null;
 
@@ -55,8 +54,7 @@ function loadMap(moduleUrl: string) {
   authored = sourceLines(json.mappings);
 }
 
-export function partId(moduleUrl: string) {
-  if (!authored) loadMap(moduleUrl);
+function callSite() {
   const frames = (new Error().stack ?? '').split('\n');
   let site = 'kesk1/model.ts';
   for (const frame of frames) {
@@ -68,7 +66,16 @@ export function partId(moduleUrl: string) {
     site = `src/${hit[1]}:${line}`;
     break;
   }
-  const n = (counts.get(site) ?? 0) + 1;
-  counts.set(site, n);
-  return n === 1 ? site : `${site}#${n}`;
+  return site;
+}
+
+// One numbering per build: saved edits name these ids, so a rebuild must number parts the same way.
+export function partIds(moduleUrl: string, siteOf = callSite) {
+  if (!authored) loadMap(moduleUrl);
+  const counts = new Map<string, number>();
+  return () => {
+    const site = siteOf(), n = (counts.get(site) ?? 0) + 1;
+    counts.set(site, n);
+    return n === 1 ? site : `${site}#${n}`;
+  };
 }
