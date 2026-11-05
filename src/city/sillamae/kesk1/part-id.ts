@@ -70,10 +70,12 @@ function callSite() {
 }
 
 // One numbering per build: saved edits name these ids, so a rebuild must number parts the same way.
+// The source map loads on the first id, not here. The atlas runs this too but never asks for an id,
+// and its bundle holds the map marker as plain code, which is not base64.
 export function partIds(moduleUrl: string, siteOf = callSite) {
-  if (!authored) loadMap(moduleUrl);
   const counts = new Map<string, number>();
   return () => {
+    if (!authored) loadMap(moduleUrl);
     const site = siteOf(), n = (counts.get(site) ?? 0) + 1;
     counts.set(site, n);
     return n === 1 ? site : `${site}#${n}`;

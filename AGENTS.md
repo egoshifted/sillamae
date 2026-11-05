@@ -36,6 +36,7 @@ Rules for AI coding agents (and people) working in this repository. The code and
 
 - `npm run check` (type check) must pass; `npm run build` must succeed.
 - Refactors that should not change rendering must keep fixed views pixel-identical to the last accepted build (renders are deterministic). Survey bucket order is preserved because equal-depth survey meshes draw in creation order.
+- After changing code that runs in the atlas, load the production build (`npm run build`, then `vite preview`) in a browser. The dev server, tests and `studio:check` do not run the bundle, so a bundle-only start failure passes all of them. Code that serves only the studio must not run on the atlas path.
 - For headless checks against the dev server pass `--host 127.0.0.1`; Vite listens on IPv6 `localhost` by default.
 
 ## Documentation
