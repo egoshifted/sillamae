@@ -8,9 +8,11 @@ With Node.js 24 or newer and the project dependencies installed (`npm ci`), run 
 
 ## Inspect a building
 
-Search by address or building ID. Compare the original survey, provisional massing and available model stages from repeatable angles. **Save view URL** puts the camera and display settings in the address bar. **Download PNG** saves the current view. The atlas shows the building with its final terrain, vegetation and lighting.
+Search by address or building ID. Compare the original survey, provisional massing and available model stages from repeatable angles. The address bar keeps the camera and display settings, so you can copy it to share a view. The atlas shows the building with its final terrain, vegetation and lighting.
 
 For model authoring, see [Starting a building](NEW-BUILDING.md), the [refinement process](PROCESS.md), [shared components](ASSEMBLY.md) and the [asset library guide](ASSETS.md). The [local checks and capture commands](PROCESS.md#local-checks) cover visual comparisons and review records.
+
+The plan, part editor, saved versions and model connection are covered in [Studio tools](TOOLS.md). They are for inspecting and trying changes; accepted changes go in the building's source.
 
 ## Edit a square
 

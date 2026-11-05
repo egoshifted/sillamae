@@ -28,6 +28,7 @@ Rules for AI coding agents (and people) working in this repository. The code and
 ## Building and asset work
 
 - For a new building, start with [the building guide](src/studio/NEW-BUILDING.md). Use the [collaborator prompt](src/studio/COLLABORATOR-PROMPT.md), [refinement process](src/studio/PROCESS.md), [rules](src/studio/REFINEMENT-RULES.md) and [component checklist](src/studio/COMPONENTS.md). Check available Street View and search for reference photos. Ask the owner for specific missing views when evidence is incomplete.
+- Read the [studio tools guide](src/studio/TOOLS.md) before using the part editor or model connection. Studio edits never reach the atlas; put accepted changes in source.
 - Before creating a component, follow the [reuse guide](src/studio/REUSE.md). Report exact and near matches, sources, adaptations, visual differences and resource costs. Leave substitutions to the owner. Read the [asset guide](src/studio/ASSETS.md) before changing a library asset.
 - Put reusable lessons in the relevant rule and building-specific decisions in the local record. Keep historical evidence immutable and archived runtime files separate from current models.
 

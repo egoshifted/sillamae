@@ -20,7 +20,7 @@ For any new building, begin with [NEW-BUILDING.md](NEW-BUILDING.md), select its 
 
 ## Study versus atlas
 
-Use studio to isolate geometry and compare plain/detail representations with a common camera. Use the atlas for actual survey layers, depth bias, vegetation, surroundings, selection, loading and runtime lighting. Never treat a clean diagnostic ground plane as proof of atlas contact. For a lighting suspicion, hold the camera fixed, switch shadows off, then inspect actual geometry and depth/material overlap. A surface still visible with shadows off can be a depth-buffer artifact.
+Use studio to isolate geometry and compare plain/detail representations with a common camera. The [studio tools](TOOLS.md) can measure and try changes, but their edits are not evidence and never reach the atlas. Use the atlas for actual survey layers, depth bias, vegetation, surroundings, selection, loading and runtime lighting. Never treat a clean diagnostic ground plane as proof of atlas contact. For a lighting suspicion, hold the camera fixed, switch shadows off, then inspect actual geometry and depth/material overlap. A surface still visible with shadows off can be a depth-buffer artifact.
 
 For every pass record what was inspected and its limits. Static overview screenshots cannot validate every reveal, motion stability, photo-derived dimensions or mobile performance. A regression test derived from the same erroneous dimensions can preserve the error; reference expectations and negative controls must remain independent.
 
