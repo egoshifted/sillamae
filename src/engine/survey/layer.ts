@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import {SURFACES, type Detail, type Surface} from './classify.ts';
 import type {SurveyBucket, SurveyManifest} from '../data.ts';
 import {concat} from './carve.ts';
+import {MIRRORED, waterSurface} from './water.ts';
 
-const MAPPED = (kind: Surface) => kind !== 'plain' && kind !== 'glass';
+const MAPPED = (kind: Surface) => kind !== 'plain' && kind !== 'glass' && kind !== 'water';
+// Ground seen from below would be lit by nothing, and only hide what stands on it.
+const UNMIRRORED = new Set<Surface>(['grass', 'paving', 'clay', 'plain', 'water']);
 const BUMPED = (kind: Surface) => kind === 'plaster' || kind === 'roof' || kind === 'stone' || kind === 'brick';
 
 function surfaceTexture(kind: Surface, rng: () => number, anisotropy: number) {
@@ -135,7 +138,7 @@ if (relief > 0. && vBuilding < .5) {
   float minor = min(abs(fract(h / 2. + .5) - .5) / fwidth(h / 2.), 1.);
   float major = min(abs(fract(h / 10. + .5) - .5) / fwidth(h / 10.) / 1.6, 1.);
   ramp *= 1. - .3 * (1. - minor) - .55 * (1. - major);
-  // Most of the town slopes under 5°, invisible under the scene light: a
+  // Most of the town slopes under 5Ã‚Â°, invisible under the scene light: a
   // map-style hillshade, lit from the north-west with slopes exaggerated.
   vec3 slope = normalize(cross(dFdx(vSurvey), dFdy(vSurvey)));
   slope = normalize(vec3(slope.x * ${RELIEF_EXAGGERATION}., abs(slope.y), slope.z * ${RELIEF_EXAGGERATION}.) * sign(slope.y));
@@ -163,9 +166,11 @@ export function surveyMaterials(anisotropy: number, buildings: number, base: num
       roughness: kind === 'glass' ? .3 : .94, metalness: kind === 'glass' ? .12 : 0,
     }), overlays);
   }
-  const far = Object.fromEntries(SURFACES.map(k => [k, tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, map: null, flatShading: flat}), overlays)])) as Record<Surface, THREE.MeshLambertMaterial>;
+  const water = waterSurface(tintable(new THREE.MeshStandardMaterial({vertexColors: true, side: THREE.DoubleSide, roughness: .3, flatShading: flat}), overlays), anisotropy);
+  near.water = water.material;
+  const far = Object.fromEntries(SURFACES.map(k => [k, k === 'water' ? water.material : tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, map: null, flatShading: flat}), overlays)])) as unknown as Record<Surface, THREE.Material>;
   return {
-    near, far, tints, overlays,
+    near, far, tints, overlays, water,
     setTextures(enabled: boolean) {
       for (const kind of SURFACES) {
         const m = near[kind];
@@ -186,19 +191,23 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
   const groups: Record<Detail, THREE.Group> = {base: new THREE.Group(), medium: new THREE.Group(), fine: new THREE.Group()};
   Object.values(groups).forEach(g => scene.add(g));
   const kinds = new Map<THREE.Mesh, Surface>();
+  // Water keeps its own meshes at every detail level: the overview merges one
+  // material per cell, and water needs the shader that level would drop.
+  const water = new THREE.Group();
   const meshes = buckets.map(b => {
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), materials.near[b.kind]);
-    mesh.castShadow = b.detail === 'base' && b.kind !== 'grass' && b.kind !== 'paving' && b.kind !== 'clay';
+    mesh.castShadow = b.detail === 'base' && b.kind !== 'grass' && b.kind !== 'paving' && b.kind !== 'clay' && b.kind !== 'water';
     mesh.receiveShadow = b.detail === 'base';
     mesh.visible = false;
+    if (b.detail === 'base' && !UNMIRRORED.has(b.kind)) mesh.layers.enable(MIRRORED);
     kinds.set(mesh, b.kind);
-    groups[b.detail].add(mesh);
+    (b.kind === 'water' ? water : groups[b.detail]).add(mesh);
     return mesh;
   });
   const overview = new THREE.Group(), overviewMaterial = tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, flatShading: materials.near.grass.flatShading}), materials.overlays);
   const cells = new Map<string, {mesh: THREE.Mesh; parts: number[]; loaded: Map<number, SurveyBucket>}>();
   buckets.forEach((b, index) => {
-    if (b.detail !== 'base') return;
+    if (b.detail !== 'base' || b.kind === 'water') return;
     let cell = cells.get(b.cell);
     if (!cell) {
       cells.set(b.cell, cell = {mesh: new THREE.Mesh(new THREE.BufferGeometry(), overviewMaterial), parts: [], loaded: new Map()});
@@ -207,7 +216,7 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
     }
     cell.parts.push(index);
   });
-  scene.add(overview);
+  scene.add(overview, water);
   overview.visible = false;
 
   let level = -1;
@@ -225,7 +234,7 @@ export function addSurveyLayer(scene: THREE.Scene, buckets: SurveyManifest['buck
       bucket.normal ??= geo.getAttribute('normal').array as Float32Array;
       if (bucket.bounds) geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(...bucket.bounds.slice(0, 3)), bucket.bounds[3]); else geo.computeBoundingSphere();
       meshes[bucket.index].visible = true;
-      const meta = buckets[bucket.index], cell = meta.detail === 'base' && cells.get(meta.cell);
+      const meta = buckets[bucket.index], cell = meta.detail === 'base' && meta.kind !== 'water' && cells.get(meta.cell);
       if (!cell) return;
       cell.loaded.set(bucket.index, bucket);
       if (cell.loaded.size < cell.parts.length) return;

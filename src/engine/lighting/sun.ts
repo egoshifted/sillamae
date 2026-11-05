@@ -31,6 +31,7 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
       return new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)).intersectsSphere(sphere);
     },
     state: () => ({mapSize: sun.shadow.mapSize.x, radius: width, detailed}),
+    direction: () => offset.clone().normalize(),
 
     setDaylight(k: number) {
       offset.set(-280 + 560 * k, 150 + 200 * Math.sin(k * Math.PI), -100);

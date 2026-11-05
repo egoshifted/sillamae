@@ -41,9 +41,9 @@ test('flat-shaded compaction preserves all triangle corners without retaining fa
 });
 
 test('overview and close-up share CPU and GPU attributes across repeated detail switches', () => {
-  const scene = new THREE.Scene(), near = Object.fromEntries(SURFACES.map(k => [k, new THREE.MeshStandardMaterial({flatShading: true})])) as SurveyMaterials['near'], far = Object.fromEntries(SURFACES.map(k => [k, new THREE.MeshLambertMaterial()])) as SurveyMaterials['far'];
+  const scene = new THREE.Scene(), near = Object.fromEntries(SURFACES.map(k => [k, new THREE.MeshStandardMaterial({flatShading: true})])) as SurveyMaterials['near'], far = Object.fromEntries(SURFACES.map(k => [k, new THREE.MeshLambertMaterial()])) as unknown as SurveyMaterials['far'];
   const tints = new THREE.DataTexture(new Uint8Array(4), 1, 1);
-  const materials = {near, far, tints, overlays: {tints, relief: {value: 0}, reliefRange: {value: new THREE.Vector2()}, base: 0}, setTextures() {}} as SurveyMaterials;
+  const materials = {near, far, tints, overlays: {tints, relief: {value: 0}, reliefRange: {value: new THREE.Vector2()}, base: 0}, setTextures() {}} as unknown as SurveyMaterials;
   const metadata = [0,1].map(() => ({kind: 'grass', detail: 'base', cell: '0,0'})) as SurveyManifest['buckets'];
   const layer = addSurveyLayer(scene, metadata, materials), base = scene.children[0], overview = scene.children[3];
   layer.fill(compactBucket(square(0))); layer.fill(compactBucket(square(1)));

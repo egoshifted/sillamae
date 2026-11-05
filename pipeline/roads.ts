@@ -227,11 +227,16 @@ export function splitTriangle(v: Float32Array, i: number, region: Point2[][], ci
 
 // The rectangle, in the local frame, within which roads are built: every
 // building plus a margin. half is [x, z].
+// Metres past the town's buildings on the sides where its water runs on: a shore
+// must not change character halfway along. South and east the terrain model ends too soon.
+const SHORE_MARGIN = {west: 100, north: 170};
+
 export function roadArea(scene: SceneData, city: CityDefinition) {
   const [ox, oz] = city.frame.origin;
   const xs = scene.buildings.flatMap(b => b.g.map(p => p[0] - ox)), zs = scene.buildings.flatMap(b => b.g.map(p => p[1] - oz));
-  const [cx, cz] = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2];
-  const half: [number, number] = [(Math.max(...xs) - Math.min(...xs)) / 2 + TOWN_MARGIN, (Math.max(...zs) - Math.min(...zs)) / 2 + TOWN_MARGIN];
+  const west = Math.min(...xs) - TOWN_MARGIN - SHORE_MARGIN.west, east = Math.max(...xs) + TOWN_MARGIN, north = Math.min(...zs) - TOWN_MARGIN - SHORE_MARGIN.north, south = Math.max(...zs) + TOWN_MARGIN;
+  const [cx, cz] = [(west + east) / 2, (north + south) / 2];
+  const half: [number, number] = [(east - west) / 2, (south - north) / 2];
   const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= half[0] + margin && Math.abs(z - cz) <= half[1] + margin;
   return {centre: [cx, cz] as Point2, half, inside};
 }

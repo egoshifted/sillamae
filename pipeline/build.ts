@@ -11,7 +11,8 @@ import {encodeBucket} from './encode.ts';
 import {georeference, type OsmExtract} from './geo.ts';
 import {gradeRoads} from './grade.ts';
 import {withTerrainEdits} from '../src/engine/terrain-edit.ts';
-import {blendSites, gridGround, seatBuildings} from './ground.ts';
+import {blendSites, gridGround, seatBuildings, surveyWater} from './ground.ts';
+import {shoreline} from './shore.ts';
 import {buildNav} from './nav.ts';
 import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSites, markStudioRoads, streetLines, studioLines, studioSurfaces} from './placements.ts';
 import {buildRoads, clearFootwayPaint, layRoads, moveTreesOffPaths} from './roads.ts';
@@ -42,7 +43,8 @@ async function build() {
     const {osm: streets, report: studioRoadReport} = addStudioRoads(osm, sites, georef, sillamae);
     const {shapes, centrelines, report: roadReport} = buildRoads(streets, data, sillamae, georef, vertices);
     // Studio terrain edits go in before the roads are graded, so roads follow them too.
-    const heightAt = blendSites(gradeRoads(withTerrainEdits(loadDtm(geo.toGrid), sites), centrelines), vertices, data, sillamae);
+    const model = withTerrainEdits(loadDtm(geo.toGrid), sites);
+    const heightAt = blendSites(gradeRoads(model, centrelines), vertices, data, sillamae);
     const treeReport = moveTreesOffRoads(vertices, data), pathTreeReport = moveTreesOffPaths(shapes, data, sillamae);
     const editReport = applyTreeEdits(data, sites);
     const {vertices: cleared, report: paintReport} = clearFootwayPaint(vertices, data, sillamae);
@@ -50,10 +52,14 @@ async function build() {
       const xs = s.ring.map(p => p[0] + sillamae.frame.origin[0]), zs = s.ring.map(p => p[1] + sillamae.frame.origin[1]);
       return {minX: Math.min(...xs) - 12, maxX: Math.max(...xs) + 12, minZ: Math.min(...zs) - 12, maxZ: Math.max(...zs) + 12};
     });
-    const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, heightAt, data, sillamae, roadBounds);
+    // Graded banks shape the ground alone: bridges and paths keep the graded height over the water.
+    const shore = shoreline(cleared, surveyWater(cleared), model, heightAt, data, sillamae);
+    const allTrees = data.trees.length;
+    data.trees = data.trees.filter(t => shore.onLand(...t.p));
+    const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, shore.heightAt, data, sillamae, shore, roadBounds);
     const {vertices: seatedAll, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
     const {vertices: seated, report: hiddenReport} = dropHidden(seatedAll, data, sites, sillamae);
-    const {buckets, siteGround, settled, draped, patches} = prepareSurvey(seated, data, sillamae, heightAt, [textured]);
+    const {buckets, siteGround, settled, draped, patches} = prepareSurvey(seated, data, sillamae, shore.heightAt, [textured]);
     // Studio areas are laid on their own and drawn over any footway they overlap.
     const drawn = layRoads(studioSurfaces(sites, sillamae), buckets, sillamae, data.base, patches, heightAt).map(s => ({...s, lift: s.lift + STUDIO_LIFT, ring: s.ring.map(([x, y, z]): [number, number, number] => [x, y + STUDIO_RISE, z])}));
     const roads = [...layRoads(shapes, buckets, sillamae, data.base, patches, heightAt), ...drawn];
@@ -107,6 +113,7 @@ async function build() {
     console.log(roadReport);
     console.log(studioRoadReport);
     console.log(paintReport);
+    console.log(`${shore.report}; ${allTrees - data.trees.length} trees standing in the water dropped`);
     console.log(groundReport);
     console.log(seatReport);
     console.log(treeReport);
