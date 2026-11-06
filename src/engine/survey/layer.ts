@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {SURFACES, type Detail, type Surface} from './classify.ts';
 import type {SurveyBucket, SurveyManifest} from '../data.ts';
 import {concat} from './carve.ts';
+import {groundCover} from './ground-cover.ts';
 import {MIRRORED, waterSurface} from './water.ts';
 
 const MAPPED = (kind: Surface) => kind !== 'plain' && kind !== 'glass' && kind !== 'water';
@@ -16,7 +17,8 @@ function surfaceTexture(kind: Surface, rng: () => number, anisotropy: number) {
   x.fillStyle = '#eeeae2';
   x.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 14000; i++) {
-    const n = kind === 'grass' ? 150 + rng() * 95 : 205 + rng() * 48;
+    // Grass stays faint: a strong speckle at one scale is what carpet looks like.
+    const n = kind === 'grass' ? 208 + rng() * 34 : 205 + rng() * 48;
     x.fillStyle = `rgb(${n},${n},${n})`;
     x.globalAlpha = kind === 'plaster' ? .16 : .25;
     x.fillRect(rng() * 256, rng() * 256, 1 + rng() * 2, 1 + rng() * 2);
@@ -64,11 +66,16 @@ const LAYER_LIFT = .3;
 const RELIEF_COLOURS = ['#2f6b3f', '#7fa65a', '#e3d27c', '#c98a4a', '#8a4b2f'].map(c => new THREE.Color(c));
 
 // The survey paints 73% of its grass one pale olive, about 35% brighter than the orthophoto's
-// lawns. Lusher, drier and thin worn areas at several scales, in linear colour, replace that
-// paint but follow its brightness, so shading and its own darker areas still read. Grass is
-// told apart by vertex colour because the overview mesh merges every surface into one material.
+// lawns. Lusher, drier and worn areas at several scales, in linear colour, replace that paint
+// but follow its brightness, so shading and its own darker areas still read. Grass is told
+// apart by vertex colour because the overview mesh merges every surface into one material.
 // Finer scales fade out once a cell shrinks below a few pixels, so they do not shimmer.
+// Grass is matte: it scatters light between blades, so it takes no highlight.
 const GRASS_NOISE = `
+uniform sampler2D groundCover;
+uniform vec4 groundCoverArea;
+float groundMatte = 0.;
+vec2 groundBend = vec2(0.);
 float grassHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float grassNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
@@ -80,31 +87,48 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
   float ratio = painted.g / max(painted.r, 1e-3), grass = smoothstep(1.02, 1.055, ratio) * (1. - smoothstep(1.45, 1.8, ratio)) * smoothstep(1.08, 1.2, painted.g / max(painted.b, 1e-3));
   if (grass <= 0.) return colour;
   float pixel = length(fwidth(p));
-  float broad = grassNoise(p / 210. + 3.7), local = grassNoise(p / 70.);
-  float patchy = grassNoise(p / 18. + 9.1), clumps = grassNoise(p / 3.5 + 1.3), blades = grassNoise(p / 1.1);
-  vec3 lush = vec3(.085, .19, .05), meadow = vec3(.135, .21, .07), dry = vec3(.23, .25, .11), soil = vec3(.27, .24, .15);
-  // Value noise gathers around .5, so it is stretched to reach the lush and dry ends. The offset
-  // keeps most ground green, as in the orthophoto, with dry and worn areas as the exception.
-  float d = clamp(.38 + (broad * .6 + local * .4 - .5) * 2.4 + (patchy - .5) * .5, 0., 1.);
-  vec3 tint = d < .5 ? mix(lush, meadow, d * 2.) : mix(meadow, dry, (d - .5) * 2.);
-  tint = mix(tint, soil, smoothstep(.58, .76, local * .55 + patchy * .45) * .4);
+  float broad = grassNoise(p / 210. + 3.7), local = grassNoise(p / 70.), patchy = grassNoise(p / 18. + 9.1);
+  float fine = 1. - smoothstep(.4, 1.2, pixel), finest = 1. - smoothstep(.15, .5, pixel);
+  float tufts = grassNoise(p / 3.1 + 1.3) * .6 + grassNoise(p / 1.3 + 7.7) * .4, blades = grassNoise(p / .47);
+  vec2 cover = texture2D(groundCover, (p - groundCoverArea.xy) * groundCoverArea.zw).rg;
+  float underTrees = smoothstep(.12, .6, cover.r), tended = smoothstep(.2, .85, cover.g) * (1. - underTrees);
+  // Early September at 59 north: green only where it is kept or damp, otherwise olive turning
+  // to straw. Value noise gathers around .5, so it is stretched to reach both ends.
+  // Tufts break the patch edges, which would otherwise read as blurred camouflage.
+  float d = clamp(.56 + (broad * .6 + local * .4 - .5) * 2.6 + (patchy - .5) * .45 + (tufts - .5) * .35 * fine, 0., 1.);
+  d = mix(d, .22 + d * .34, tended);
+  vec3 kept = vec3(.095, .155, .055), olive = vec3(.17, .195, .08), hay = vec3(.3, .275, .13), soil = vec3(.26, .215, .135), litter = vec3(.15, .105, .06);
+  vec3 tint = d < .5 ? mix(kept, olive, d * 2.) : mix(olive, hay, (d - .5) * 2.);
+  // Long grass grows in tussocks with dead stems showing between them; a mown lawn has neither.
+  float rough = 1. - tended;
+  tint = mix(tint, hay * .82, smoothstep(.54, .72, tufts) * rough * fine * .55);
+  tint = mix(tint, soil, smoothstep(.64, .74, local * .5 + patchy * .3 + tufts * .2) * .32);
+  // Fallen leaves and needles over bare soil, broken by the grass that still comes through.
+  tint = mix(tint, mix(litter, soil, smoothstep(.35, .7, tufts)), underTrees * (.5 + .4 * smoothstep(.3, .65, patchy)));
   const vec3 LUMA = vec3(.2126, .7152, .0722);
-  vec3 varied = tint * dot(colour, LUMA) / dot(tint, LUMA) * (.62 + .24 * d);
-  varied *= 1. + (patchy - .5) * .22 + (clumps - .5) * .16 * (1. - smoothstep(.4, 1.2, pixel)) + (blades - .5) * .12 * (1. - smoothstep(.15, .5, pixel));
-  return mix(colour, varied, grass * .92);
+  vec3 varied = tint * dot(colour, LUMA) / dot(tint, LUMA) * (.66 + .26 * d);
+  varied *= 1. + (patchy - .5) * .24 + (tufts - .5) * mix(.2, .42, max(rough, underTrees)) * fine + (blades - .5) * mix(.12, .2, rough) * finest;
+  groundMatte = grass;
+  groundBend = vec2(tufts - .5, grassNoise(p / 2.3 + 4.1) - .5) * (.25 + .75 * rough) * fine * grass * .9;
+  return mix(colour, varied, grass * .95);
 }
 `;
+const GROUND_NORMAL = '#include <normal_fragment_maps>\nnormal = normalize(normal + (viewMatrix * vec4(groundBend.x, 0., groundBend.y, 0.)).xyz);';
+const GROUND_MATTE = 'reflectedLight.directSpecular *= 1. - groundMatte;\n#include <aomap_fragment>';
+const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area};
 
 export function restoredGroundMaterial(anisotropy: number) {
   let seed = 17;
   const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const material = new THREE.MeshStandardMaterial({vertexColors: true, roughness: .94, side: THREE.DoubleSide, map: surfaceTexture('grass', rng, anisotropy)});
   material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, groundUniforms);
     shader.vertexShader = 'attribute float lift;\nvarying vec3 vGround;\n' + shader.vertexShader
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGround = position;')
       .replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
     shader.fragmentShader = 'varying vec3 vGround;\n' + GRASS_NOISE + shader.fragmentShader
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vGround.xz);');
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vGround.xz);')
+      .replace('#include <normal_fragment_maps>', GROUND_NORMAL).replace('#include <aomap_fragment>', GROUND_MATTE);
   };
   material.customProgramCacheKey = () => 'restored-survey-ground';
   return material;
@@ -121,13 +145,13 @@ function tintable<M extends THREE.Material>(material: M, overlays: Overlays): M 
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, {
       buildingTints: {value: overlays.tints}, relief: overlays.relief, reliefRange: overlays.reliefRange,
-      reliefBase: {value: overlays.base}, reliefColours: {value: RELIEF_COLOURS},
+      reliefBase: {value: overlays.base}, reliefColours: {value: RELIEF_COLOURS}, ...groundUniforms,
     });
     shader.vertexShader = 'attribute float building;\nattribute float layer;\nvarying float vBuilding;\nvarying vec3 vSurvey;\n' +
       shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvBuilding = building;\nvSurvey = position;')
         .replace('#include <project_vertex>', `#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * layer * ${LAYER_LIFT};`);
     shader.fragmentShader = 'uniform sampler2D buildingTints;\nuniform float relief;\nuniform vec2 reliefRange;\nuniform float reliefBase;\nuniform vec3 reliefColours[5];\nvarying float vBuilding;\nvarying vec3 vSurvey;\n' + GRASS_NOISE +
-      shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      shader.fragmentShader.replace('#include <normal_fragment_maps>', GROUND_NORMAL).replace('#include <aomap_fragment>', GROUND_MATTE).replace('#include <color_fragment>', `#include <color_fragment>
 if (vBuilding < .5) diffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vSurvey.xz);
 vec4 buildingTint = texelFetch(buildingTints, ivec2(int(vBuilding + .5), 0), 0);
 diffuseColor.rgb = mix(diffuseColor.rgb, buildingTint.rgb, buildingTint.a);

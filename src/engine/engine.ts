@@ -10,6 +10,7 @@ import {navOverlay} from './nav-overlay.ts';
 import {createOutline} from './outline.ts';
 import {buildingPrisms, pickPrism} from './picking.ts';
 import {addPlacements} from './placements.ts';
+import {paintGroundCover} from './survey/ground-cover.ts';
 import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
 import {MIRRORED, type WaterSurface} from './survey/water.ts';
 import type {AssetDefinition, Building, BuildingOverride, BuiltOverride, CityDefinition, Placement, Point2, WorldFrame} from './types.ts';
@@ -118,6 +119,7 @@ export class Engine {
     }
     this.clock.onChange(k => { this.#sun.setDaylight(k); sky.paint(this.#sun.air); materials.water.setSky(this.#sun.direction()); this.#reflection?.invalidate(); this.#redraw = true; });
 
+    paintGroundCover(data.trees, data.buildings, this.frame);
     this.#surveyKinds = survey.buckets.map(b => b.kind);
     this.#survey = addSurveyLayer(this.#scene, survey.buckets, materials);
     this.#outline = createOutline(renderer);
