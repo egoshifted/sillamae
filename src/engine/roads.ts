@@ -55,9 +55,11 @@ function lifted(color: string, roughness: number) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, groundUniforms);
     shader.vertexShader = 'attribute float lift;\nvarying vec2 vRoad;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoad = position.xz;').replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
-    shader.fragmentShader = 'uniform sampler2D groundCover;\nuniform vec4 groundCoverArea;\nvarying vec2 vRoad;\n' + shader.fragmentShader.replace('#include <aomap_fragment>', 'float groundContact = texture2D(groundCover, (vRoad - groundCoverArea.xy) * groundCoverArea.zw).b;\n' + GROUND_CONTACT + '#include <aomap_fragment>');
+    // Dark, neutral asphalt shows nothing but the sky's own colour in shade, which reads as navy paint.
+    const neutralShade = 'reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(dot(reflectedLight.indirectDiffuse, vec3(.2126, .7152, .0722))), .7);\n';
+    shader.fragmentShader = 'uniform sampler2D groundCover;\nuniform vec4 groundCoverArea;\nvarying vec2 vRoad;\n' + shader.fragmentShader.replace('#include <aomap_fragment>', 'float groundContact = texture2D(groundCover, (vRoad - groundCoverArea.xy) * groundCoverArea.zw).b;\n' + GROUND_CONTACT + neutralShade + '#include <aomap_fragment>');
   };
-  material.customProgramCacheKey = () => 'road-lift-contact';
+  material.customProgramCacheKey = () => 'road-lift-contact-neutral';
   return material;
 }
 

@@ -131,7 +131,7 @@ export class Engine {
     }
     this.clock.onChange(k => { this.#sun.setDaylight(k); sky.paint(this.#sun.air); materials.water.setSky(this.#sun.direction()); this.#reflection?.invalidate(); this.#redraw = true; });
 
-    paintGroundCover(data.trees, data.buildings, this.frame);
+    paintGroundCover(data.trees, data.buildings, this.frame, data.terrain, data.roads);
     this.#surveyKinds = survey.buckets.map(b => b.kind);
     this.#survey = addSurveyLayer(this.#scene, survey.buckets, materials);
     this.#outline = createOutline(renderer);

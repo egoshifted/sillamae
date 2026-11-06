@@ -86,6 +86,7 @@ const GRASS_NOISE = `
 uniform sampler2D groundCover;
 uniform vec4 groundCoverArea;
 uniform sampler2D grassBlades;
+uniform sampler2D groundVerge;
 float groundMatte = 0.;
 float groundContact = 0.;
 ${WALL_SHADE}
@@ -112,7 +113,8 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
     mat2 turn = mat2(.8, .6, -.6, .8) * ${(1.55 / BLADE_TILE).toFixed(4)};
     blades = textureGrad(grassBlades, p * scale, stepX * scale, stepY * scale).rg + textureGrad(grassBlades, turn * p, turn * stepX, turn * stepY).rg - 1.;
   }
-  vec2 cover = texture2D(groundCover, (p - groundCoverArea.xy) * groundCoverArea.zw).rg;
+  vec2 coverAt = (p - groundCoverArea.xy) * groundCoverArea.zw;
+  vec2 cover = texture2D(groundCover, coverAt).rg, verge = texture2D(groundVerge, coverAt).rg;
   float underTrees = smoothstep(.12, .6, cover.r), tended = smoothstep(.2, .85, cover.g) * (1. - underTrees);
   // Early September at 59 north: green only where it is kept or damp, otherwise olive turning
   // to straw. Value noise gathers around .5, so it is stretched to reach both ends.
@@ -127,10 +129,14 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
   tint = mix(tint, soil, smoothstep(.64, .74, local * .5 + patchy * .3 + tufts * .2) * .32);
   // Fallen leaves and needles over bare soil, broken by the grass that still comes through.
   tint = mix(tint, mix(litter, soil, smoothstep(.35, .7, tufts)), underTrees * (.5 + .4 * smoothstep(.3, .65, patchy)));
+  // Traffic, ploughed snow and grit wear a road's verge to straw and soil, in an uneven strip.
+  float wear = smoothstep(.05, .38, verge.r + (patchy - .5) * .3 + (tufts - .5) * .4 * fine);
+  tint = mix(tint, mix(hay, soil, smoothstep(.4, .7, tufts)), wear * (.42 + .38 * rough));
   const vec3 LUMA = vec3(.2126, .7152, .0722);
   vec3 varied = tint * dot(colour, LUMA) / dot(tint, LUMA) * (.66 + .26 * d);
   varied *= 1. + (patchy - .5) * .24 + (tufts - .5) * mix(.2, .42, max(rough, underTrees)) * fine + blades.r * mix(.75, 1.05, rough) * finest;
   varied = mix(varied, hay * dot(varied, LUMA) / dot(hay, LUMA), clamp(blades.g, 0., 1.) * (.45 + .45 * rough) * finest);
+  varied *= 1. - .62 * verge.g;
   groundMatte = grass;
   groundBend = (vec2(tufts - .5, grassNoise(p / 2.3 + 4.1) - .5) * (.25 + .75 * rough) * fine + blades * .5 * finest) * grass * .9;
   return mix(colour, varied, grass * .95);
@@ -148,7 +154,7 @@ const SURVEY_WALL = `if (vBuilding > .5) {
 }
 `;
 
-export const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area, grassBlades: groundCover.blades};
+export const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area, grassBlades: groundCover.blades, groundVerge: groundCover.verge};
 
 export function restoredGroundMaterial(anisotropy: number) {
   let seed = 17;

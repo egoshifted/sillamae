@@ -9,7 +9,8 @@ const ASPECTS = [[2.6, 3.4, 4.6], [3.6, 5.4]];
 const CARDS = [[22, 65, 150], [24, 70, 170]], CARD_SIZE = [[1.2, .85, .62], [1.25, .9, .62]];
 // The survey has no species, so the yellow-green share is spread by rule, not where willows actually stand.
 const BROADLEAF = ['#5f7a3d', '#688343', '#587238', '#6f8748', '#5c773f'], YELLOW = '#8c9548';
-const CONIFERS = ['#46603f', '#4e6845', '#415a3c'];
+const CONIFERS = ['#5d7858', '#66815f', '#577251'];
+const CROWN_MUTE = .16; // share of a crown's colour given up to its grey, so trees sit with the town's paler paint
 // Close shades read as one crown; a wide spread reads as noise at every zoom.
 const LEAF_SHADE = [158, 226], NEEDLE_SHADE = [145, 215];
 
@@ -198,6 +199,8 @@ function treeColour(t: Tree, conifer: boolean, colour: THREE.Color) {
   if (conifer) colour.set(CONIFERS[Math.floor(pick * CONIFERS.length)]);
   else if (hash(x, z, 5) < (t.r >= 4.5 ? .24 : .1)) colour.set(YELLOW);
   else colour.set(BROADLEAF[Math.floor(pick * BROADLEAF.length)]);
+  const grey = colour.r * .2126 + colour.g * .7152 + colour.b * .0722;
+  colour.lerp(new THREE.Color(grey, grey, grey), CROWN_MUTE);
   return colour.multiplyScalar(1.08 + .14 * hash(x, z, 6));
 }
 
