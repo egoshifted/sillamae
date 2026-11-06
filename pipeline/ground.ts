@@ -2,6 +2,7 @@ import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type SceneData} from '../src/engine/types.ts';
 import {pushTriangle, splitTriangle, squareOf} from './roads.ts';
 import type {Shoreline} from './shore.ts';
+import {softenPaint} from './paint.ts';
 import {surveyLayers} from './survey-colour.ts';
 import {BLOCK, canCoarsen, fineArea, perimeter, type Box as DetailBox} from './terrain-detail.ts';
 
@@ -15,7 +16,7 @@ const GRID = 1, STACK = 1, HUGE = 60;
 const OUTSIDE = 1, SEAT_STEP = 1;
 // Grid steps height and colour spread into ground left bare, enough to cross the widest building.
 const FILL_PASSES = 60;
-const SOFT_SHORE = 8, SOFT_REACH = 3;
+const SOFT_SHORE = 8, SOFT_REACH = 3, SOFT_PAINT = 2;
 const BANK_COLOUR = [.6, .63, .42];
 const FINE_SHORE = 16; // a block's single plane would step the waterline
 
@@ -148,18 +149,7 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
   }
   // Shoals the survey painted as water lie too far from any land for colour to spread.
   for (const p of points) if (p && !p.c) p.c = BANK_COLOUR;
-  // The survey's paint meets the grid in metre steps, and a smooth shore shows them up.
-  const softened = points.map((p, k) => {
-    if (!p?.c || shore.distance(p.x, p.z) > SOFT_SHORE) return null;
-    const i = k % (nx + 1), j = Math.floor(k / (nx + 1)), sum = [0, 0, 0];
-    let n = 0;
-    for (let b = -SOFT_REACH; b <= SOFT_REACH; b++) for (let a = -SOFT_REACH; a <= SOFT_REACH; a++) {
-      const c = i + a >= 0 && i + a <= nx && j + b >= 0 && j + b <= nz ? points[(j + b) * (nx + 1) + i + a]?.c : undefined;
-      if (c) { sum[0] += c[0]; sum[1] += c[1]; sum[2] += c[2]; n++; }
-    }
-    return sum.map(s => s / n);
-  });
-  softened.forEach((c, k) => { if (c) points[k]!.c = c; });
+  softenPaint(points, nx + 1, (x, z) => shore.distance(x, z) > SOFT_SHORE ? SOFT_PAINT : SOFT_REACH);
   for (const p of points) if (p?.c) p.c = shore.wetten(p.x, p.z, p.c);
   // Cells under buildings stay: the grid cannot follow a wall, and dropping the
   // cells a footprint covers left see-through gaps along the foundations.
