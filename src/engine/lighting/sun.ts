@@ -5,7 +5,7 @@ export const buildingShadows = {radius: 100, mapSize: 4096, bias: -.00004, norma
 
 // Shade takes the sky's blue, which is what sets it apart from the sun's warmth.
 const LIGHT = {
-  fill: new THREE.Color('#cfe0ff'), bounce: new THREE.Color('#7c7a5c'),
+  fill: new THREE.Color('#cfe0ff'), bounce: new THREE.Color('#a6a284'),
   lowSun: new THREE.Color('#ffcb9c'), highSun: new THREE.Color('#fff0d8'),
   lowAir: new THREE.Color('#dcd8d4'), highAir: new THREE.Color('#d2e0ea'),
 };
@@ -51,8 +51,9 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
       centre.set(1e9, 0, 0); // force the frustum to refresh
       const day = THREE.MathUtils.smoothstep(Math.sin(k * Math.PI), .1, .8);
       sun.color.copy(LIGHT.lowSun).lerp(LIGHT.highSun, day);
-      sun.intensity = 3 + day * .2; // a lower sun strikes the ground less squarely
-      sky.intensity = 1 - day * .08;
+      sun.intensity = 2.7 + day * .2; // a lower sun strikes the ground less squarely
+      // Lambert divides this by pi, and the tone curve crushes what is left in the shade.
+      sky.intensity = 1.6 - day * .1;
       air.copy(LIGHT.lowAir).lerp(LIGHT.highAir, day);
       renderer.shadowMap.needsUpdate = true;
     },

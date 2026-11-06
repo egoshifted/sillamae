@@ -7,7 +7,7 @@ import {CELL} from '../src/engine/survey/classify.ts';
 import {prepareSurvey} from '../src/engine/survey/prepare.ts';
 import type {SceneData} from '../src/engine/types.ts';
 import {loadDtm} from './dtm.ts';
-import {encodeBucket} from './encode.ts';
+import {encodeBucket, groundNormals} from './encode.ts';
 import {georeference, type OsmExtract} from './geo.ts';
 import {gradeRoads} from './grade.ts';
 import {withTerrainEdits} from '../src/engine/terrain-edit.ts';
@@ -71,12 +71,13 @@ async function build() {
     const {placements, report: placementReport} = collectPlacements(sites, 'src/city/sillamae/assets', heightAt);
 
     // Bucket order is kept: it is the draw order of equal-depth survey meshes.
+    const smooth = groundNormals(buckets);
     const tiles = new Map<string, Uint8Array[]>(), manifest: SurveyManifest = {cell: CELL, tileCells: TILE_CELLS, tiles: [], buckets: []};
     for (const b of buckets) {
       const [cx, cz] = b.cell.split(',').map(Number), name = `${Math.floor(cx / TILE_CELLS)}_${Math.floor(cz / TILE_CELLS)}`;
       let parts = tiles.get(name);
       if (!parts) tiles.set(name, parts = []);
-      const offset = parts.reduce((s, p) => s + p.byteLength, 0), encoded = encodeBucket(b);
+      const offset = parts.reduce((s, p) => s + p.byteLength, 0), encoded = encodeBucket(b, smooth);
       parts.push(...encoded.parts);
       manifest.buckets.push({kind: b.kind, detail: b.detail, cell: b.cell, tile: name, offset, ...encoded.meta});
     }

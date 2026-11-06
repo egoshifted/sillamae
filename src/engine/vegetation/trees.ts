@@ -140,6 +140,12 @@ vec3 autumnColour(vec3 green) {
 }
 `;
 
+// Leaves let sunlight through, so a crown lit from behind glows instead of going black.
+const LEAF_GLOW = `#if NUM_DIR_LIGHTS > 0
+outgoingLight += diffuseColor.rgb * directionalLights[0].color * max(-dot(normal, directionalLights[0].direction), 0.) * .16;
+#endif
+`;
+
 // Mipmapping averages leaf alpha down, so the far level needs a lower cut-off or its crowns dissolve into specks.
 export function foliageMaterials(season: 'atlas' | 'spring' | 'summer' | 'autumn' = 'atlas') {
   const map = foliageTexture();
@@ -151,9 +157,10 @@ export function foliageMaterials(season: 'atlas' | 'spring' | 'summer' | 'autumn
       shader.vertexShader = vertex + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nautumnLeaf();');
       shader.fragmentShader = AUTUMN_FRAGMENT + shader.fragmentShader
         .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
-        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = autumnColour(diffuseColor.rgb);');
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = autumnColour(diffuseColor.rgb);')
+        .replace('#include <opaque_fragment>', LEAF_GLOW + '#include <opaque_fragment>');
     };
-    material.customProgramCacheKey = () => 'tree-leaf-cards-v3-' + season;
+    material.customProgramCacheKey = () => 'tree-leaf-cards-v4-' + season;
     return material;
   };
   const depth = (alphaTest: number) => new THREE.MeshDepthMaterial({depthPacking: THREE.RGBADepthPacking, map, alphaTest, side: THREE.DoubleSide});
@@ -192,7 +199,7 @@ interface Chunk {
 
 export function addTrees(parent: THREE.Object3D, trees: Tree[], frame: WorldFrame) {
   const [ox, oz] = frame.origin, base = frame.base;
-  const materials = foliageMaterials(), bark = new THREE.MeshStandardMaterial({color: '#5c4f45', roughness: 1});
+  const materials = foliageMaterials(), bark = new THREE.MeshStandardMaterial({color: '#7d6e62', roughness: 1});
   const geometries = ASPECTS.map((aspects, con) => aspects.map(aspect => [0, 1, 2].map(level => crownGeometry(!!con, aspect, level))));
   const crowns = (geometry: THREE.BufferGeometry, count: number, level: number) => {
     const {leaf, depth} = level ? materials.near : materials.far, mesh = new THREE.InstancedMesh(geometry, leaf, count);
