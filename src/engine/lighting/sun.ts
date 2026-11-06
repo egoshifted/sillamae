@@ -7,7 +7,7 @@ export const buildingShadows = {radius: 100, mapSize: 4096, bias: -.00004, norma
 const LIGHT = {
   fill: new THREE.Color('#cfe0ff'), bounce: new THREE.Color('#7c7a5c'),
   lowSun: new THREE.Color('#ffcb9c'), highSun: new THREE.Color('#fff0d8'),
-  lowAir: new THREE.Color('#e6d6c6'), highAir: new THREE.Color('#d2e0ea'),
+  lowAir: new THREE.Color('#dcd8d4'), highAir: new THREE.Color('#d2e0ea'),
 };
 const SUN_PATH = {rise: 105, set: 255, low: 12, high: 38}; // degrees: azimuth clockwise from north, height above the horizon
 

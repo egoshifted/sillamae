@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {CameraController, type CameraView} from './camera/controller.ts';
 import {WorldClock} from './clock.ts';
 import {clippingPlanes, extentEdges, insideExtent} from './extent.ts';
-import {fitHaze} from './lighting/haze.ts';
+import {fitHaze, installAtmosphere, skyBackground} from './lighting/haze.ts';
 import {addSun} from './lighting/sun.ts';
 import {lineMeshes} from './lines.ts';
 import {tileBounds, type BuiltLine, type NavData, type SurveyBucket, type SurveyManifest, type WorldData, type Zone} from './data.ts';
@@ -96,15 +96,19 @@ export class Engine {
 
     const mobile = matchMedia('(pointer: coarse)').matches;
     this.#sun = addSun(this.#scene, renderer, this.clock.daylight, mobile ? 2048 : 4096);
-    if (city.extent) renderer.clippingPlanes = clippingPlanes(city.extent.map(([x, z]): Point2 => [x - ox, z - oz]));
+    const extent = city.extent?.map(([x, z]): Point2 => [x - ox, z - oz]);
+    if (extent) renderer.clippingPlanes = clippingPlanes(extent);
+    installAtmosphere(extent ? extentEdges(extent) : []);
 
     const buildingNumbers = Math.max(...data.buildings.map(b => b.pick)) + 1;
     this.#tintBytes = new Uint8Array(buildingNumbers * 4);
     const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildingNumbers, data.base, mobile);
     this.#setSurveyTextures = materials.setTextures;
     this.#water = materials.water;
-    this.#scene.background = this.#sun.air;
-    this.#scene.fog = new THREE.Fog(this.#sun.air);
+    const sky = skyBackground(), haze = this.#scene.fog = new THREE.Fog(this.#sun.air);
+    haze.color = this.#sun.air; // the constructor copies; the fog must follow the clock
+    sky.paint(this.#sun.air);
+    this.#scene.background = sky.texture;
     materials.water.setSky(this.#sun.direction());
     // A phone would pay for a second town pass with the frame rate it is already short of.
     if (!mobile) {
@@ -112,7 +116,7 @@ export class Engine {
       this.#reflection = waterReflection(renderer, materials.water, -data.base);
       materials.water.reflectionMap.value = this.#reflection.texture;
     }
-    this.clock.onChange(k => { this.#sun.setDaylight(k); materials.water.setSky(this.#sun.direction()); this.#reflection?.invalidate(); this.#redraw = true; });
+    this.clock.onChange(k => { this.#sun.setDaylight(k); sky.paint(this.#sun.air); materials.water.setSky(this.#sun.direction()); this.#reflection?.invalidate(); this.#redraw = true; });
 
     this.#surveyKinds = survey.buckets.map(b => b.kind);
     this.#survey = addSurveyLayer(this.#scene, survey.buckets, materials);

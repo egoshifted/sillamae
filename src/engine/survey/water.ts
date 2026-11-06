@@ -85,11 +85,18 @@ normal = normalize((viewMatrix * vec4(waterNormal, 0.)).xyz);
 const WATER_REFLECTION = `
 vec3 toEye = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
 vec3 mirrored = reflect(-toEye, waterNormal);
+// The material's broad highlight turns a sea facing a low sun into flat grey; the glint below replaces it.
+outgoingLight -= reflectedLight.directSpecular * .9;
 float wind = waterWind(vSurvey.xz);
 float facing = 1. - max(dot(toEye, waterNormal), 0.);
 float fresnel = .05 + .95 * facing * facing * facing;
 vec3 sky = mix(skyHorizon, skyZenith, smoothstep(.02, .75, mirrored.y));
-sky += sunGlow * pow(max(dot(mirrored, sunDirection), 0.), 24.);
+sky += sunGlow * pow(max(dot(mirrored, sunDirection), 0.), 110.);
+#ifdef USE_FOG
+// Water shows the sky far more than its own lit colour, so a cloud barely darkens it.
+outgoingLight += reflectedLight.directDiffuse * (1. / hazeCloud() - 1.) * .7;
+sky *= .78 + .22 * hazeCloud();
+#endif
 if (reflecting > .5) {
   vec2 mirrorAt = (reflectionMatrix * vec4(vSurvey, 1.)).xy + waterGradient * vec2(.012, .05);
   vec4 scenery = texture2D(reflectionMap, mirrorAt);
