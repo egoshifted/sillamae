@@ -3,6 +3,14 @@ import {shadowCoverage, useBuildingShadowDetail} from './shadow-coverage.ts';
 
 export const buildingShadows = {radius: 100, mapSize: 4096, bias: -.00004, normalBias: .06, filterRadius: 3} as const;
 
+// Shade takes the sky's blue, which is what sets it apart from the sun's warmth.
+const LIGHT = {
+  fill: new THREE.Color('#cfe0ff'), bounce: new THREE.Color('#a6a284'),
+  lowSun: new THREE.Color('#ffcb9c'), highSun: new THREE.Color('#fff0d8'),
+  lowAir: new THREE.Color('#dcd8d4'), highAir: new THREE.Color('#d2e0ea'),
+};
+const SUN_PATH = {rise: 105, set: 255, low: 12, high: 38}; // degrees: azimuth clockwise from north, height above the horizon
+
 export function shadowDistance(radius: number) { return radius + 200; }
 
 export function setShadowCoverage(sun: THREE.DirectionalLight, radius: number) {
@@ -11,7 +19,8 @@ export function setShadowCoverage(sun: THREE.DirectionalLight, radius: number) {
 }
 
 export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylight: number, maxMapSize = 4096) {
-  scene.add(new THREE.HemisphereLight('#e6efff', '#73775c', 1.1));
+  const sky = new THREE.HemisphereLight(LIGHT.fill, LIGHT.bounce);
+  scene.add(sky);
   const sun = new THREE.DirectionalLight();
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -21,7 +30,7 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
   sun.shadow.radius = buildingShadows.filterRadius;
   scene.add(sun);
   scene.add(sun.target);
-  const offset = new THREE.Vector3(), centre = new THREE.Vector3(1e9, 0, 0);
+  const offset = new THREE.Vector3(), centre = new THREE.Vector3(1e9, 0, 0), air = new THREE.Color();
   let width = 0, detailed = false;
 
   const sunlight = {
@@ -31,12 +40,21 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
       return new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)).intersectsSphere(sphere);
     },
     state: () => ({mapSize: sun.shadow.mapSize.x, radius: width, detailed}),
+    direction: () => offset.clone().normalize(),
+    air,
 
     setDaylight(k: number) {
-      offset.set(-280 + 560 * k, 150 + 200 * Math.sin(k * Math.PI), -100);
+      // An autumn day at about 59° north. Local +x is east and +z south.
+      const azimuth = THREE.MathUtils.degToRad(SUN_PATH.rise + (SUN_PATH.set - SUN_PATH.rise) * k);
+      const height = THREE.MathUtils.degToRad(SUN_PATH.low + (SUN_PATH.high - SUN_PATH.low) * Math.sin(k * Math.PI));
+      offset.set(Math.sin(azimuth) * Math.cos(height), Math.sin(height), -Math.cos(azimuth) * Math.cos(height));
       centre.set(1e9, 0, 0); // force the frustum to refresh
-      sun.color.set(k < .25 ? '#ffd2a0' : k > .8 ? '#ffd6ac' : '#fff1dc');
-      sun.intensity = 2 + Math.sin(k * Math.PI) * .4;
+      const day = THREE.MathUtils.smoothstep(Math.sin(k * Math.PI), .1, .8);
+      sun.color.copy(LIGHT.lowSun).lerp(LIGHT.highSun, day);
+      sun.intensity = 2.7 + day * .2; // a lower sun strikes the ground less squarely
+      // Lambert divides this by pi, and the tone curve crushes what is left in the shade.
+      sky.intensity = 1.6 - day * .1;
+      air.copy(LIGHT.lowAir).lerp(LIGHT.highAir, day);
       renderer.shadowMap.needsUpdate = true;
     },
 

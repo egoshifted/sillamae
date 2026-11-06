@@ -15,7 +15,12 @@ scope.onmessage = async ({data}) => {
       let bucket = buckets[i];
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(bucket.position, 3));
-      if (!flat) { geometry.computeVertexNormals(); bucket.normal = geometry.getAttribute('normal').array as Float32Array; }
+      if (!flat) {
+        geometry.computeVertexNormals();
+        const normal = bucket.normal = geometry.getAttribute('normal').array as Float32Array, smooth = bucket.smooth!;
+        for (let k = 0; k < normal.length; k++) if (!Number.isNaN(smooth[k])) normal[k] = smooth[k];
+      }
+      delete bucket.smooth;
       geometry.computeBoundingSphere();
       const sphere = geometry.boundingSphere!;
       bucket.bounds = [sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius];

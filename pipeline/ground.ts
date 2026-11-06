@@ -1,6 +1,7 @@
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type SceneData} from '../src/engine/types.ts';
 import {pushTriangle, splitTriangle, squareOf} from './roads.ts';
+import type {Shoreline} from './shore.ts';
 import {surveyLayers} from './survey-colour.ts';
 import {BLOCK, canCoarsen, fineArea, perimeter, type Box as DetailBox} from './terrain-detail.ts';
 
@@ -14,6 +15,9 @@ const GRID = 1, STACK = 1, HUGE = 60;
 const OUTSIDE = 1, SEAT_STEP = 1;
 // Grid steps height and colour spread into ground left bare, enough to cross the widest building.
 const FILL_PASSES = 60;
+const SOFT_SHORE = 8, SOFT_REACH = 3;
+const BANK_COLOUR = [.6, .63, .42];
+const FINE_SHORE = 16; // a block's single plane would step the waterline
 
 type Box = {minX: number; maxX: number; minZ: number; maxZ: number};
 const distance = (b: Box, x: number, z: number) => Math.hypot(Math.max(b.minX - x, 0, x - b.maxX), Math.max(b.minZ - z, 0, z - b.maxZ));
@@ -85,39 +89,45 @@ export function seatBuildings(v: Float32Array, survey: Float32Array, heightAt: H
   return {vertices: out, report: `buildings moved with their ground in the road area: ${moves.length}, by ${moves.length ? `${moves[0].toFixed(2)} to ${moves.at(-1)!.toFixed(2)} m, median ${median(moves).toFixed(2)}` : 'none'}`};
 }
 
+export const surveyWater = (v: Float32Array) => (i: number) => v[i + 5] > v[i + 3] * 1.15 && v[i + 4] > v[i + 3] * 1.15; // as survey/classify.ts
+
 // Inside the road area the survey ground (flat sheets stacked 5-35 cm apart
-// over 10-16 m triangles) is replaced by one surface on a 1 m grid at the given
-// heights, coloured from the survey's visible layer. Water, buildings and
-// survey ground outside the area stay; triangles across its edge are split.
-// The grid runs on under buildings, where their walls hide it.
-export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData, city: CityDefinition, roadBounds: DetailBox[] = []) {
+// over 10-16 m triangles) and its water polygons are replaced by one surface on
+// a 1 m grid at the given heights, coloured from the survey's visible layer, and
+// the shoreline's water mesh. The sea sheets, buildings and survey ground outside
+// the area stay; triangles across its edge are split. The grid runs on under
+// buildings, where their walls hide it.
+export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData, city: CityDefinition, shore: Shoreline, roadBounds: DetailBox[] = []) {
   const [ox, oz] = city.frame.origin, square = squareOf(scene, city), {layers} = surveyLayers(v);
-  const water = (i: number) => v[i + 5] > v[i + 3] * 1.15 && v[i + 4] > v[i + 3] * 1.15; // as survey/classify.ts
+  const water = surveyWater(v);
   const [[minX, minZ], , [maxX, maxZ]] = square[0].map(([x, z]): Point2 => [x + ox, z + oz]);
   const out: number[] = [];
   let removed = 0;
   for (let i = 0; i < v.length; i += TRIANGLE) {
     const xs = [v[i], v[i + 7], v[i + 14]], zs = [v[i + 1], v[i + 8], v[i + 15]];
-    if (v[i + 6] || water(i) || Math.max(...xs) - Math.min(...xs) > HUGE || Math.max(...xs) < minX || Math.min(...xs) > maxX || Math.max(...zs) < minZ || Math.min(...zs) > maxZ) { pushTriangle(v, i, out); continue; }
+    const sheet = water(i) && Math.max(...zs) - Math.min(...zs) > HUGE;
+    if (v[i + 6] || sheet || Math.max(...xs) - Math.min(...xs) > HUGE || Math.max(...xs) < minX || Math.min(...xs) > maxX || Math.max(...zs) < minZ || Math.min(...zs) > maxZ) { pushTriangle(v, i, out); continue; }
     if (xs.every(x => x >= minX && x <= maxX) && zs.every(z => z >= minZ && z <= maxZ)) { removed++; continue; }
     if (splitTriangle(v, i, square, city, out, 'drop')) removed++; else pushTriangle(v, i, out);
   }
+  for (const value of shore.triangles) out.push(value);
 
   // The visible layer of the ground stack; anything higher is not ground (a shelter roof painted as ground).
   const colour = (x: number, z: number) => {
     const found = layers(x, z), low = found.at(-1)?.h;
     if (low === undefined) return undefined;
     const top = found.find(l => l.h <= low + STACK)!;
-    return water(top.i) ? null : [v[top.i + 3], v[top.i + 4], v[top.i + 5]];
+    return water(top.i) ? undefined : [v[top.i + 3], v[top.i + 4], v[top.i + 5]];
   };
   const nx = Math.round((maxX - minX) / GRID), nz = Math.round((maxZ - minZ) / GRID);
-  // Water is left out (null). Inside buildings the survey has no ground and the
-  // terrain model no data, so those points take height and colour from their
-  // neighbours: without them the cells along every wall dropped out.
+  // Open water is left out (null). Inside buildings the survey has no ground and
+  // the terrain model no data, so those points take height and colour from their
+  // neighbours: without them the cells along every wall dropped out. Banks over
+  // what the survey painted as water take theirs the same way.
   const points: ({x: number; z: number; h: number | null; c: number[] | undefined} | null)[] = [];
   for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
-    const x = minX + i * GRID, z = minZ + j * GRID, c = colour(x, z);
-    points.push(c === null ? null : {x, z, h: heightAt(x, z), c});
+    const x = minX + i * GRID, z = minZ + j * GRID;
+    points.push(shore.keepsGround(x, z) ? {x, z, h: heightAt(x, z), c: colour(x, z)} : null);
   }
   const neighbours = (k: number) => {
     const i = k % (nx + 1), j = Math.floor(k / (nx + 1));
@@ -136,6 +146,21 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
     filled += changed;
     if (!changed) break;
   }
+  // Shoals the survey painted as water lie too far from any land for colour to spread.
+  for (const p of points) if (p && !p.c) p.c = BANK_COLOUR;
+  // The survey's paint meets the grid in metre steps, and a smooth shore shows them up.
+  const softened = points.map((p, k) => {
+    if (!p?.c || shore.distance(p.x, p.z) > SOFT_SHORE) return null;
+    const i = k % (nx + 1), j = Math.floor(k / (nx + 1)), sum = [0, 0, 0];
+    let n = 0;
+    for (let b = -SOFT_REACH; b <= SOFT_REACH; b++) for (let a = -SOFT_REACH; a <= SOFT_REACH; a++) {
+      const c = i + a >= 0 && i + a <= nx && j + b >= 0 && j + b <= nz ? points[(j + b) * (nx + 1) + i + a]?.c : undefined;
+      if (c) { sum[0] += c[0]; sum[1] += c[1]; sum[2] += c[2]; n++; }
+    }
+    return sum.map(s => s / n);
+  });
+  softened.forEach((c, k) => { if (c) points[k]!.c = c; });
+  for (const p of points) if (p?.c) p.c = shore.wetten(p.x, p.z, p.c);
   // Cells under buildings stay: the grid cannot follow a wall, and dropping the
   // cells a footprint covers left see-through gaps along the foundations.
   const corners = (i: number, j: number) => [points[j * (nx + 1) + i], points[j * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i + 1], points[(j + 1) * (nx + 1) + i]];
@@ -148,7 +173,7 @@ export function gridGround(v: Float32Array, heightAt: HeightAt, scene: SceneData
   const width = Math.ceil(nx / BLOCK), coarse = new Uint8Array(width * Math.ceil(nz / BLOCK));
   let simplified = 0;
   for (let j = 0; j + BLOCK <= nz; j += BLOCK) for (let i = 0; i + BLOCK <= nx; i += BLOCK)
-    if (!fine(minX + i + BLOCK / 2, minZ + j + BLOCK / 2) && canCoarsen(points, i, j, nx + 1)) { coarse[Math.floor(j / BLOCK) * width + Math.floor(i / BLOCK)] = 1; simplified++; }
+    if (!fine(minX + i + BLOCK / 2, minZ + j + BLOCK / 2) && shore.distance(minX + i + BLOCK / 2, minZ + j + BLOCK / 2) > FINE_SHORE && canCoarsen(points, i, j, nx + 1)) { coarse[Math.floor(j / BLOCK) * width + Math.floor(i / BLOCK)] = 1; simplified++; }
   const isCoarse = (i: number, j: number) => coarse[Math.floor(j / BLOCK) * width + Math.floor(i / BLOCK)];
   let cells = 0;
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (kept(corners(i, j))) cells++;

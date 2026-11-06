@@ -56,7 +56,8 @@ export interface NavData {
 
 // Tiles group TILE_CELLS² survey cells. A bucket's bytes in its tile, each
 // section padded to 4 bytes: meshopt-encoded unique vertices (Uint32 x, z,
-// height in millimetres above origin; sRGB bytes + pad), meshopt-encoded
+// height in millimetres above origin; sRGB bytes, 1 if smooth; Uint8 octahedral
+// normal, pad, which pipeline/encode.ts sums for ground), meshopt-encoded
 // Uint32 corner indices, then one Uint16 building number and one Uint8 ground
 // layer per triangle.
 export interface SurveyManifest {
@@ -72,6 +73,7 @@ export interface SurveyManifest {
 export interface SurveyBucket {
   indices?: Uint32Array;
   normal?: Float32Array;
+  smooth?: Float32Array; // ground normals; NaN at corners that take their face's
   bounds?: [number, number, number, number];
   index: number;
   position: Float32Array;
@@ -115,7 +117,7 @@ export async function loadWorld(root: string) {
 }
 
 const LINEAR = Float32Array.from({length: 256}, (_, k) => new THREE.Color().setRGB(k / 255, 0, 0, THREE.SRGBColorSpace).r);
-const pad4 = (n: number) => Math.ceil(n / 4) * 4;
+const pad4 = (n: number) => Math.ceil(n / 4) * 4, VERTEX = 20;
 
 export const fetchTile = (root: string, name: string) => gunzip(`${root}tiles/${name}.bin.gz`);
 
@@ -129,13 +131,17 @@ export function decodeTile(survey: SurveyManifest, name: string, buffer: ArrayBu
   }
   return (tiles.get(name) ?? []).map(index => {
     const b = survey.buckets[index];
-    const vertices = new Uint8Array(b.unique * 16), corners = new Uint32Array(b.vertices);
-    MeshoptDecoder.decodeVertexBuffer(vertices, b.unique, 16, new Uint8Array(buffer, b.offset, b.vertexBytes));
+    const vertices = new Uint8Array(b.unique * VERTEX), corners = new Uint32Array(b.vertices);
+    MeshoptDecoder.decodeVertexBuffer(vertices, b.unique, VERTEX, new Uint8Array(buffer, b.offset, b.vertexBytes));
     const indicesAt = b.offset + pad4(b.vertexBytes), trianglesAt = indicesAt + pad4(b.indexBytes);
     MeshoptDecoder.decodeIndexBuffer(new Uint8Array(corners.buffer), b.vertices, 4, new Uint8Array(buffer, indicesAt, b.indexBytes));
-    const view = new DataView(vertices.buffer), source = new Float32Array(b.vertices * 3), color = new Float32Array(b.vertices * 3);
+    const view = new DataView(vertices.buffer), source = new Float32Array(b.vertices * 3), color = new Float32Array(b.vertices * 3), smooth = new Float32Array(b.vertices * 3).fill(NaN);
     for (let v = 0; v < b.vertices; v++) {
-      const k = corners[v] * 16;
+      const k = corners[v] * VERTEX;
+      if (vertices[k + 15]) {
+        const nx = (vertices[k + 16] - 128) / 127, nz = (vertices[k + 17] - 128) / 127, ny = 1 - Math.abs(nx) - Math.abs(nz), l = Math.hypot(nx, ny, nz);
+        smooth[v * 3] = nx / l; smooth[v * 3 + 1] = ny / l; smooth[v * 3 + 2] = nz / l;
+      }
       for (let c = 0; c < 3; c++) {
         source[v * 3 + c] = (b.origin[c] + view.getUint32(k + c * 4, true)) / 1000;
         color[v * 3 + c] = LINEAR[vertices[k + 12 + c]];
@@ -148,7 +154,7 @@ export function decodeTile(survey: SurveyManifest, name: string, buffer: ArrayBu
       building.fill(buildings[t], t * 3, t * 3 + 3);
       layer.fill(layers[t], t * 3, t * 3 + 3);
     }
-    return {index, color, building, layer, ...expandBucket(source, b.kind, frame)};
+    return {index, color, building, layer, smooth, ...expandBucket(source, b.kind, frame)};
   });
 }
 

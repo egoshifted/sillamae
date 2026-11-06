@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {CameraController, type CameraView} from './camera/controller.ts';
 import {WorldClock} from './clock.ts';
 import {clippingPlanes, extentEdges, insideExtent} from './extent.ts';
+import {fitHaze, installAtmosphere, skyBackground} from './lighting/haze.ts';
 import {addSun} from './lighting/sun.ts';
 import {lineMeshes} from './lines.ts';
 import {tileBounds, type BuiltLine, type NavData, type SurveyBucket, type SurveyManifest, type WorldData, type Zone} from './data.ts';
@@ -9,12 +10,15 @@ import {navOverlay} from './nav-overlay.ts';
 import {createOutline} from './outline.ts';
 import {buildingPrisms, pickPrism} from './picking.ts';
 import {addPlacements} from './placements.ts';
+import {paintGroundCover} from './survey/ground-cover.ts';
 import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
+import {MIRRORED, type WaterSurface} from './survey/water.ts';
 import type {AssetDefinition, Building, BuildingOverride, BuiltOverride, CityDefinition, Placement, Point2, WorldFrame} from './types.ts';
 import {addRoads} from './roads.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
 import {restoreGround} from './survey/restore-ground.ts';
+import {waterReflection, type WaterReflection} from './water-reflection.ts';
 
 const DEFAULT_VIEW: CameraView = {offset: [-110, 110, 130], span: 120};
 const OUTSKIRTS = new THREE.Color('#8a8f86');
@@ -29,7 +33,7 @@ export interface World {
 export class Engine {
   readonly frame: WorldFrame;
   readonly buildings: Building[];
-  readonly clock = new WorldClock(0);
+  readonly clock = new WorldClock(.3);
   readonly camera: CameraController;
   focusedId = '';
   continuous = false;
@@ -40,6 +44,8 @@ export class Engine {
   readonly #built = new Map<string, BuiltOverride>();
   readonly #setSurveyTextures: (enabled: boolean) => void;
   readonly #survey: ReturnType<typeof addSurveyLayer>;
+  readonly #water: WaterSurface;
+  #reflection: WaterReflection | null = null;
   readonly #forest: ReturnType<typeof addTrees>;
   readonly #vegetation = new THREE.Group();
   #placements: ReturnType<typeof addPlacements> | null = null;
@@ -58,6 +64,7 @@ export class Engine {
   readonly #data: WorldData;
   #nav: THREE.Object3D | null = null;
   #level = -1;
+  readonly #surveyKinds: SurveyManifest['buckets'][number]['kind'][];
   readonly #frameListeners = new Set<() => void>();
   readonly #detailListeners = new Set<(name: string) => void>();
   readonly #stats = {frames: 0, renders: 0, renderMs: 0, draws: 0, triangles: 0};
@@ -71,7 +78,6 @@ export class Engine {
     for (const o of city.overrides) this.#overrides.set(o.id, o);
     const [ox, oz] = this.frame.origin;
 
-    this.#scene.background = new THREE.Color('#e0e6d9');
 
     const renderer = this.#renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
@@ -91,14 +97,30 @@ export class Engine {
 
     const mobile = matchMedia('(pointer: coarse)').matches;
     this.#sun = addSun(this.#scene, renderer, this.clock.daylight, mobile ? 2048 : 4096);
-    if (city.extent) renderer.clippingPlanes = clippingPlanes(city.extent.map(([x, z]): Point2 => [x - ox, z - oz]));
-    this.clock.onChange(k => { this.#sun.setDaylight(k); this.#redraw = true; });
+    const extent = city.extent?.map(([x, z]): Point2 => [x - ox, z - oz]);
+    if (extent) renderer.clippingPlanes = clippingPlanes(extent);
+    installAtmosphere(extent ? extentEdges(extent) : []);
 
     const buildingNumbers = Math.max(...data.buildings.map(b => b.pick)) + 1;
     this.#tintBytes = new Uint8Array(buildingNumbers * 4);
     const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildingNumbers, data.base, mobile);
     this.#setSurveyTextures = materials.setTextures;
+    this.#water = materials.water;
+    const sky = skyBackground(), haze = this.#scene.fog = new THREE.Fog(this.#sun.air);
+    haze.color = this.#sun.air; // the constructor copies; the fog must follow the clock
+    sky.paint(this.#sun.air);
+    this.#scene.background = sky.texture;
+    materials.water.setSky(this.#sun.direction());
+    // A phone would pay for a second town pass with the frame rate it is already short of.
+    if (!mobile) {
+      this.#scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(MIRRORED); });
+      this.#reflection = waterReflection(renderer, materials.water, -data.base);
+      materials.water.reflectionMap.value = this.#reflection.texture;
+    }
+    this.clock.onChange(k => { this.#sun.setDaylight(k); sky.paint(this.#sun.air); materials.water.setSky(this.#sun.direction()); this.#reflection?.invalidate(); this.#redraw = true; });
 
+    paintGroundCover(data.trees, data.buildings, this.frame);
+    this.#surveyKinds = survey.buckets.map(b => b.kind);
     this.#survey = addSurveyLayer(this.#scene, survey.buckets, materials);
     this.#outline = createOutline(renderer);
 
@@ -144,6 +166,7 @@ export class Engine {
   // Without this, the first frame blocks for over a second while ANGLE links shaders.
   async compile() {
     await Promise.all([this.#renderer.compileAsync(this.#scene, this.camera.ortho), this.#outline.compile(this.#scene, this.camera.ortho)]);
+    await this.#reflection?.compile(this.#scene, this.camera.ortho);
   }
 
   start() {
@@ -180,7 +203,9 @@ export class Engine {
     for (const bucket of buckets) {
       restoreGround(bucket.position, bucket.color, bucket.building, this.#data.roadCuts ?? []);
       this.#survey.fill(bucket);
+      if (this.#surveyKinds[bucket.index] === 'water') this.#reflection?.addWater(bucket);
     }
+    this.#reflection?.invalidate();
     const camera = this.camera.ortho;
     camera.updateMatrixWorld();
     const visible = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
@@ -271,6 +296,7 @@ export class Engine {
 
   showTrees(visible: boolean) {
     this.#vegetation.visible = visible;
+    this.#reflection?.invalidate();
     this.#renderer.shadowMap.needsUpdate = true;
     this.#redraw = true;
   }
@@ -341,6 +367,14 @@ export class Engine {
     };
   }
 
+  // Trees change level with the view and models arrive late, so this runs per pass.
+  #markMirrored() {
+    for (const root of [this.#vegetation, ...[...this.#built.values()].map(b => b.root)]) root.traverse(o => {
+      const material = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (material && !material.userData?.groundSurface) o.layers.enable(MIRRORED);
+    });
+  }
+
   #building(id: string) {
     const b = this.buildings.find(b => b.id === id);
     if (!b) throw new Error(`Building ${id} is not in the scene data`);
@@ -356,7 +390,7 @@ export class Engine {
     const turning = this.camera.update(now);
     for (const listener of this.#frameListeners) listener();
     this.#stats.frames++;
-    if (!this.#redraw && !turning && !this.continuous) return;
+    if (!this.#redraw && !turning && !this.continuous && !this.#reflection?.pending(now)) return;
     const ppm = this.camera.pixelsPerMetre;
     const level = ppm > 5 ? 2 : ppm > 1.8 ? 1 : 0;
     this.#level = level;
@@ -369,7 +403,12 @@ export class Engine {
     if (this.#placements?.update(target, ppm)) this.#renderer.shadowMap.needsUpdate = true;
     this.#sun.follow(camera, target, this.#shadowAnchors);
     this.camera.prepareRender();
+    fitHaze(this.#scene.fog as THREE.Fog, camera, target);
+    // Ripples are held still unless every frame is being drawn anyway: moving them
+    // would mean redrawing the whole town continuously for the sake of the water.
+    if (this.continuous) this.#water.time.value = now / 1000;
     const started = performance.now();
+    this.#reflection?.update(this.#scene, camera, now, level > 0, () => this.#markMirrored());
     this.#renderer.render(this.#scene, camera);
     const stats = this.#stats, info = this.#renderer.info.render;
     stats.draws = info.calls; // the main pass only; the outline pass resets these
