@@ -10,8 +10,10 @@ export const refined: BuildingOverride = {
     const model = createFinished(context);
     context.scene.add(model.root);
     model.root.userData.dispose = model.dispose;
-    return {root: model.root, groundPatches: [], ready: model.ready, setTextures: on => model.setTextures?.(on)};
+    const ready = Promise.resolve(model.ready).then(() => context.changed?.());
+    return {root: model.root, groundPatches: [], ready, setTextures: on => model.setTextures?.(on)};
   },
   entrances: () => [frontDoorFoot(), rearDoorFoot()],
+  detailShadows: true,
   seatsOnGround: true,
 };

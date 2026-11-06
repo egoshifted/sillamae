@@ -28,7 +28,8 @@ const STUDIO_LIFT = .05, STUDIO_RISE = .01; // metres of depth lift and height o
 // Override models paint procedural textures on canvases. Here only their
 // geometry matters, so canvases are inert stand-ins.
 const blankImage = (x: number, y: number, width: number, height: number) => ({data: new Uint8ClampedArray(width * height * 4)});
-const inertContext = () => new Proxy({}, {get: (target: Record<string | symbol, unknown>, key) => key === 'createImageData' ? undefined : key === 'getImageData' ? blankImage : key in target ? target[key] : () => {}});
+const blankGradient = () => ({addColorStop() {}});
+const inertContext = () => new Proxy({}, {get: (target: Record<string | symbol, unknown>, key) => key === 'createImageData' ? undefined : key === 'getImageData' ? blankImage : key === 'createLinearGradient' || key === 'createRadialGradient' ? blankGradient : key in target ? target[key] : () => {}});
 Object.assign(globalThis, {document: {createElement: () => ({width: 0, height: 0, getContext: inertContext})}});
 
 async function build() {
