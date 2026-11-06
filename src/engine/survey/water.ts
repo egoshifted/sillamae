@@ -129,7 +129,7 @@ export function waterSurface<M extends THREE.MeshStandardMaterial>(material: M, 
     material, time: uniforms.waterTime, reflectionMap: uniforms.reflectionMap, reflectionMatrix: uniforms.reflectionMatrix, reflecting: uniforms.reflecting,
     // sun: unit vector towards it. Sky colours are linear, and warm with a low sun.
     setSky(sun: THREE.Vector3) {
-      const height = THREE.MathUtils.smoothstep(sun.y, .45, .9);
+      const height = THREE.MathUtils.smoothstep(sun.y, .2, .62);
       direction.copy(sun);
       uniforms.skyZenith.value.copy(lerp(SKY.zenith.low, SKY.zenith.high, height));
       uniforms.skyHorizon.value.copy(lerp(SKY.horizon.low, SKY.horizon.high, height));

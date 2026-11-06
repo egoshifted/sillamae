@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {CameraController, type CameraView} from './camera/controller.ts';
 import {WorldClock} from './clock.ts';
 import {clippingPlanes, extentEdges, insideExtent} from './extent.ts';
+import {fitHaze} from './lighting/haze.ts';
 import {addSun} from './lighting/sun.ts';
 import {lineMeshes} from './lines.ts';
 import {tileBounds, type BuiltLine, type NavData, type SurveyBucket, type SurveyManifest, type WorldData, type Zone} from './data.ts';
@@ -31,7 +32,7 @@ export interface World {
 export class Engine {
   readonly frame: WorldFrame;
   readonly buildings: Building[];
-  readonly clock = new WorldClock(0);
+  readonly clock = new WorldClock(.3);
   readonly camera: CameraController;
   focusedId = '';
   continuous = false;
@@ -76,7 +77,6 @@ export class Engine {
     for (const o of city.overrides) this.#overrides.set(o.id, o);
     const [ox, oz] = this.frame.origin;
 
-    this.#scene.background = new THREE.Color('#e0e6d9');
 
     const renderer = this.#renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
@@ -103,6 +103,8 @@ export class Engine {
     const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildingNumbers, data.base, mobile);
     this.#setSurveyTextures = materials.setTextures;
     this.#water = materials.water;
+    this.#scene.background = this.#sun.air;
+    this.#scene.fog = new THREE.Fog(this.#sun.air);
     materials.water.setSky(this.#sun.direction());
     // A phone would pay for a second town pass with the frame rate it is already short of.
     if (!mobile) {
@@ -395,6 +397,7 @@ export class Engine {
     if (this.#placements?.update(target, ppm)) this.#renderer.shadowMap.needsUpdate = true;
     this.#sun.follow(camera, target, this.#shadowAnchors);
     this.camera.prepareRender();
+    fitHaze(this.#scene.fog as THREE.Fog, camera, target);
     // Ripples are held still unless every frame is being drawn anyway: moving them
     // would mean redrawing the whole town continuously for the sake of the water.
     if (this.continuous) this.#water.time.value = now / 1000;
