@@ -1,0 +1,28 @@
+{
+  "source": "Maa- ja Ruumiamet orthophoto WMS EESTIFOTO",
+  "crs": "EPSG:3301",
+  "fetched": "2026-11-06",
+  "west": 712600,
+  "north": 6590800,
+  "width": 2100,
+  "height": 2000,
+  "cell": 1,
+  "rows": "north to south",
+  "bodies": [
+    {
+      "level": 5.1175,
+      "area": 17215,
+      "replacesSurvey": false
+    },
+    {
+      "level": 8.025,
+      "area": 109053,
+      "replacesSurvey": true
+    },
+    {
+      "level": 14.1,
+      "area": 273703,
+      "replacesSurvey": true
+    }
+  ]
+}

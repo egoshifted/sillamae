@@ -1,22 +1,27 @@
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TRIANGLE, type CityDefinition, type SceneData} from '../src/engine/types.ts';
 import {squareOf} from './roads.ts';
+import {NO_TRACED_WATER} from './water-bodies.ts';
 
 // Metres. Survey water ends on a polygon of 10-16 m triangles, while the terrain
 // model flattens every water body to a surface about 15 cm above it, bounded by
 // a surveyed shoreline. So the terrain model decides where the shore runs, and
-// the survey only says which low ground is water and at what level.
+// the survey only says which low ground is water and at what level. Lakes traced from
+// the orthophoto take precedence over it.
 const HUGE = 60; // wider or longer survey triangles are the sea sheets
+const OVERRULED_WITHIN = 1, FLAT_REACH = 24;
 const REACH = 64; // water levels spread this far beyond the survey polygons, which can sit well inside the terrain model's water
 const LEVEL_BLUR = 5, GROUND_BLUR = 1, EDGE_BLUR = 2, PASSES = 3;
 const MAX_ABOVE_TERRAIN = 1.5, MAX_FLOOD = 2.5, MIN_SURVEYED = .15, MAX_FLOOD_OUTSIDE = .25, MIN_OPEN_SEA = 5000;
 const BLOCK = 32, FLAT_SHARE = .6, FLAT_RANGE = [-.02, .4], ABOVE_FLAT = .04;
 const MIN_ISLET = 1000, MIN_POND = 60, MIN_CHANNEL = 6; // square metres
 export const WATER_CELL = 4;
-const UNDER_LAND = 2, SEA_STRIP = 48; // water runs under the banks; the survey sheets take over offshore
+// LAKE_BANK must outreach the water cells' overlap, a full cell past UNDER_LAND: land behind
+// a dam lies below the lake, and its water would show through. Elsewhere banks rise on their own.
+const UNDER_LAND = 1, SEA_STRIP = 48; // water runs under the banks; the survey sheets take over offshore
 const AREA_FADE = 40;
 export const SHORE_RANGE = 16; // the depth tint in the water mesh's colour reaches open water here
-const BANK = 4, BEACH_SLOPE = .1, BED_SLOPE = .25, BED_START = .05;
+const BANK = 4, LAKE_BANK = 7, BEACH_SLOPE = .1, BED_SLOPE = .25, BED_START = .05;
 const RING = 3; // ground kept under the water, so the bank crosses the surface instead of ending at it
 const WET = 1.6, WET_COLOUR = [.34, .29, .21], WET_SHARE = .55;
 
@@ -164,15 +169,27 @@ function spreadLevels(level: Float32Array, width: number, height: number, reach:
 }
 
 // terrain: the terrain model alone; graded: the surface the rebuilt ground otherwise takes.
-export function shoreline(v: Float32Array, isWater: (i: number) => boolean, terrain: HeightAt, graded: HeightAt, scene: SceneData, city: CityDefinition) {
+export function shoreline(v: Float32Array, isWater: (i: number) => boolean, terrain: HeightAt, graded: HeightAt, scene: SceneData, city: CityDefinition, traced = NO_TRACED_WATER) {
   const [ox, oz] = city.frame.origin, [[x0, z0], , [x1, z1]] = squareOf(scene, city)[0];
   const minX = x0 + ox, minZ = z0 + oz, width = Math.round(x1 - x0) + 1, height = Math.round(z1 - z0) + 1, count = width * height;
   const {level, sea} = surveyLevels(v, isWater, minX, minZ, width, height);
   const ground = new Float32Array(count);
   for (let j = 0, at = 0; j < height; j++) for (let i = 0; i < width; i++) ground[at++] = terrain(minX + i, minZ + j) ?? NaN;
   const stray = dropStrayWater(level, ground, width, height);
-  const surveyed = Uint8Array.from(level, l => Number.isNaN(l) ? 0 : 1);
+  // Survey polygons at a traced lake's level overstate it, painting its dry shallows as water.
+  const overruled = traced.bodies.filter(b => b.replacesSurvey).map(b => b.level);
+  for (let k = 0; k < count; k++) if (overruled.some(l => Math.abs(level[k] - l) < OVERRULED_WITHIN)) level[k] = NaN;
+  const body = new Uint8Array(count), flat = new Float32Array(count).fill(NaN), pinned = new Float32Array(count).fill(NaN);
+  for (let j = 0, at = 0; j < height; j++) for (let i = 0; i < width; i++, at++) body[at] = traced.at(minX + i, minZ + j);
+  const surveyed = Uint8Array.from(level, (l, k) => Number.isNaN(l) && !body[k] ? 0 : 1);
   liftToFlatWater(level, ground, width, height);
+  // An open lake's level stays out of the spreading: its banks are flat wet forest in the
+  // terrain model, and would flood. The photo already shows where it ends.
+  for (let k = 0; k < count; k++) if (body[k]) {
+    const {level: height, replacesSurvey} = traced.bodies[body[k] - 1];
+    pinned[k] = height + ABOVE_FLAT;
+    if (replacesSurvey) flat[k] = pinned[k]; else level[k] = pinned[k];
+  }
   const seaLevel = sea + ABOVE_FLAT;
   for (let k = 0; k < count; k++) if (Number.isNaN(level[k]) && ground[k] < seaLevel - .01) level[k] = seaLevel;
   // The rectangle overhangs the terrain model over the open sea. Holes that do not
@@ -187,12 +204,17 @@ export function shoreline(v: Float32Array, isWater: (i: number) => boolean, terr
   const water = boxBlur(level, width, height, LEVEL_BLUR, PASSES), relief = boxBlur(ground, width, height, GROUND_BLUR, PASSES);
   // Past the shore too, so a water cell on the last flooded metre has all its corners.
   spreadLevels(water, width, height, WATER_CELL * 2);
+  // Lakes either side of an embankment stand metres apart; blurring would tilt them both,
+  // and each bank must take the level of the water it faces, whichever reaches it first.
+  spreadLevels(flat, width, height, FLAT_REACH);
+  spreadLevels(pinned, width, height, FLAT_REACH);
+  for (let k = 0; k < count; k++) if (!Number.isNaN(pinned[k])) water[k] = pinned[k];
 
   // Land well below a nearby water level lies behind a dam or bank: only the margin
   // of a flat water surface may flood past what the survey painted.
   let bodies = 0;
   const flooded = new Uint8Array(count);
-  for (let k = 0; k < count; k++) flooded[k] = beyond[k] || (Number.isNaN(relief[k]) ? surveyed[k] : relief[k] < water[k] && water[k] - relief[k] < (surveyed[k] ? MAX_FLOOD : MAX_FLOOD_OUTSIDE) ? 1 : 0);
+  for (let k = 0; k < count; k++) flooded[k] = beyond[k] || body[k] ? 1 : !Number.isNaN(flat[k]) ? 0 : (Number.isNaN(relief[k]) ? surveyed[k] : relief[k] < water[k] && water[k] - relief[k] < (surveyed[k] ? MAX_FLOOD : MAX_FLOOD_OUTSIDE) ? 1 : 0);
   // Real water is mostly surveyed or open to the sea: a hollow beside a stray scrap of
   // paint, or below sea level inland, stays dry however low it lies.
   regions(flooded, width, height, cells => {
@@ -212,6 +234,10 @@ export function shoreline(v: Float32Array, isWater: (i: number) => boolean, terr
   const core = distanceInside(flooded, width, height).map(d => d > MIN_CHANNEL / 2 ? 1 : 0);
   const fromCore = distanceInside(Uint8Array.from(core, c => 1 - c), width, height);
   for (let k = 0; k < count; k++) if (flooded[k] && !beyond[k] && fromCore[k] > MIN_CHANNEL / 2 + 1) flooded[k] = 0;
+  // Dark pixels just off a traced shore survive that, and would be carved into pits in the bank.
+  regions(flooded, width, height, cells => {
+    if (cells.length < MIN_POND) for (const k of cells) flooded[k] = 0;
+  });
   const toWater = distanceInside(flooded.map(f => 1 - f), width, height), toLand = distanceInside(flooded, width, height);
   const signed = new Float32Array(count);
   for (let k = 0; k < count; k++) signed[k] = Math.min(toWater[k], SEA_STRIP * 2) - Math.min(toLand[k], SEA_STRIP * 2);
@@ -225,14 +251,15 @@ export function shoreline(v: Float32Array, isWater: (i: number) => boolean, terr
     const u = gx - i, t = gz - j, k = j * width + i;
     return (field[k] * (1 - u) + field[k + 1] * u) * (1 - t) + (field[k + width] * (1 - u) + field[k + width + 1] * u) * t;
   };
-  const shift = new Float32Array(count);
+  const banks = new Float32Array(count).fill(NaN);
   for (let j = 0, at = 0; j < height; j++) for (let i = 0; i < width; i++, at++) {
     const s = edge[at], level = water[at];
-    if (Number.isNaN(level) || s >= BANK) continue;
+    const bank = Number.isNaN(pinned[at]) ? BANK : LAKE_BANK;
+    if (Number.isNaN(level) || s >= bank) continue;
     const h = graded(minX + i, minZ + j);
-    if (h === null) continue;
-    const shaped = s >= 0 ? level + BEACH_SLOPE * s + (Math.max(h, level + BEACH_SLOPE * s) - level - BEACH_SLOPE * s) * smooth(s / BANK) : level - BED_START + BED_SLOPE * s;
-    shift[at] = shaped - h;
+    if (h === null || s >= BANK && h > level + BEACH_SLOPE * s) continue; // past the usual bank, only low ground moves
+    const shaped = s >= 0 ? level + BEACH_SLOPE * s + (Math.max(h, level + BEACH_SLOPE * s) - level - BEACH_SLOPE * s) * smooth(s / bank) : level - BED_START + BED_SLOPE * s;
+    banks[at] = shaped;
   }
 
   const triangles: number[] = [];
@@ -260,9 +287,17 @@ export function shoreline(v: Float32Array, isWater: (i: number) => boolean, terr
   return {
     triangles,
     report: `shoreline: ${cells} water cells of ${WATER_CELL} m, ${bodies} water bodies, ${islets} survey islets flooded, ${stray} stray water patches ignored, water level ${seaLevel.toFixed(2)} m at sea`,
+    // Between grid points a bank is the plane through them: the raw terrain plus an offset
+    // sags below the water where the real bank climbs metres in a cell, and the drape samples there.
     heightAt: ((x, z) => {
-      const h = graded(x, z), by = bilinear(shift, x, z);
-      return h === null || by === null ? h : h + by;
+      const i = Math.floor(x - minX), j = Math.floor(z - minZ), k = j * width + i;
+      if (i < 0 || j < 0 || i >= width - 1 || j >= height - 1) return graded(x, z);
+      if ([k, k + 1, k + width, k + width + 1].every(n => Number.isNaN(banks[n]))) return graded(x, z);
+      const u = x - minX - i, t = z - minZ - j, node = (a: number, b: number) => {
+        const shaped = banks[(j + b) * width + i + a];
+        return Number.isNaN(shaped) ? graded(minX + i + a, minZ + j + b) ?? water[(j + b) * width + i + a] : shaped;
+      };
+      return (node(0, 0) * (1 - u) + node(1, 0) * u) * (1 - t) + (node(0, 1) * (1 - u) + node(1, 1) * u) * t;
     }) as HeightAt,
     // Rebuilt ground stops a little way under the water.
     keepsGround: (x: number, z: number) => (bilinear(edge, x, z) ?? 0) > -RING || Number.isNaN(bilinear(water, x, z)),

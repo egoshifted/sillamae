@@ -13,6 +13,7 @@ import {gradeRoads} from './grade.ts';
 import {withTerrainEdits} from '../src/engine/terrain-edit.ts';
 import {blendSites, gridGround, seatBuildings, surveyWater} from './ground.ts';
 import {shoreline} from './shore.ts';
+import {deckAt, loadTracedWater} from './water-bodies.ts';
 import {buildNav} from './nav.ts';
 import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSites, markStudioRoads, streetLines, studioLines, studioSurfaces} from './placements.ts';
 import {buildRoads, clearFootwayPaint, layRoads, moveTreesOffPaths} from './roads.ts';
@@ -53,16 +54,17 @@ async function build() {
       return {minX: Math.min(...xs) - 12, maxX: Math.max(...xs) + 12, minZ: Math.min(...zs) - 12, maxZ: Math.max(...zs) + 12};
     });
     // Graded banks shape the ground alone: bridges and paths keep the graded height over the water.
-    const shore = shoreline(cleared, surveyWater(cleared), model, heightAt, data, sillamae);
+    const shore = shoreline(cleared, surveyWater(cleared), model, heightAt, data, sillamae, loadTracedWater(geo.toGrid));
     const allTrees = data.trees.length;
     data.trees = data.trees.filter(t => shore.onLand(...t.p));
     const {vertices: gridded, textured, report: groundReport} = gridGround(cleared, shore.heightAt, data, sillamae, shore, roadBounds);
     const {vertices: seatedAll, report: seatReport} = seatBuildings(gridded, vertices, heightAt, data, sillamae);
     const {vertices: seated, report: hiddenReport} = dropHidden(seatedAll, data, sites, sillamae);
     const {buckets, siteGround, settled, draped, patches} = prepareSurvey(seated, data, sillamae, shore.heightAt, [textured]);
+    const overWater = deckAt(sillamae.decks ?? [], sillamae.frame.origin);
     // Studio areas are laid on their own and drawn over any footway they overlap.
-    const drawn = layRoads(studioSurfaces(sites, sillamae), buckets, sillamae, data.base, patches, heightAt).map(s => ({...s, lift: s.lift + STUDIO_LIFT, ring: s.ring.map(([x, y, z]): [number, number, number] => [x, y + STUDIO_RISE, z])}));
-    const roads = [...layRoads(shapes, buckets, sillamae, data.base, patches, heightAt), ...drawn];
+    const drawn = layRoads(studioSurfaces(sites, sillamae), buckets, sillamae, data.base, patches, heightAt, overWater).map(s => ({...s, lift: s.lift + STUDIO_LIFT, ring: s.ring.map(([x, y, z]): [number, number, number] => [x, y + STUDIO_RISE, z])}));
+    const roads = [...layRoads(shapes, buckets, sillamae, data.base, patches, heightAt, overWater), ...drawn];
     markStudioRoads(roads, sites, sillamae);
     const lines = studioLines(sites, sillamae, heightAt, data.base);
     const {stairs, report: stairReport} = buildStairs(streets, data, sillamae, georef, heightAt);

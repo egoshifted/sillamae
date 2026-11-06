@@ -17,6 +17,7 @@ import type {AssetDefinition, Building, BuildingOverride, BuiltOverride, CityDef
 import {addRoads} from './roads.ts';
 import {addStairs} from './stairs.ts';
 import {addTrees} from './vegetation/trees.ts';
+import {addWaterworks} from './waterworks.ts';
 import {restoreGround} from './survey/restore-ground.ts';
 import {waterReflection, type WaterReflection} from './water-reflection.ts';
 
@@ -46,6 +47,7 @@ export class Engine {
   readonly #survey: ReturnType<typeof addSurveyLayer>;
   readonly #water: WaterSurface;
   #reflection: WaterReflection | null = null;
+  #mirrorMarksOwed = true;
   readonly #forest: ReturnType<typeof addTrees>;
   readonly #vegetation = new THREE.Group();
   #placements: ReturnType<typeof addPlacements> | null = null;
@@ -115,7 +117,6 @@ export class Engine {
     if (!mobile) {
       this.#scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(MIRRORED); });
       this.#reflection = waterReflection(renderer, materials.water, -data.base);
-      materials.water.reflectionMap.value = this.#reflection.texture;
     }
     this.clock.onChange(k => { this.#sun.setDaylight(k); sky.paint(this.#sun.air); materials.water.setSky(this.#sun.direction()); this.#reflection?.invalidate(); this.#redraw = true; });
 
@@ -127,6 +128,7 @@ export class Engine {
     this.#scene.add(this.#vegetation);
     this.#forest = addTrees(this.#vegetation, data.trees.filter(t => within(t.p)), this.frame);
     addStairs(this.#scene, data.stairs);
+    addWaterworks(this.#scene, city.waterworks ?? [], data.base);
     addRoads(this.#scene, data.roads, renderer.capabilities.getMaxAnisotropy(), data.roadCuts?.map(c => ({...c, exposeGround: true})));
 
     this.#prisms = buildingPrisms(this.buildings, this.frame);
@@ -139,14 +141,15 @@ export class Engine {
     for (const o of this.#city.overrides) {
       const building = this.#building(o.id), ground = this.#data.siteGround[o.id];
       if (!ground) throw new Error(`No site ground for ${o.id}; rebuild the data`);
-      const built = o.build({scene: this.#scene, building, terrain: this.#data.terrain, frame: this.frame, ground, changed: () => { this.#redraw = true; }});
+      const built = o.build({scene: this.#scene, building, terrain: this.#data.terrain, frame: this.frame, ground, changed: () => { this.#mirrorMarksOwed = true; this.#redraw = true; }});
       this.#built.set(o.id, built);
       if (built.ready) ready.push(built.ready);
       if (built.root.userData.ready) ready.push(built.root.userData.ready);
       tagBuilding(built.root, building.pick);
       if (o.detailShadows) this.#shadowAnchors.push(new THREE.Vector3(building.c[0] - ox, 6, building.c[1] - oz));
     }
-    return Promise.all(ready);
+    this.#mirrorMarksOwed = true;
+    return Promise.all(ready).then(result => { this.#mirrorMarksOwed = true; return result; });
   }
 
   addPlacements(placements: Placement[], assets: ReadonlyMap<string, AssetDefinition>) {
@@ -367,8 +370,9 @@ export class Engine {
     };
   }
 
-  // Trees change level with the view and models arrive late, so this runs per pass.
+  // Models arrive late; this walks every tree and part, so it runs only when they change.
   #markMirrored() {
+    this.#mirrorMarksOwed = false;
     for (const root of [this.#vegetation, ...[...this.#built.values()].map(b => b.root)]) root.traverse(o => {
       const material = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (material && !material.userData?.groundSurface) o.layers.enable(MIRRORED);
@@ -408,7 +412,8 @@ export class Engine {
     // would mean redrawing the whole town continuously for the sake of the water.
     if (this.continuous) this.#water.time.value = now / 1000;
     const started = performance.now();
-    this.#reflection?.update(this.#scene, camera, now, level > 0, () => this.#markMirrored());
+    if (this.#mirrorMarksOwed) this.#markMirrored();
+    this.#reflection?.update(this.#scene, camera, now, level > 0);
     this.#renderer.render(this.#scene, camera);
     const stats = this.#stats, info = this.#renderer.info.render;
     stats.draws = info.calls; // the main pass only; the outline pass resets these

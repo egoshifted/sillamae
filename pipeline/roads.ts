@@ -83,6 +83,13 @@ export function buildRoads(osm: OsmExtract, scene: SceneData, city: CityDefiniti
     const widths = f.properties.osm_way_ids.map((id: number) => measured.get(id)).filter((w?: number | null) => w);
     if (widths.length) grow.set(f.properties.id, Math.max(-MAX_GROW, Math.min(MAX_GROW, (median(widths) - built.get(f.properties.id)!) / 2)));
   }
+  // A bridge is its own short way, too short to measure, and would pinch the road across it.
+  const roads = plain.filter(f => f.properties.type === 'road' && built.has(f.properties.id));
+  for (const f of roads) {
+    if (grow.has(f.properties.id) || !f.properties.osm_way_ids.some((id: number) => ways.find(w => w.id === id)?.tags.bridge)) continue;
+    const ends = [f.properties.src_i, f.properties.dst_i], beside = roads.filter(r => r !== f && grow.has(r.properties.id) && ends.some(j => [r.properties.src_i, r.properties.dst_i].includes(j)));
+    if (beside.length) grow.set(f.properties.id, median(beside.map(r => grow.get(r.properties.id)!)));
+  }
   const junctionGrow = new Map<number, number>();
   for (const f of plain) if (f.properties.type === 'road' && grow.has(f.properties.id))
     for (const j of [f.properties.src_i, f.properties.dst_i]) junctionGrow.set(j, Math.max(junctionGrow.get(j) ?? -MAX_GROW, grow.get(f.properties.id)!));
@@ -228,13 +235,13 @@ export function splitTriangle(v: Float32Array, i: number, region: Point2[][], ci
 // The rectangle, in the local frame, within which roads are built: every
 // building plus a margin. half is [x, z].
 // Metres past the town's buildings on the sides where its water runs on: a shore
-// must not change character halfway along. South and east the terrain model ends too soon.
-const SHORE_MARGIN = {west: 100, north: 170};
+// must not change character halfway along. East the terrain model ends too soon.
+const SHORE_MARGIN = {west: 100, north: 170, south: 380};
 
 export function roadArea(scene: SceneData, city: CityDefinition) {
   const [ox, oz] = city.frame.origin;
   const xs = scene.buildings.flatMap(b => b.g.map(p => p[0] - ox)), zs = scene.buildings.flatMap(b => b.g.map(p => p[1] - oz));
-  const west = Math.min(...xs) - TOWN_MARGIN - SHORE_MARGIN.west, east = Math.max(...xs) + TOWN_MARGIN, north = Math.min(...zs) - TOWN_MARGIN - SHORE_MARGIN.north, south = Math.max(...zs) + TOWN_MARGIN;
+  const west = Math.min(...xs) - TOWN_MARGIN - SHORE_MARGIN.west, east = Math.max(...xs) + TOWN_MARGIN, north = Math.min(...zs) - TOWN_MARGIN - SHORE_MARGIN.north, south = Math.max(...zs) + TOWN_MARGIN + SHORE_MARGIN.south;
   const [cx, cz] = [(west + east) / 2, (north + south) / 2];
   const half: [number, number] = [(east - west) / 2, (south - north) / 2];
   const inside = ([x, z]: Point2, margin = 0) => Math.abs(x - cx) <= half[0] + margin && Math.abs(z - cz) <= half[1] + margin;
@@ -294,7 +301,8 @@ function offset(rings: Point2[][], by: number, join: number): Point2[][] {
 // painted crossings, would shadow it. Layers that still rise between ring
 // points are outdrawn by a depth lift. Refined sites own the ground they lay,
 // so roads stop at their patches.
-export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[], heightAt: HeightAt) {
+// deckAt: height of a bridge over open water at source x/z, else null.
+export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[], heightAt: HeightAt, deckAt: HeightAt = () => null) {
   if (!shapes.length) return [];
   const [ox, oz] = city.frame.origin, ground = groundIndex(buckets);
   const sites = area(patches.map(p => p.map(([x, z]): Point2 => [x - ox, z - oz])));
@@ -322,7 +330,7 @@ export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefin
       if (g) { thick = Math.max(thick, g.top - g.low); layer = Math.max(layer, g.layer); found = true; }
     }
     const here = ground(x, z);
-    const terrain = here && found ? Math.max(here.top, here.low + thick) : heightAt(x, z);
+    const terrain = deckAt(x, z) ?? (here && found ? Math.max(here.top, here.low + thick) : heightAt(x, z));
     const result = terrain === null ? null : {top: terrain, layer};
     if (sampleCount >= 100000) { samples.clear(); sampleCount = 0; }
     let column = samples.get(x); if (!column) samples.set(x, column = new Map());

@@ -180,10 +180,30 @@ export interface RoadCut {
 
 export const TREE_MATCH = .75; // metres
 
+// A built box, or a flat patch for foam; ends in local metres, heights absolute.
+export interface Waterwork {
+  from: Point2;
+  to: Point2;
+  width: number;
+  bottom: number;
+  top: number;
+  material: 'concrete' | 'dark' | 'rail' | 'roof' | 'foam';
+}
+
+// A path carried over water: within half metres of the line it stands at this height, not on the ground.
+export interface Deck {
+  from: Point2; // local metres
+  to: Point2;
+  half: number;
+  height: [number, number]; // absolute, at from and to
+}
+
 export interface CityDefinition {
   terrainDetail?: Polygon; // source x/z; fine terrain inside, adaptive ground outside
   frame: Omit<WorldFrame, 'base'>;
   defaultFocus: string;
   overrides: BuildingOverride[];
   extent?: Polygon; // convex, source x/z; the viewer clips everything outside it
+  waterworks?: Waterwork[];
+  decks?: Deck[];
 }

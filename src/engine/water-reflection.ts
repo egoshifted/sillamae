@@ -2,17 +2,27 @@ import * as THREE from 'three';
 import type {SurveyBucket} from './data.ts';
 import {MIRRORED, type WaterSurface} from './survey/water.ts';
 
-const SCALE = .5; // of the drawing buffer
-const SETTLE_MS = 140; // the camera must rest this long; a moving view keeps sampling the last image
+const LIVE_SCALE = .3, REST_SCALE = .6; // of the drawing buffer
+const SETTLE_MS = 90; // the sharp image waits this long after the last move; a moving view draws the cheap one every frame
 const MASK_CELL = 32, MASK_SIZE = 512, MASK_SAMPLES = 28, SHEET = 6000; // metres; the sheet under the town is wider
+
+// Rounding as the camera is refitted each frame moves it by less than this, in metres, and an
+// exact comparison would then redraw for ever. Only a real move updates the stored matrix, so a
+// slow drift still adds up and registers.
+const STILL = 1e-3;
+export const sameView = (a: THREE.Matrix4, b: THREE.Matrix4) => a.elements.every((value, i) => Math.abs(value - b.elements[i]) < STILL);
 
 // Mirrors the camera about one plane. Because the view is orthographic, the same
 // image serves water at any level: mirroring about a higher plane only shifts
 // points by a constant, and the texture matrix applied to a fragment's own world
 // position takes that shift out. So rivers above the sea need no pass of their own.
 export function waterReflection(renderer: THREE.WebGLRenderer, surface: WaterSurface, plane: number) {
-  const target = new THREE.WebGLRenderTarget(1, 1, {type: THREE.HalfFloatType, samples: 4, depthBuffer: true});
-  target.texture.minFilter = target.texture.magFilter = THREE.LinearFilter;
+  const image = (scale: number, samples: number) => {
+    const target = new THREE.WebGLRenderTarget(1, 1, {type: THREE.HalfFloatType, samples, depthBuffer: true});
+    target.texture.minFilter = target.texture.magFilter = THREE.LinearFilter;
+    return {target, scale};
+  };
+  const live = image(LIVE_SCALE, 0), sharp = image(REST_SCALE, 4);
   const mirror = new THREE.OrthographicCamera(), matrix = surface.reflectionMatrix.value;
   mirror.layers.set(MIRRORED);
   const last = new THREE.Matrix4(), size = new THREE.Vector2(), clearColour = new THREE.Color();
@@ -20,7 +30,7 @@ export function waterReflection(renderer: THREE.WebGLRenderer, surface: WaterSur
   const corner = new THREE.Vector3(), bias = new THREE.Matrix4().set(.5, 0, 0, .5, 0, .5, 0, .5, 0, 0, .5, .5, 0, 0, 0, 1);
   const mask = new Uint8Array(MASK_SIZE * MASK_SIZE), half = MASK_SIZE / 2;
   const reflect = (v: THREE.Vector3) => v.setY(2 * plane - v.y);
-  let dirty = true, moved = 0;
+  let owed = true, changed = true, moved = 0;
 
   const markMask = (ax: number, az: number, bx: number, bz: number, cx: number, cz: number) => {
     const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
@@ -37,10 +47,10 @@ export function waterReflection(renderer: THREE.WebGLRenderer, surface: WaterSur
   // The sea's sheets span the whole frustum whatever the view, so bounding spheres
   // cannot say whether water is on screen; a coarse map of it can.
   const waterInView = (camera: THREE.OrthographicCamera) => {
+    camera.getWorldDirection(view);
+    if (Math.abs(view.y) < 1e-4) return true;
     for (let v = 0; v <= MASK_SAMPLES; v++) for (let u = 0; u <= MASK_SAMPLES; u++) {
       corner.set(u / MASK_SAMPLES * 2 - 1, v / MASK_SAMPLES * 2 - 1, 0).unproject(camera);
-      camera.getWorldDirection(view);
-      if (Math.abs(view.y) < 1e-4) return true;
       corner.addScaledVector(view, (plane - corner.y) / view.y);
       const i = Math.floor(corner.x / MASK_CELL) + half, j = Math.floor(corner.z / MASK_CELL) + half;
       if (i >= 0 && j >= 0 && i < MASK_SIZE && j < MASK_SIZE && mask[j * MASK_SIZE + i]) return true;
@@ -48,9 +58,9 @@ export function waterReflection(renderer: THREE.WebGLRenderer, surface: WaterSur
     return false;
   };
 
-  const render = (scene: THREE.Scene, camera: THREE.OrthographicCamera) => {
+  const render = (scene: THREE.Scene, camera: THREE.OrthographicCamera, {target, scale}: typeof live) => {
     renderer.getDrawingBufferSize(size);
-    const width = Math.ceil(size.x * SCALE), height = Math.ceil(size.y * SCALE);
+    const width = Math.ceil(size.x * scale), height = Math.ceil(size.y * scale);
     if (target.width !== width || target.height !== height) target.setSize(width, height);
     camera.getWorldDirection(view);
     reflect(eye.copy(camera.position));
@@ -78,14 +88,13 @@ export function waterReflection(renderer: THREE.WebGLRenderer, surface: WaterSur
     renderer.setClearColor(clearColour, alpha);
     scene.background = background;
     renderer.shadowMap.needsUpdate = shadows;
+    surface.reflectionMap.value = target.texture;
   };
 
   return {
-    texture: target.texture,
-
     // Must see the same programs as the pass: render targets skip tone mapping.
     async compile(scene: THREE.Scene, camera: THREE.Camera) {
-      renderer.setRenderTarget(target);
+      renderer.setRenderTarget(live.target);
       await renderer.compileAsync(scene, camera);
       renderer.setRenderTarget(null);
     },
@@ -96,32 +105,28 @@ export function waterReflection(renderer: THREE.WebGLRenderer, surface: WaterSur
         const [a, b, c] = index ? [index[t * 3], index[t * 3 + 1], index[t * 3 + 2]] : [t * 3, t * 3 + 1, t * 3 + 2];
         markMask(p[a * 3], p[a * 3 + 2], p[b * 3], p[b * 3 + 2], p[c * 3], p[c * 3 + 2]);
       }
-      dirty = true;
+      changed = true;
     },
 
     invalidate() {
-      dirty = true;
+      changed = true;
     },
 
-    // True while a fresh image is owed and only needs the camera to rest.
+    // True once a sharp image is owed and the camera has rested.
     pending(now: number) {
-      return dirty && now - moved >= SETTLE_MS;
+      return owed && now - moved >= SETTLE_MS;
     },
 
     // detailed: false at overview zoom, where buildings are too small to reflect.
-    update(scene: THREE.Scene, camera: THREE.OrthographicCamera, now: number, detailed: boolean, mark: () => void) {
-      if (!camera.matrixWorld.equals(last)) {
-        last.copy(camera.matrixWorld);
-        moved = now;
-        dirty = true;
-      }
-      if (!dirty || now - moved < SETTLE_MS) return;
-      dirty = false;
+    update(scene: THREE.Scene, camera: THREE.OrthographicCamera, now: number, detailed: boolean) {
+      if (!sameView(camera.matrixWorld, last)) { changed = true; last.copy(camera.matrixWorld); }
+      if (!changed && !(owed && now - moved >= SETTLE_MS)) return;
+      const resting = !changed;
+      if (changed) { changed = false; moved = now; owed = true; }
+      else owed = false;
       const visible = detailed && waterInView(camera);
       surface.reflecting.value = visible ? 1 : 0;
-      if (!visible) return;
-      mark();
-      render(scene, camera);
+      if (visible) render(scene, camera, resting ? sharp : live);
     },
   };
 }

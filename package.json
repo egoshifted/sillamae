@@ -14,6 +14,7 @@
     "build": "tsc -p . && node --max-old-space-size=8192 pipeline/build.ts && vite build",
     "preview": "vite preview",
     "dtm": "node pipeline/fetch-dtm.ts",
+    "water": "node pipeline/fetch-water.ts",
     "studio": "node --max-old-space-size=8192 pipeline/build.ts && vite --host 127.0.0.1 --port 5174 --strictPort --open /src/studio/",
     "studio:check": "node src/studio/tools/verify.ts",
     "studio:snapshot": "node src/studio/tools/snapshot.ts",

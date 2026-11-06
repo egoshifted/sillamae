@@ -5,7 +5,7 @@ import {georeference, type OsmExtract} from './geo.ts';
 import {sillamae} from '../src/city/sillamae/index.ts';
 import type {SceneData} from '../src/engine/types.ts';
 
-const WCS = 'https://teenus.maaamet.ee/ows/wcs-dtm', TILE = 1000, MARGIN = 200; // metres
+const WCS = 'https://teenus.maaamet.ee/ows/wcs-dtm', TILE = 1000, MARGIN = 200, SOUTH_SHORE = 400; // metres; the lake south of the highway runs past the town
 const NO_DATA = -32768;
 
 const scene: SceneData = JSON.parse(fs.readFileSync('data/source/scene.json', 'utf8'));
@@ -13,7 +13,7 @@ const osm: OsmExtract = JSON.parse(fs.readFileSync('data/source/osm.json', 'utf8
 const m = georeference(osm, scene, sillamae).geo.toGrid;
 const corners = scene.buildings.flatMap(b => b.g).map(([x, z]) => [m[0] * x + m[1] * z + m[2], m[3] * x + m[4] * z + m[5]]);
 const west = Math.floor(Math.min(...corners.map(c => c[0])) - MARGIN), east = Math.ceil(Math.max(...corners.map(c => c[0])) + MARGIN);
-const south = Math.floor(Math.min(...corners.map(c => c[1])) - MARGIN), north = Math.ceil(Math.max(...corners.map(c => c[1])) + MARGIN);
+const south = Math.floor(Math.min(...corners.map(c => c[1])) - MARGIN - SOUTH_SHORE), north = Math.ceil(Math.max(...corners.map(c => c[1])) + MARGIN);
 const width = east - west, height = north - south;
 const heights = new Int16Array(width * height).fill(NO_DATA);
 
