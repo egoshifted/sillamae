@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the local URL printed by the server. The first run generates the town data and can take several minutes. Later runs reuse verified output when the inputs are unchanged. The viewer requires WebGL and DecompressionStream.
+Open the local URL printed by the server. The first run generates the town data and can take a few minutes. Later runs reuse verified output when the inputs are unchanged, and start straight away with a warning when only files inside building folders changed, because models load live from source. The viewer requires WebGL and DecompressionStream.
 
 | Command | Purpose |
 | --- | --- |

@@ -15,16 +15,37 @@ export function files(root: string, paths: string[]) {
   paths.forEach(visit); return result;
 }
 
+interface BuildRecord {signature: string; node?: string; inputs?: Record<string, string>; outputs: Record<string, string>}
+const intact = (directory: string, record: BuildRecord) => Object.keys(record.outputs).length > 0 && Object.entries(record.outputs).every(([file, digest]) => hash(fs.readFileSync(path.join(directory, file))) === digest);
+
+// Inputs that differ from those the published data was built from, or null when that data cannot be used.
+export function changedInputs(root: string, inputs = buildInputs) {
+  try {
+    const output = path.join(fs.realpathSync(root), 'public', 'data');
+    const record = JSON.parse(fs.readFileSync(path.join(output, '.build.json'), 'utf8')) as BuildRecord;
+    if (!record.inputs || record.node !== process.versions.node || !intact(output, record)) return null;
+    const now = files(root, inputs), built = record.inputs;
+    return [...new Set([...Object.keys(now), ...Object.keys(built)])].filter(name => now[name] !== built[name]);
+  } catch { return null; }
+}
+
+// Refined models load live from source and reach the data only through their ground
+// patches and entrances. City-level files and assets feed the data directly, and a new
+// registration needs its site ground, so those still rebuild.
+const liveModel = /^(src\/city\/sillamae\/(?!assets\/)[^/]+\/|src\/studio\/assembly\/)/;
+export const onlyLiveModels = (changed: string[]) => changed.every(name => liveModel.test(name));
+
 export async function beginBuild(root: string, inputs = buildInputs, force = false) {
   root = fs.realpathSync(root);
   const publicDir = path.join(root, 'public'), output = path.join(publicDir, 'data'), lock = path.join(publicDir, '.data-build.lock');
   fs.mkdirSync(publicDir, {recursive: true});
-  const fingerprint = () => hash(JSON.stringify({node: process.versions.node, inputs: files(root, inputs)}));
-  const signature = fingerprint();
+  const sign = (current: Record<string, string>) => hash(JSON.stringify({node: process.versions.node, inputs: current}));
+  const fingerprint = () => sign(files(root, inputs));
+  const snapshot = files(root, inputs), signature = sign(snapshot);
   const valid = (directory = output) => {
     try {
-      const record = JSON.parse(fs.readFileSync(path.join(directory, '.build.json'), 'utf8')) as {signature: string; outputs: Record<string, string>};
-      return record.signature === signature && Object.keys(record.outputs).length > 0 && Object.entries(record.outputs).every(([file, digest]) => hash(fs.readFileSync(path.join(directory, file))) === digest);
+      const record = JSON.parse(fs.readFileSync(path.join(directory, '.build.json'), 'utf8')) as BuildRecord;
+      return record.signature === signature && intact(directory, record);
     } catch { return false; }
   };
   const start = Date.now();
@@ -71,7 +92,7 @@ export async function beginBuild(root: string, inputs = buildInputs, force = fal
     return {directory, close, commit() {
       if (fingerprint() !== signature) throw Error('Data inputs changed during the build; existing output was retained');
       const outputs = files(directory, fs.readdirSync(directory).sort());
-      fs.writeFileSync(path.join(directory, '.build.json'), JSON.stringify({signature, outputs}));
+      fs.writeFileSync(path.join(directory, '.build.json'), JSON.stringify({signature, node: process.versions.node, inputs: snapshot, outputs}));
       try { publish(directory); }
       catch (error) { preserve = true; throw new Error(`Data publication failed; verified output retained at ${directory}. Close processes holding public/data and rerun npm run data.`, {cause: error}); }
       close();
