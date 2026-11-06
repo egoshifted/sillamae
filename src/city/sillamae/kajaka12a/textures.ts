@@ -5,14 +5,14 @@ export const tile = {sheet: 1.336, plank: 1.2, steel: 3, brick: {u: 2.2, v: .996
 
 type Shade = number | [number, number, number] | [number, number, number, number];
 
-const hash = (a: number, b: number) => {
+export const hash = (a: number, b: number) => {
   let v = Math.imul(a + 7919, b + 3719);
   v = Math.imul(v ^ (v >>> 13), 1274126177);
   return (v >>> 0) / 4294967296;
 };
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
-function noise(x: number, y: number, cellX: number, cellY: number, size: number) {
+export function noise(x: number, y: number, cellX: number, cellY: number, size: number) {
   const across = Math.round(size / cellX), down = Math.round(size / cellY), cx = Math.floor(x / cellX), cy = Math.floor(y / cellY);
   const fx = smooth(x / cellX - cx), fy = smooth(y / cellY - cy), at = (a: number, b: number) => hash((a + across) % across, (b + down) % down);
   return (at(cx, cy) * (1 - fx) + at(cx + 1, cy) * fx) * (1 - fy) + (at(cx, cy + 1) * (1 - fx) + at(cx + 1, cy + 1) * fx) * fy;
@@ -20,7 +20,7 @@ function noise(x: number, y: number, cellX: number, cellY: number, size: number)
 
 // DataTextures, because the data build has no canvas to draw on. These multiply the scheduled
 // colours, so they stay near white: a mid-grey base darkens every door away from its schedule.
-function texture(size: number, shade: (x: number, y: number) => Shade, colour: boolean, height = size) {
+export function texture(size: number, shade: (x: number, y: number) => Shade, colour: boolean, height = size) {
   const data = new Uint8Array(size * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < size; x++) {
     const value = shade(x, y), [r, g, b, a = 255] = typeof value === 'number' ? [value, value, value] : value;
