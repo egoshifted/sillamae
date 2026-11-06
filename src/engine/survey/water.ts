@@ -48,6 +48,7 @@ uniform vec3 skyZenith;
 uniform vec3 skyHorizon;
 uniform vec3 sunDirection;
 uniform vec3 sunGlow;
+uniform float waterDusk;
 uniform sampler2D reflectionMap;
 uniform mat4 reflectionMatrix;
 uniform float reflecting;
@@ -104,14 +105,15 @@ if (reflecting > .5) {
   sky = mix(sky, scenery.rgb, scenery.a);
   fresnel = mix(fresnel, min(1., fresnel * 3.), scenery.a);
 }
-outgoingLight = mix(outgoingLight, mix(outgoingLight, sky, clamp(fresnel * (.58 + wind * .6), 0., 1.)), 1. - relief);
+outgoingLight = mix(outgoingLight, mix(outgoingLight, sky, clamp(fresnel * (.58 + wind * .6) + waterDusk, 0., 1.)), 1. - relief);
 #include <opaque_fragment>
 `;
 
 const lerp = (from: THREE.Color, to: THREE.Color, k: number) => from.clone().lerp(to, k);
+const DUSK_MIRROR = .24;
 const SKY = {
-  zenith: {low: new THREE.Color('#7f9fc4'), high: new THREE.Color('#5c8fce')},
-  horizon: {low: new THREE.Color('#f2cfa8'), high: new THREE.Color('#cfe0ee')},
+  zenith: {dusk: new THREE.Color('#5a5c84'), low: new THREE.Color('#7f9fc4'), high: new THREE.Color('#5c8fce')},
+  horizon: {dusk: new THREE.Color('#b9805f'), low: new THREE.Color('#f2cfa8'), high: new THREE.Color('#cfe0ee')},
   glow: {low: new THREE.Color('#ffb070').multiplyScalar(1.6), high: new THREE.Color('#fff4e0').multiplyScalar(1.1)},
 };
 
@@ -164,6 +166,7 @@ export function waterSurface<M extends THREE.MeshStandardMaterial>(material: M, 
     waterRipples: {value: ripples}, waterTime: {value: 0}, sunDirection: {value: direction},
     skyZenith: {value: SKY.zenith.high.clone()}, skyHorizon: {value: SKY.horizon.high.clone()}, sunGlow: {value: SKY.glow.high.clone()},
     reflectionMap: {value: null as THREE.Texture | null}, reflectionMatrix: {value: new THREE.Matrix4()}, reflecting: {value: 0},
+    waterDusk: {value: 0},
   };
   const overlay = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
@@ -191,10 +194,12 @@ export function waterSurface<M extends THREE.MeshStandardMaterial>(material: M, 
     material, time: uniforms.waterTime, reflectionMap: uniforms.reflectionMap, reflectionMatrix: uniforms.reflectionMatrix, reflecting: uniforms.reflecting,
     // sun: unit vector towards it. Sky colours are linear, and warm with a low sun.
     setSky(sun: THREE.Vector3) {
-      const height = THREE.MathUtils.smoothstep(sun.y, .2, .62);
+      const height = THREE.MathUtils.smoothstep(sun.y, .2, .62), dusk = 1 - THREE.MathUtils.smoothstep(sun.y, .07, .3);
       direction.copy(sun);
-      uniforms.skyZenith.value.copy(lerp(SKY.zenith.low, SKY.zenith.high, height));
-      uniforms.skyHorizon.value.copy(lerp(SKY.horizon.low, SKY.horizon.high, height));
+      uniforms.skyZenith.value.copy(lerp(SKY.zenith.low, SKY.zenith.high, height)).lerp(SKY.zenith.dusk, dusk);
+      uniforms.skyHorizon.value.copy(lerp(SKY.horizon.low, SKY.horizon.high, height)).lerp(SKY.horizon.dusk, dusk);
+      // The atlas looks steeply down, where water mirrors little; at sunset its colour comes from the sky anyway.
+      uniforms.waterDusk.value = dusk * DUSK_MIRROR;
       uniforms.sunGlow.value.copy(lerp(SKY.glow.low, SKY.glow.high, height));
     },
   };

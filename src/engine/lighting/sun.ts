@@ -8,8 +8,9 @@ const LIGHT = {
   fill: new THREE.Color('#c2d8ff'), bounce: new THREE.Color('#a6a284'),
   lowSun: new THREE.Color('#ffc592'), highSun: new THREE.Color('#ffebcc'),
   lowAir: new THREE.Color('#dcd8d4'), highAir: new THREE.Color('#d2e0ea'),
+  duskSun: new THREE.Color('#ff8f52'), duskFill: new THREE.Color('#d9bfd2'), duskBounce: new THREE.Color('#b08d7c'), duskAir: new THREE.Color('#f0b98f'),
 };
-const SUN_PATH = {rise: 105, set: 255, low: 12, high: 38}; // degrees: azimuth clockwise from north, height above the horizon
+const SUN_PATH = {rise: 105, set: 255, low: 4, high: 38}; // degrees: azimuth clockwise from north, height above the horizon
 
 export function shadowDistance(radius: number) { return radius + 200; }
 
@@ -49,12 +50,14 @@ export function addSun(scene: THREE.Scene, renderer: THREE.WebGLRenderer, daylig
       const height = THREE.MathUtils.degToRad(SUN_PATH.low + (SUN_PATH.high - SUN_PATH.low) * Math.sin(k * Math.PI));
       offset.set(Math.sin(azimuth) * Math.cos(height), Math.sin(height), -Math.cos(azimuth) * Math.cos(height));
       centre.set(1e9, 0, 0); // force the frustum to refresh
-      const day = THREE.MathUtils.smoothstep(Math.sin(k * Math.PI), .1, .8);
-      sun.color.copy(LIGHT.lowSun).lerp(LIGHT.highSun, day);
+      const day = THREE.MathUtils.smoothstep(Math.sin(k * Math.PI), .1, .8), dusk = 1 - THREE.MathUtils.smoothstep(Math.sin(k * Math.PI), .03, .36);
+      sun.color.copy(LIGHT.lowSun).lerp(LIGHT.highSun, day).lerp(LIGHT.duskSun, dusk);
       sun.intensity = 3 + day * .2; // a lower sun strikes the ground less squarely
       // Lambert divides this by pi, and the tone curve crushes what is left in the shade.
-      sky.intensity = 1.3 - day * .1;
-      air.copy(LIGHT.lowAir).lerp(LIGHT.highAir, day);
+      sky.intensity = 1.3 - day * .1 + dusk * .12; // at sunset the sky is most of the light on the ground
+      sky.color.copy(LIGHT.fill).lerp(LIGHT.duskFill, dusk);
+      sky.groundColor.copy(LIGHT.bounce).lerp(LIGHT.duskBounce, dusk);
+      air.copy(LIGHT.lowAir).lerp(LIGHT.highAir, day).lerp(LIGHT.duskAir, dusk);
       renderer.shadowMap.needsUpdate = true;
     },
 

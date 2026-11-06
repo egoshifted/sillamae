@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import type {Engine} from '../engine/engine.ts';
 
-const timeOfDay = (k: number) => k < .1 ? 'Early morning' : k < .4 ? 'Morning' : k < .6 ? 'Midday' : k > .85 ? 'Late afternoon' : 'Afternoon';
+const timeOfDay = (k: number) => k < .04 ? 'Sunrise' : k < .1 ? 'Early morning' : k < .4 ? 'Morning' : k < .6 ? 'Midday' : k > .96 ? 'Sunset' : k > .9 ? 'Evening' : k > .78 ? 'Late afternoon' : 'Afternoon';
 
 export function ExplorePanel({engine}: {engine: Engine | null}) {
   const [detail, setDetail] = useState('');
