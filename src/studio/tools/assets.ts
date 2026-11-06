@@ -6,6 +6,7 @@ import {sillamae} from '../../city/sillamae/index.ts';
 import type {WorldData} from '../../engine/data.ts';
 import {gridSize} from '../../engine/terrain-edit.ts';
 import type {AssetDefinition, AssetDetail, PlacementSite, Point2} from '../../engine/types.ts';
+import {installInertCanvas} from '../assembly/inert-canvas.ts';
 import {option, repo} from './local.ts';
 
 // Checks the asset library, drafts and saved placements; see src/studio/ASSETS.md.
@@ -19,9 +20,7 @@ const SIZE_TOLERANCE = .03; // metres either way between declared and built size
 const CONTACT = .01; // metres: how far the base or back may sit from its contact plane
 const MAX_SIZE = 30; // metres; anything larger is not street detail
 
-const blankImage = (x: number, y: number, width: number, height: number) => ({data: new Uint8ClampedArray(width * height * 4)});
-const inertContext = () => new Proxy({}, {get: (target: Record<string | symbol, unknown>, key) => key === 'createImageData' ? undefined : key === 'getImageData' ? blankImage : key in target ? target[key] : () => {}});
-Object.assign(globalThis, {document: {createElement: () => ({width: 0, height: 0, getContext: inertContext})}});
+installInertCanvas();
 
 const failures: string[] = [], warnings: string[] = [];
 const fail = (id: string, message: string) => failures.push(`${id}: ${message}`);

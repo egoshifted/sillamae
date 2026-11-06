@@ -4,6 +4,7 @@ import {promisify} from 'node:util';
 import zlib from 'node:zlib';
 import {beginBuild} from './cache.ts';
 import {sillamae} from '../src/city/sillamae/index.ts';
+import {installInertCanvas} from '../src/studio/assembly/inert-canvas.ts';
 import {CELL} from '../src/engine/survey/classify.ts';
 import {prepareSurvey} from '../src/engine/survey/prepare.ts';
 import type {SceneData} from '../src/engine/types.ts';
@@ -27,12 +28,7 @@ const gzip = promisify(zlib.gzip);
 const SOURCE = 'data/source', TILE_CELLS = 2;
 const STUDIO_LIFT = .05, STUDIO_RISE = .01; // metres of depth lift and height over the road layer's own footways
 
-// Override models paint procedural textures on canvases. Here only their
-// geometry matters, so canvases are inert stand-ins.
-const blankImage = (x: number, y: number, width: number, height: number) => ({data: new Uint8ClampedArray(width * height * 4)});
-const blankGradient = () => ({addColorStop() {}});
-const inertContext = () => new Proxy({}, {get: (target: Record<string | symbol, unknown>, key) => key === 'createImageData' ? undefined : key === 'getImageData' ? blankImage : key === 'createLinearGradient' || key === 'createRadialGradient' ? blankGradient : key in target ? target[key] : () => {}});
-Object.assign(globalThis, {document: {createElement: () => ({width: 0, height: 0, getContext: inertContext})}});
+installInertCanvas();
 
 async function build() {
   const started = performance.now(), cache = await beginBuild(process.cwd(), undefined, process.argv.includes('--force'));
