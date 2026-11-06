@@ -9,10 +9,59 @@ export const shadeShares = (height: number) => ({near: .5 * Math.min(1, height /
 
 const placeholder = new THREE.DataTexture(new Uint8Array(4), 1, 1);
 placeholder.needsUpdate = true;
+const noBlades = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
+noBlades.needsUpdate = true;
 
 // Shared uniforms: refined sites draw their restored ground with their own material, and
 // must agree with the survey beside them. Without a town (the studio) nothing is covered.
-export const groundCover = {map: {value: placeholder as THREE.Texture}, area: {value: new THREE.Vector4(0, 0, 1, 1)}};
+export const groundCover = {map: {value: placeholder as THREE.Texture}, area: {value: new THREE.Vector4(0, 0, 1, 1)}, blades: {value: noBlades as THREE.Texture}};
+
+export const BLADE_TILE = 2.6; // metres
+const BLADE_SIZE = 512;
+
+// The shader reads this as a change from .5, so a mipmapped distant read must average exactly
+// that, or the grass would brighten or darken as the blades fade out with zoom.
+export function centreBlades(data: Uint8ClampedArray) {
+  for (const channel of [0, 1]) {
+    let sum = 0;
+    for (let i = channel; i < data.length; i += 4) sum += data[i];
+    const shift = 128 - sum / (data.length / 4);
+    for (let i = channel; i < data.length; i += 4) data[i] += shift;
+  }
+}
+
+// Red: how lit a blade is, dark gaps first and pale tips on top. Green: dead, dry blades.
+// Painted strokes keep hard, thin edges; value noise at this scale only ever reads as a blur.
+function paintBlades() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = BLADE_SIZE;
+  const paint = canvas.getContext('2d')!;
+  paint.fillStyle = 'rgb(60,110,128)';
+  paint.fillRect(0, 0, BLADE_SIZE, BLADE_SIZE);
+  let seed = 4099;
+  const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const blade = (x: number, y: number, angle: number, length: number, width: number, bend: number) => {
+    const dx = Math.cos(angle), dy = Math.sin(angle), mx = x + dx * length * .55 - dy * bend, my = y + dy * length * .55 + dx * bend;
+    paint.beginPath();
+    paint.moveTo(x - dy * width, y + dx * width);
+    paint.quadraticCurveTo(mx, my, x + dx * length, y + dy * length);
+    paint.quadraticCurveTo(mx, my, x + dy * width, y - dx * width);
+    paint.fill();
+  };
+  for (const [count, low, high] of [[5200, 30, 105], [3400, 110, 185], [1500, 185, 250]]) for (let i = 0; i < count; i++) {
+    const x = random() * BLADE_SIZE, y = random() * BLADE_SIZE, angle = random() * Math.PI * 2, length = 16 + random() * 24, width = 1 + random() * 1.3, bend = (random() - .5) * length * .5;
+    paint.fillStyle = `rgb(${low + random() * (high - low) | 0},${random() < .14 ? 225 : 90 + random() * 60 | 0},128)`;
+    // A stroke crossing the tile's edge carries on from the opposite one, or the seams would show.
+    for (const ox of x < 42 ? [0, BLADE_SIZE] : x > BLADE_SIZE - 42 ? [0, -BLADE_SIZE] : [0]) for (const oy of y < 42 ? [0, BLADE_SIZE] : y > BLADE_SIZE - 42 ? [0, -BLADE_SIZE] : [0]) blade(x + ox, y + oy, angle, length, width, bend);
+  }
+  const image = paint.getImageData(0, 0, BLADE_SIZE, BLADE_SIZE);
+  centreBlades(image.data);
+  paint.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 8;
+  return texture;
+}
 
 // Red: the ground under trees. Green: tended ground around buildings. Blue: ground the sky
 // barely reaches, against walls and at the foot of trees. Baked, it costs a texture read
@@ -84,5 +133,6 @@ export function paintGroundCover(trees: Tree[], buildings: Building[], {origin: 
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
   groundCover.map.value = texture;
+  groundCover.blades.value = paintBlades();
   groundCover.area.value.set(minX - ox, minZ - oz, 1 / (canvas.width * CELL), 1 / (canvas.height * CELL));
 }

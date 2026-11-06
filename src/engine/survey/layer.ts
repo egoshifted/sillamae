@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {SURFACES, type Detail, type Surface} from './classify.ts';
 import type {SurveyBucket, SurveyManifest} from '../data.ts';
 import {concat} from './carve.ts';
-import {groundCover} from './ground-cover.ts';
+import {BLADE_TILE, groundCover} from './ground-cover.ts';
 import {MIRRORED, waterSurface} from './water.ts';
 
 const MAPPED = (kind: Surface) => kind !== 'plain' && kind !== 'glass' && kind !== 'water';
@@ -85,6 +85,7 @@ float wallFacing(vec3 n) { return 1. - smoothstep(.15, .45, abs(dot(n, (viewMatr
 const GRASS_NOISE = `
 uniform sampler2D groundCover;
 uniform vec4 groundCoverArea;
+uniform sampler2D grassBlades;
 float groundMatte = 0.;
 float groundContact = 0.;
 ${WALL_SHADE}
@@ -99,10 +100,18 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
   // paint is only 1.066 green to red, and grey paving is as high, so blue is what separates them.
   float ratio = painted.g / max(painted.r, 1e-3), grass = smoothstep(1.02, 1.055, ratio) * (1. - smoothstep(1.45, 1.8, ratio)) * smoothstep(1.08, 1.2, painted.g / max(painted.b, 1e-3));
   if (grass <= 0.) return colour;
-  float pixel = length(fwidth(p));
-  float broad = grassNoise(p / 210. + 3.7), local = grassNoise(p / 70.), patchy = grassNoise(p / 18. + 9.1);
+  vec2 stepX = dFdx(p), stepY = dFdy(p);
+  float pixel = length(abs(stepX) + abs(stepY));
+  float broad =grassNoise(p / 210. + 3.7), local = grassNoise(p / 70.), patchy = grassNoise(p / 18. + 9.1);
   float fine = 1. - smoothstep(.4, 1.2, pixel), finest = 1. - smoothstep(.15, .5, pixel);
-  float tufts = grassNoise(p / 3.1 + 1.3) * .6 + grassNoise(p / 1.3 + 7.7) * .4, blades = grassNoise(p / .47);
+  float tufts = grassNoise(p / 3.1 + 1.3) * .6 + grassNoise(p / 1.3 + 7.7) * .4;
+  // Two turned scales hide the tile's repeat. Grad, because a branch has no derivatives of its own.
+  vec2 blades = vec2(0.);
+  if (finest > 0.) {
+    float scale = ${(1 / BLADE_TILE).toFixed(4)};
+    mat2 turn = mat2(.8, .6, -.6, .8) * ${(1.55 / BLADE_TILE).toFixed(4)};
+    blades = textureGrad(grassBlades, p * scale, stepX * scale, stepY * scale).rg + textureGrad(grassBlades, turn * p, turn * stepX, turn * stepY).rg - 1.;
+  }
   vec2 cover = texture2D(groundCover, (p - groundCoverArea.xy) * groundCoverArea.zw).rg;
   float underTrees = smoothstep(.12, .6, cover.r), tended = smoothstep(.2, .85, cover.g) * (1. - underTrees);
   // Early September at 59 north: green only where it is kept or damp, otherwise olive turning
@@ -120,9 +129,10 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
   tint = mix(tint, mix(litter, soil, smoothstep(.35, .7, tufts)), underTrees * (.5 + .4 * smoothstep(.3, .65, patchy)));
   const vec3 LUMA = vec3(.2126, .7152, .0722);
   vec3 varied = tint * dot(colour, LUMA) / dot(tint, LUMA) * (.66 + .26 * d);
-  varied *= 1. + (patchy - .5) * .24 + (tufts - .5) * mix(.2, .42, max(rough, underTrees)) * fine + (blades - .5) * mix(.12, .2, rough) * finest;
+  varied *= 1. + (patchy - .5) * .24 + (tufts - .5) * mix(.2, .42, max(rough, underTrees)) * fine + blades.r * mix(.75, 1.05, rough) * finest;
+  varied = mix(varied, hay * dot(varied, LUMA) / dot(hay, LUMA), clamp(blades.g, 0., 1.) * (.45 + .45 * rough) * finest);
   groundMatte = grass;
-  groundBend = vec2(tufts - .5, grassNoise(p / 2.3 + 4.1) - .5) * (.25 + .75 * rough) * fine * grass * .9;
+  groundBend = (vec2(tufts - .5, grassNoise(p / 2.3 + 4.1) - .5) * (.25 + .75 * rough) * fine + blades * .5 * finest) * grass * .9;
   return mix(colour, varied, grass * .95);
 }
 `;
@@ -138,7 +148,7 @@ const SURVEY_WALL = `if (vBuilding > .5) {
 }
 `;
 
-export const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area};
+export const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area, grassBlades: groundCover.blades};
 
 export function restoredGroundMaterial(anisotropy: number) {
   let seed = 17;
