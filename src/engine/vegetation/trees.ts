@@ -8,8 +8,10 @@ const ASPECTS = [[2.6, 3.4, 4.6], [3.6, 5.4]];
 // Far, medium, near; sizes in crown radii.
 const CARDS = [[22, 65, 150], [24, 70, 170]], CARD_SIZE = [[1.2, .85, .62], [1.25, .9, .62]];
 // The survey has no species, so the yellow-green share is spread by rule, not where willows actually stand.
-const BROADLEAF = ['#7f9e48', '#8aa94f', '#749440', '#91ad55', '#7b9a4b'], YELLOW = '#b4c25a';
-const CONIFERS = ['#56744b', '#5f7c52', '#4f6c47'];
+const BROADLEAF = ['#5f7a3d', '#688343', '#587238', '#6f8748', '#5c773f'], YELLOW = '#8c9548';
+const CONIFERS = ['#46603f', '#4e6845', '#415a3c'];
+// Close shades read as one crown; a wide spread reads as noise at every zoom.
+const LEAF_SHADE = [158, 226], NEEDLE_SHADE = [145, 215];
 
 // Seeded by position so a tree keeps its look across reloads and detail levels.
 const hash = (x: number, z: number, k: number) => { const s = Math.sin(x * 12.9898 + z * 78.233 + k * 37.719) * 43758.5453; return s - Math.floor(s); };
@@ -28,7 +30,7 @@ function foliageTexture() {
   for (let i = 0; i < 6; i++) { const a = random() * 6.28; paint.beginPath(); paint.moveTo(128, 128); paint.lineTo(128 + Math.cos(a) * 95, 128 + Math.sin(a) * 95); paint.stroke(); }
   for (let i = 0; i < 760; i++) {
     const a = random() * 6.28, d = Math.sqrt(random()) * 116 * (.78 + .22 * Math.sin(a * 5 + 1));
-    paint.fillStyle = shade(120, 245);
+    paint.fillStyle = shade(LEAF_SHADE[0], LEAF_SHADE[1]);
     paint.beginPath();
     paint.ellipse(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 4 + random() * 4, 2 + random() * 2.5, random() * 6.28, 0, Math.PI * 2);
     paint.fill();
@@ -38,14 +40,37 @@ function foliageTexture() {
     const a = (s - 6) * .2, length = 80 + random() * 36;
     for (let k = 0; k < 70; k++) {
       const t = k / 70, x = 384 + Math.sin(a) * length * t, y = 14 + Math.cos(a) * length * t * 1.9 + t * t * 18, side = k % 2 ? 1 : -1, b = Math.PI / 2 + a + side * (.9 + random() * .5), n = 14 + random() * 10 * (1 - t * .6);
-      paint.strokeStyle = shade(95, 215);
+      paint.strokeStyle = shade(NEEDLE_SHADE[0], NEEDLE_SHADE[1]);
       paint.lineWidth = 2.6;
       paint.beginPath(); paint.moveTo(x, y); paint.lineTo(x + Math.cos(b) * n, y + Math.sin(b) * n); paint.stroke();
     }
   }
-  const texture = new THREE.CanvasTexture(canvas);
+  // Mipmaps average in the black of empty pixels, which rims every leaf and darkens far crowns.
+  // Each half's empty pixels take the mean colour of its leaves instead.
+  const {data} = paint.getImageData(0, 0, canvas.width, canvas.height), half = canvas.width / 2;
+  for (const start of [0, half]) {
+    const sum = [0, 0, 0];
+    let count = 0;
+    for (let y = 0; y < canvas.height; y++) for (let x = start; x < start + half; x++) {
+      const at = (y * canvas.width + x) * 4;
+      if (data[at + 3] < 128) continue;
+      for (let c = 0; c < 3; c++) sum[c] += data[at + c];
+      count++;
+    }
+    for (let y = 0; y < canvas.height; y++) for (let x = start; x < start + half; x++) {
+      const at = (y * canvas.width + x) * 4;
+      if (!data[at + 3]) for (let c = 0; c < 3; c++) data[at + c] = sum[c] / count;
+    }
+  }
+  const rows = new Uint8Array(data.length), stride = canvas.width * 4;
+  for (let y = 0; y < canvas.height; y++) rows.set(data.subarray(y * stride, (y + 1) * stride), (canvas.height - 1 - y) * stride);
+  const texture = new THREE.DataTexture(rows, canvas.width, canvas.height);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
   texture.anisotropy = 4;
+  texture.needsUpdate = true;
   return texture;
 }
 
@@ -87,7 +112,7 @@ export function crownGeometry(conifer: boolean, aspect: number, level: number) {
       b.applyQuaternion(q);
       volume.set(c.x, (c.y - centre.y) / aspect * 2.2, c.z).normalize().lerp(new THREE.Vector3(0, 1, 0), .25).normalize();
     }
-    const s = size * (.8 + .4 * rand()), light = (.62 + .38 * THREE.MathUtils.smoothstep(height, .05, .95)) * (.72 + .28 * depth);
+    const s = size * (.8 + .4 * rand()), light = (.76 + .24 * THREE.MathUtils.smoothstep(height, .05, .95)) * (.84 + .16 * depth);
     // Order in which a card turns in autumn, 0 first: outer and upper leaves lead. Spruce never turns.
     const turn = conifer ? 2 : .6 * turnRand() + .4 * (1 - .5 * height - .5 * (depth - .55) / .45);
     const corners = [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, -1, 0, 0], [1, 1, 1, 1], [-1, 1, 0, 1]];
@@ -124,8 +149,8 @@ void autumnLeaf() {
   vec2 at = modelMatrix[3].xz;
   #endif
   float share = fract(sin(dot(at, vec2(12.9898, 78.233))) * 43758.5453);
-  share = share < .15 ? mix(.45, .85, share / .15) : .05 + .3 * pow((share - .15) / .85, 2.);
-  vTurned = 1. - smoothstep(share - .05, share + .05, turn);
+  share = share < .13 ? mix(.45, .8, share / .13) : .08 + .34 * pow((share - .13) / .87, 2.);
+  vTurned = 1. - smoothstep(share - .12, share + .12, turn);
   vAutumnHue = fract(sin(dot(at, vec2(39.346, 11.135))) * 24634.6345);
 }
 `;
@@ -134,9 +159,9 @@ varying float vTurned;
 varying float vAutumnHue;
 vec3 autumnColour(vec3 green) {
   if (vTurned <= 0.) return green;
-  vec3 turned = vAutumnHue < .78 ? vec3(.6, .45, .04) : vAutumnHue < .96 ? vec3(.7, .26, .03) : vec3(.45, .1, .03);
+  vec3 turned = vAutumnHue < .78 ? vec3(.58, .45, .07) : vAutumnHue < .96 ? vec3(.66, .3, .06) : vec3(.46, .14, .05);
   const vec3 LUMA = vec3(.2126, .7152, .0722);
-  return mix(green, turned * dot(green, LUMA) / dot(turned, LUMA) * 1.15, vTurned);
+  return mix(green, turned * dot(green, LUMA) / dot(turned, LUMA) * 1.12, vTurned * .92);
 }
 `;
 
@@ -153,14 +178,14 @@ export function foliageMaterials(season: 'atlas' | 'spring' | 'summer' | 'autumn
     const material = new THREE.MeshLambertMaterial({vertexColors: true, map, alphaTest, alphaToCoverage: true, side: THREE.DoubleSide});
     // Back faces keep the crown's volume normal; the default flip would light the far side of each card from inside.
     material.onBeforeCompile = shader => {
-      const vertex = season === 'atlas' ? AUTUMN_VERTEX : AUTUMN_VERTEX.replace('vTurned = 1. - smoothstep(share - .05, share + .05, turn);', season === 'autumn' ? 'vTurned = 1. - smoothstep(.7, .9, turn);' : 'vTurned = 0.;');
+      const vertex = season === 'atlas' ? AUTUMN_VERTEX : AUTUMN_VERTEX.replace('vTurned = 1. - smoothstep(share - .12, share + .12, turn);', season === 'autumn' ? 'vTurned = 1. - smoothstep(.7, .9, turn);' : 'vTurned = 0.;');
       shader.vertexShader = vertex + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nautumnLeaf();');
       shader.fragmentShader = AUTUMN_FRAGMENT + shader.fragmentShader
         .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = autumnColour(diffuseColor.rgb);')
         .replace('#include <opaque_fragment>', LEAF_GLOW + '#include <opaque_fragment>');
     };
-    material.customProgramCacheKey = () => 'tree-leaf-cards-v4-' + season;
+    material.customProgramCacheKey = () => 'tree-leaf-cards-v5-' + season;
     return material;
   };
   const depth = (alphaTest: number) => new THREE.MeshDepthMaterial({depthPacking: THREE.RGBADepthPacking, map, alphaTest, side: THREE.DoubleSide});
@@ -172,7 +197,7 @@ function treeColour(t: Tree, conifer: boolean, colour: THREE.Color) {
   if (conifer) colour.set(CONIFERS[Math.floor(pick * CONIFERS.length)]);
   else if (hash(x, z, 5) < (t.r >= 4.5 ? .24 : .1)) colour.set(YELLOW);
   else colour.set(BROADLEAF[Math.floor(pick * BROADLEAF.length)]);
-  return colour.multiplyScalar(.9 + .2 * hash(x, z, 6));
+  return colour.multiplyScalar(.94 + .12 * hash(x, z, 6));
 }
 
 const radiusOf = (t: Tree) => Math.min(6, Math.max(1, t.r)), heightOf = (t: Tree) => Math.min(25, t.h);
