@@ -165,9 +165,10 @@ vec3 autumnColour(vec3 green) {
 }
 `;
 
-// Leaves let sunlight through, so a crown lit from behind glows instead of going black.
+// Leaves let sunlight through, so a crown lit from behind glows instead of going black. It takes
+// no shadow: light scatters through the foliage, and a crown's shaded side would otherwise be nearly black.
 const LEAF_GLOW = `#if NUM_DIR_LIGHTS > 0
-outgoingLight += diffuseColor.rgb * directionalLights[0].color * max(-dot(normal, directionalLights[0].direction), 0.) * .16;
+outgoingLight += diffuseColor.rgb * directionalLights[0].color * (.1 + max(-dot(normal, directionalLights[0].direction), 0.) * .16);
 #endif
 `;
 
@@ -197,7 +198,7 @@ function treeColour(t: Tree, conifer: boolean, colour: THREE.Color) {
   if (conifer) colour.set(CONIFERS[Math.floor(pick * CONIFERS.length)]);
   else if (hash(x, z, 5) < (t.r >= 4.5 ? .24 : .1)) colour.set(YELLOW);
   else colour.set(BROADLEAF[Math.floor(pick * BROADLEAF.length)]);
-  return colour.multiplyScalar(.94 + .12 * hash(x, z, 6));
+  return colour.multiplyScalar(1.08 + .14 * hash(x, z, 6));
 }
 
 const radiusOf = (t: Tree) => Math.min(6, Math.max(1, t.r)), heightOf = (t: Tree) => Math.min(25, t.h);
@@ -230,7 +231,7 @@ export function addTrees(parent: THREE.Object3D, trees: Tree[], frame: WorldFram
     const {leaf, depth} = level ? materials.near : materials.far, mesh = new THREE.InstancedMesh(geometry, leaf, count);
     mesh.customDepthMaterial = depth;
     mesh.castShadow = true;
-    mesh.receiveShadow = false;
+    mesh.receiveShadow = true;
     return mesh;
   };
   const cells = new Map<string, Tree[]>(), dummy = new THREE.Object3D(), colour = new THREE.Color(), up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3();

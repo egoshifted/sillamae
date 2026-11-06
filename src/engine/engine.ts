@@ -83,7 +83,11 @@ export class Engine {
     const [ox, oz] = this.frame.origin;
 
 
-    const renderer = this.#renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'});
+    // Three always asks for an alpha canvas, and alpha-to-coverage leaves foliage writing partial
+    // alpha into it, so the page showed through every leaf edge.
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('webgl2', {alpha: false, antialias: true, powerPreference: 'high-performance'})!;
+    const renderer = this.#renderer = new THREE.WebGLRenderer({canvas, context, antialias: true, powerPreference: 'high-performance'});
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
     renderer.setSize(innerWidth, innerHeight);
     renderer.shadowMap.enabled = true;
@@ -93,6 +97,9 @@ export class Engine {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    // An opaque canvas starts black, and the town takes seconds to load.
+    renderer.setClearColor(getComputedStyle(document.body).backgroundColor);
+    renderer.clear();
     container.append(renderer.domElement);
 
     this.camera = new CameraController(renderer.domElement, () => this.#redraw = true);
@@ -111,7 +118,7 @@ export class Engine {
     this.#setSurveyTextures = materials.setTextures;
     this.#water = materials.water;
     this.#shadeFoot = materials.shadeFoot;
-    materials.setBases(new Map(data.buildings.flatMap(b => b.heightRange ? [[b.pick, b.heightRange[0]] as [number, number]] : [])));
+    materials.setBases(new Map(data.buildings.flatMap(b => b.heightRange ? [[b.pick, b.heightRange] as [number, [number, number]]] : [])));
     const sky = skyBackground(), haze = this.#scene.fog = new THREE.Fog(this.#sun.air);
     haze.color = this.#sun.air; // the constructor copies; the fog must follow the clock
     sky.paint(this.#sun.air);
