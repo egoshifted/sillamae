@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {promisify} from 'node:util';
 import zlib from 'node:zlib';
 import {beginBuild} from './cache.ts';
 import {sillamae} from '../src/city/sillamae/index.ts';
@@ -22,6 +23,7 @@ import {moveTreesOffRoads} from './trees.ts';
 import {buildZones} from './zones.ts';
 import type {SurveyManifest, WorldData} from '../src/engine/data.ts';
 
+const gzip = promisify(zlib.gzip);
 const SOURCE = 'data/source', TILE_CELLS = 2;
 const STUDIO_LIFT = .05, STUDIO_RISE = .01; // metres of depth lift and height over the road layer's own footways
 
@@ -88,8 +90,8 @@ async function build() {
 
     fs.mkdirSync(path.join(OUT, 'tiles'), {recursive: true});
     let bytes = 0;
-    for (const [name, parts] of tiles) {
-      const packed = zlib.gzipSync(Buffer.concat(parts.map(p => Buffer.from(p.buffer, p.byteOffset, p.byteLength))), {level: 9});
+    const packedTiles = await Promise.all([...tiles].map(async ([name, parts]) => ({name, packed: await gzip(Buffer.concat(parts.map(p => Buffer.from(p.buffer, p.byteOffset, p.byteLength))), {level: 9})})));
+    for (const {name, packed} of packedTiles) {
       fs.writeFileSync(path.join(OUT, 'tiles', name + '.bin.gz'), packed);
       manifest.tiles.push(name);
       bytes += packed.length;
@@ -100,8 +102,9 @@ async function build() {
     const roadCuts = sites.flatMap(s => (s.roadCuts ?? []).map(c => ({...c, site: s.id, ring: c.ring.map(([x, z]): [number, number] => [x - sillamae.frame.origin[0], z - sillamae.frame.origin[1]])})));
     const world: WorldData = {...data, siteGround: siteGroundMm, geo, zones, stairs, roads, roadCuts};
     fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
-    fs.writeFileSync(path.join(OUT, 'world.json'), JSON.stringify(world));
-    fs.writeFileSync(path.join(OUT, 'world.json.gz'), zlib.gzipSync(Buffer.from(JSON.stringify(world)), {level: 9}));
+    const worldText = Buffer.from(JSON.stringify(world));
+    fs.writeFileSync(path.join(OUT, 'world.json'), worldText);
+    fs.writeFileSync(path.join(OUT, 'world.json.gz'), await gzip(worldText, {level: 9}));
     fs.writeFileSync(path.join(OUT, 'nav.json'), JSON.stringify(nav));
     fs.writeFileSync(path.join(OUT, 'placements.json'), JSON.stringify(placements));
     fs.writeFileSync(path.join(OUT, 'lines.json'), JSON.stringify(lines));
