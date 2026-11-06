@@ -5,7 +5,7 @@ import {lineMeshes} from './lines.ts';
 import type {Finish, RoadKind, RoadSurface} from './data.ts';
 import type {RoadCut} from './types.ts';
 import {demolishRoads} from './road-demolition.ts';
-import {restoredGroundMaterial} from './survey/layer.ts';
+import {GROUND_CONTACT, groundUniforms, restoredGroundMaterial} from './survey/layer.ts';
 
 const LOOK: Record<Exclude<RoadKind, 'footway'>, [string, number]> = {carriageway: ['#5f625f', .95], marking: ['#e4e4dc', .8]};
 // Footway finishes, matched to Street View on Kesk: worn asphalt a little
@@ -53,9 +53,11 @@ function lifted(color: string, roughness: number) {
   const material = new THREE.MeshStandardMaterial({color, roughness});
   material.userData.groundSurface = true;
   material.onBeforeCompile = shader => {
-    shader.vertexShader = 'attribute float lift;\n' + shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
+    Object.assign(shader.uniforms, groundUniforms);
+    shader.vertexShader = 'attribute float lift;\nvarying vec2 vRoad;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoad = position.xz;').replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
+    shader.fragmentShader = 'uniform sampler2D groundCover;\nuniform vec4 groundCoverArea;\nvarying vec2 vRoad;\n' + shader.fragmentShader.replace('#include <aomap_fragment>', 'float groundContact = texture2D(groundCover, (vRoad - groundCoverArea.xy) * groundCoverArea.zw).b;\n' + GROUND_CONTACT + '#include <aomap_fragment>');
   };
-  material.customProgramCacheKey = () => 'road-lift';
+  material.customProgramCacheKey = () => 'road-lift-contact';
   return material;
 }
 

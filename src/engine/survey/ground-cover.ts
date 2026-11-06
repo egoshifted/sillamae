@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import type {Building, Tree, WorldFrame} from '../types.ts';
 
-const CELL = 6, MARGIN = 60, TENDED = 34; // metres; grass is kept short this far from a wall
+const CELL = 2, MARGIN = 60, TENDED = 34; // metres; grass is kept short this far from a wall
+const WALL_SHADE = 1, COVER_BLUR = 12, CONTACT_BLUR = 2.6, NEAR_BLUR = 7, FAR_BLUR = 16; // metres
+// Each blur spreads a footprint's shade, so where walls meet or face each other the shares add
+// up, and an inner corner or courtyard comes out darker than an outer corner.
+export const shadeShares = (height: number) => ({near: .5 * Math.min(1, height / 12), far: .4 * Math.min(1, Math.max(0, height - 8) / 22)});
 
 const placeholder = new THREE.DataTexture(new Uint8Array(4), 1, 1);
 placeholder.needsUpdate = true;
@@ -10,7 +14,9 @@ placeholder.needsUpdate = true;
 // must agree with the survey beside them. Without a town (the studio) nothing is covered.
 export const groundCover = {map: {value: placeholder as THREE.Texture}, area: {value: new THREE.Vector4(0, 0, 1, 1)}};
 
-// Red: the ground under trees. Green: tended ground around buildings.
+// Red: the ground under trees. Green: tended ground around buildings. Blue: ground the sky
+// barely reaches, against walls and at the foot of trees. Baked, it costs a texture read
+// where a screen-space pass would draw the town a second time on every redraw.
 export function paintGroundCover(trees: Tree[], buildings: Building[], {origin: [ox, oz]}: WorldFrame) {
   const xs = [...trees.map(t => t.p[0]), ...buildings.flatMap(b => b.g.map(p => p[0]))], zs = [...trees.map(t => t.p[1]), ...buildings.flatMap(b => b.g.map(p => p[1]))];
   const minX = Math.min(...xs) - MARGIN, minZ = Math.min(...zs) - MARGIN, width = Math.max(...xs) + MARGIN - minX, depth = Math.max(...zs) + MARGIN - minZ;
@@ -37,8 +43,42 @@ export function paintGroundCover(trees: Tree[], buildings: Building[], {origin: 
     paint.stroke();
   }
   const soft = canvas.getContext('2d')!;
-  soft.filter = 'blur(2px)';
+  soft.filter = `blur(${COVER_BLUR / CELL}px)`;
   soft.drawImage(sharp, 0, 0);
+  soft.globalCompositeOperation = 'lighter';
+  const outline = (x: CanvasRenderingContext2D, b: Building) => {
+    x.beginPath();
+    b.g.forEach(([px, pz]) => x.lineTo((px - minX) / CELL, (pz - minZ) / CELL));
+    x.closePath();
+  };
+  const layer = (blur: number, draw: (x: CanvasRenderingContext2D) => void) => {
+    const part = document.createElement('canvas'), x = part.getContext('2d')!;
+    part.width = canvas.width;
+    part.height = canvas.height;
+    draw(x);
+    soft.filter = `blur(${blur / CELL}px)`;
+    soft.drawImage(part, 0, 0);
+  };
+  const shares = buildings.map(b => ({b, ...shadeShares(b.heightRange ? b.heightRange[1] - b.heightRange[0] : b.h)}));
+  layer(CONTACT_BLUR, x => {
+    x.fillStyle = x.strokeStyle = 'rgba(0,0,255,.6)';
+    x.lineWidth = WALL_SHADE * 2 / CELL;
+    x.lineJoin = 'round';
+    for (const {b} of shares) { outline(x, b); x.fill(); x.stroke(); }
+    x.fillStyle = 'rgba(0,0,255,.47)';
+    for (const t of trees) {
+      x.beginPath();
+      x.arc((t.p[0] - minX) / CELL, (t.p[1] - minZ) / CELL, Math.max(1, t.r * .45 / CELL), 0, Math.PI * 2);
+      x.fill();
+    }
+  });
+  for (const [blur, share] of [[NEAR_BLUR, 'near'], [FAR_BLUR, 'far']] as const) layer(blur, x => {
+    for (const entry of shares) {
+      x.fillStyle = `rgba(0,0,255,${entry[share]})`;
+      outline(x, entry.b);
+      x.fill();
+    }
+  });
   const texture = new THREE.CanvasTexture(canvas);
   texture.flipY = false;
   texture.generateMipmaps = false;

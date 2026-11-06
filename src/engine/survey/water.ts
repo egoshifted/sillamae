@@ -115,6 +115,49 @@ const SKY = {
   glow: {low: new THREE.Color('#ffb070').multiplyScalar(1.6), high: new THREE.Color('#fff4e0').multiplyScalar(1.1)},
 };
 
+// From above a pane mirrors the ground, not the sky, so the elevation is folded upward: this is
+// an impression of bright sky that tracks the day, not a true reflection. Tilting each pane a
+// little, as real ones sit, gives a facade uneven panes rather than one flat tone.
+const GLASS_VERTEX = `varying vec3 vGlassAt;\n`, GLASS_WORLD = `vGlassAt = (modelMatrix * vec4(transformed, 1.)).xyz;\n`;
+const GLASS_FRAGMENT = `
+varying vec3 vGlassAt;
+uniform vec3 skyZenith;
+uniform vec3 skyHorizon;
+uniform vec3 sunDirection;
+uniform vec3 sunGlow;
+`;
+const GLASS_LIGHT = `
+vec3 glassEye = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+vec3 glassNormal = inverseTransformDirection(normal, viewMatrix);
+if (dot(glassEye, glassNormal) < 0.) glassNormal = -glassNormal;
+float glassShare = GLASS_PANES * (1. - smoothstep(.25, .5, abs(glassNormal.y)));
+vec2 glassPane = floor(vec2(vGlassAt.x + vGlassAt.z, vGlassAt.y) / vec2(1.3, 1.1));
+float glassTilt = fract(sin(dot(glassPane, vec2(12.9898, 78.233))) * 43758.5453);
+glassNormal = normalize(glassNormal + vec3(glassTilt - .5, 0., fract(glassTilt * 7.31) - .5) * .18);
+vec3 glassMirror = reflect(-glassEye, glassNormal);
+glassMirror.y = abs(glassMirror.y);
+// A low sun strikes upright panes square on, and would light them like walls.
+float glassDay = smoothstep(.2, .55, sunDirection.y);
+outgoingLight *= 1. - glassShare * .6 * (1. - glassDay);
+vec3 glassSky = mix(skyHorizon, skyZenith, smoothstep(.05, .7, glassMirror.y)) * (.38 + .16 * glassTilt) * (.55 + .45 * glassDay);
+glassSky += sunGlow * pow(max(dot(glassMirror, sunDirection), 0.), 48.) * (.3 + .7 * glassDay);
+float glassFacing = 1. - max(dot(glassEye, glassNormal), 0.);
+outgoingLight = mix(outgoingLight, glassSky, glassShare * (.14 + .4 * glassFacing * glassFacing));
+#include <opaque_fragment>
+`;
+// Survey "glass" is any blue-tinged building paint, walls and roofs included. Real panes are one
+// narrow family of colours, the great bulk of its area, so paint selects them. Linear colour.
+const SURVEY_PANES = 'smoothstep(1.35, 1.5, vColor.g / max(vColor.r, 1e-3)) * (1. - smoothstep(1.85, 2.05, vColor.g / max(vColor.r, 1e-3))) * (1. - smoothstep(1.2, 1.3, vColor.b / max(vColor.g, 1e-3)))';
+
+// The blue-grey every refined model paints its panes. Models name glass inconsistently, and the
+// engine must not know them, so colour is the one thing they share. Zinc roofs sit just below
+// this saturation; grey steel doors do not, and take a little sky too.
+export function looksLikeGlass(material: THREE.Material) {
+  if (!(material instanceof THREE.MeshStandardMaterial) || material.map || material.metalness > .2) return false;
+  const {h, s, l} = material.color.getHSL({h: 0, s: 0, l: 0}, THREE.SRGBColorSpace);
+  return h > .48 && h < .6 && s > .07 && s < .25 && l > .33 && l < .78;
+}
+
 export function waterSurface<M extends THREE.MeshStandardMaterial>(material: M, anisotropy: number) {
   const ripples = rippleTexture(anisotropy), direction = new THREE.Vector3(.4, .8, -.2).normalize();
   const uniforms = {
@@ -133,6 +176,18 @@ export function waterSurface<M extends THREE.MeshStandardMaterial>(material: M, 
   };
   material.customProgramCacheKey = () => 'survey-water';
   return {
+    // Shares the water's sky, so glass follows the sunlight setting.
+    glaze(glass: THREE.MeshStandardMaterial, survey = false) {
+      const before = glass.onBeforeCompile.bind(glass), key = glass.customProgramCacheKey();
+      glass.onBeforeCompile = (shader, renderer) => {
+        before(shader, renderer);
+        Object.assign(shader.uniforms, {skyZenith: uniforms.skyZenith, skyHorizon: uniforms.skyHorizon, sunDirection: uniforms.sunDirection, sunGlow: uniforms.sunGlow});
+        shader.vertexShader = GLASS_VERTEX + shader.vertexShader.replace('#include <project_vertex>', GLASS_WORLD + '#include <project_vertex>');
+        shader.fragmentShader = GLASS_FRAGMENT + shader.fragmentShader.replace('#include <opaque_fragment>', GLASS_LIGHT.replace('GLASS_PANES', survey ? SURVEY_PANES : '1.'));
+      };
+      glass.customProgramCacheKey = () => key + (survey ? '-survey-glass' : '-sky-glass');
+      glass.needsUpdate = true;
+    },
     material, time: uniforms.waterTime, reflectionMap: uniforms.reflectionMap, reflectionMatrix: uniforms.reflectionMatrix, reflecting: uniforms.reflecting,
     // sun: unit vector towards it. Sky colours are linear, and warm with a low sun.
     setSky(sun: THREE.Vector3) {

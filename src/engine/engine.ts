@@ -12,7 +12,7 @@ import {buildingPrisms, pickPrism} from './picking.ts';
 import {addPlacements} from './placements.ts';
 import {paintGroundCover} from './survey/ground-cover.ts';
 import {addSurveyLayer, DETAIL_NAMES, surveyMaterials} from './survey/layer.ts';
-import {MIRRORED, type WaterSurface} from './survey/water.ts';
+import {looksLikeGlass, MIRRORED, type WaterSurface} from './survey/water.ts';
 import type {AssetDefinition, Building, BuildingOverride, BuiltOverride, CityDefinition, Placement, Point2, WorldFrame} from './types.ts';
 import {addRoads} from './roads.ts';
 import {addStairs} from './stairs.ts';
@@ -48,6 +48,8 @@ export class Engine {
   readonly #water: WaterSurface;
   #reflection: WaterReflection | null = null;
   #mirrorMarksOwed = true;
+  readonly #glazed = new WeakSet<THREE.Material>();
+  readonly #shadeFoot: (material: THREE.MeshStandardMaterial | THREE.MeshLambertMaterial) => void;
   readonly #forest: ReturnType<typeof addTrees>;
   readonly #vegetation = new THREE.Group();
   #placements: ReturnType<typeof addPlacements> | null = null;
@@ -108,6 +110,8 @@ export class Engine {
     const materials = surveyMaterials(renderer.capabilities.getMaxAnisotropy(), buildingNumbers, data.base, mobile);
     this.#setSurveyTextures = materials.setTextures;
     this.#water = materials.water;
+    this.#shadeFoot = materials.shadeFoot;
+    materials.setBases(new Map(data.buildings.flatMap(b => b.heightRange ? [[b.pick, b.heightRange[0]] as [number, number]] : [])));
     const sky = skyBackground(), haze = this.#scene.fog = new THREE.Fog(this.#sun.air);
     haze.color = this.#sun.air; // the constructor copies; the fog must follow the clock
     sky.paint(this.#sun.air);
@@ -148,6 +152,8 @@ export class Engine {
       tagBuilding(built.root, building.pick);
       if (o.detailShadows) this.#shadowAnchors.push(new THREE.Vector3(building.c[0] - ox, 6, building.c[1] - oz));
     }
+    // Before compile() runs: restyling a material afterwards would link its shaders mid-frame.
+    this.#markMirrored();
     this.#mirrorMarksOwed = true;
     return Promise.all(ready).then(result => { this.#mirrorMarksOwed = true; return result; });
   }
@@ -373,6 +379,16 @@ export class Engine {
   // Models arrive late; this walks every tree and part, so it runs only when they change.
   #markMirrored() {
     this.#mirrorMarksOwed = false;
+    for (const {root} of this.#built.values()) root.traverse(o => {
+      const material = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+        if (this.#glazed.has(m)) continue;
+        this.#glazed.add(m);
+        if (m.userData.groundSurface || !(m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshLambertMaterial)) continue;
+        if (looksLikeGlass(m)) this.#water.glaze(m as THREE.MeshStandardMaterial);
+        this.#shadeFoot(m);
+      }
+    });
     for (const root of [this.#vegetation, ...[...this.#built.values()].map(b => b.root)]) root.traverse(o => {
       const material = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (material && !material.userData?.groundSurface) o.layers.enable(MIRRORED);

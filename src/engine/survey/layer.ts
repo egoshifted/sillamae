@@ -71,10 +71,15 @@ const RELIEF_COLOURS = ['#2f6b3f', '#7fa65a', '#e3d27c', '#c98a4a', '#8a4b2f'].m
 // apart by vertex colour because the overview mesh merges every surface into one material.
 // Finer scales fade out once a cell shrinks below a few pixels, so they do not shimmer.
 // Grass is matte: it scatters light between blades, so it takes no highlight.
+const WALL_FOOT = '3.'; // metres up a wall that the ground's shade reaches
 const GRASS_NOISE = `
 uniform sampler2D groundCover;
 uniform vec4 groundCoverArea;
 float groundMatte = 0.;
+float groundContact = 0.;
+float contactAt(vec2 p) { return texture2D(groundCover, (p - groundCoverArea.xy) * groundCoverArea.zw).b; }
+// around: the ground's own shade at this wall, so its foot darkens with the same corners.
+float wallFoot(float up, float around) { return (1. - smoothstep(0., ${WALL_FOOT}, up)) * (.15 + .75 * around); }
 vec2 groundBend = vec2(0.);
 float grassHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float grassNoise(vec2 p) {
@@ -114,8 +119,11 @@ vec3 varyGrass(vec3 colour, vec3 painted, vec2 p) {
 }
 `;
 const GROUND_NORMAL = '#include <normal_fragment_maps>\nnormal = normalize(normal + (viewMatrix * vec4(groundBend.x, 0., groundBend.y, 0.)).xyz);';
-const GROUND_MATTE = 'reflectedLight.directSpecular *= 1. - groundMatte;\n#include <aomap_fragment>';
-const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area};
+// Occlusion takes the sky's light, so it shows most in shade, and a little of the sun's.
+export const GROUND_CONTACT = 'reflectedLight.indirectDiffuse *= 1. - .8 * groundContact;\nreflectedLight.directDiffuse *= 1. - .35 * groundContact;\n';
+const GROUND_MATTE = GROUND_CONTACT + 'reflectedLight.directSpecular *= 1. - groundMatte;\n#include <aomap_fragment>';
+
+export const groundUniforms = {groundCover: groundCover.map, groundCoverArea: groundCover.area};
 
 export function restoredGroundMaterial(anisotropy: number) {
   let seed = 17;
@@ -127,7 +135,7 @@ export function restoredGroundMaterial(anisotropy: number) {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGround = position;')
       .replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * lift;');
     shader.fragmentShader = 'varying vec3 vGround;\n' + GRASS_NOISE + shader.fragmentShader
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vGround.xz);')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vGround.xz);\ngroundContact = contactAt(vGround.xz);')
       .replace('#include <normal_fragment_maps>', GROUND_NORMAL).replace('#include <aomap_fragment>', GROUND_MATTE);
   };
   material.customProgramCacheKey = () => 'restored-survey-ground';
@@ -136,6 +144,7 @@ export function restoredGroundMaterial(anisotropy: number) {
 
 interface Overlays {
   tints: THREE.DataTexture;
+  bases: THREE.DataTexture; // local height of each building's foot; far above any wall until set
   relief: {value: number};
   reliefRange: {value: THREE.Vector2}; // absolute metres
   base: number;
@@ -144,15 +153,18 @@ interface Overlays {
 function tintable<M extends THREE.Material>(material: M, overlays: Overlays): M {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, {
-      buildingTints: {value: overlays.tints}, relief: overlays.relief, reliefRange: overlays.reliefRange,
+      buildingTints: {value: overlays.tints}, buildingBases: {value: overlays.bases}, relief: overlays.relief, reliefRange: overlays.reliefRange,
       reliefBase: {value: overlays.base}, reliefColours: {value: RELIEF_COLOURS}, ...groundUniforms,
     });
     shader.vertexShader = 'attribute float building;\nattribute float layer;\nvarying float vBuilding;\nvarying vec3 vSurvey;\n' +
       shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvBuilding = building;\nvSurvey = position;')
         .replace('#include <project_vertex>', `#include <project_vertex>\ngl_Position.z += projectionMatrix[2][2] * layer * ${LAYER_LIFT};`);
-    shader.fragmentShader = 'uniform sampler2D buildingTints;\nuniform float relief;\nuniform vec2 reliefRange;\nuniform float reliefBase;\nuniform vec3 reliefColours[5];\nvarying float vBuilding;\nvarying vec3 vSurvey;\n' + GRASS_NOISE +
+    shader.fragmentShader = 'uniform sampler2D buildingTints;\nuniform sampler2D buildingBases;\nuniform float relief;\nuniform vec2 reliefRange;\nuniform float reliefBase;\nuniform vec3 reliefColours[5];\nvarying float vBuilding;\nvarying vec3 vSurvey;\n' + GRASS_NOISE +
       shader.fragmentShader.replace('#include <normal_fragment_maps>', GROUND_NORMAL).replace('#include <aomap_fragment>', GROUND_MATTE).replace('#include <color_fragment>', `#include <color_fragment>
-if (vBuilding < .5) diffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vSurvey.xz);
+if (vBuilding < .5) {
+  diffuseColor.rgb = varyGrass(diffuseColor.rgb, vColor.rgb, vSurvey.xz);
+  groundContact = contactAt(vSurvey.xz);
+} else groundContact = wallFoot(vSurvey.y - texelFetch(buildingBases, ivec2(int(vBuilding + .5), 0), 0).r, contactAt(vSurvey.xz));
 vec4 buildingTint = texelFetch(buildingTints, ivec2(int(vBuilding + .5), 0), 0);
 diffuseColor.rgb = mix(diffuseColor.rgb, buildingTint.rgb, buildingTint.a);
 if (relief > 0. && vBuilding < .5) {
@@ -177,7 +189,9 @@ if (relief > 0. && vBuilding < .5) {
 export function surveyMaterials(anisotropy: number, buildings: number, base: number, flat = false) {
   const tints = new THREE.DataTexture(new Uint8Array(buildings * 4), buildings, 1);
   tints.needsUpdate = true;
-  const overlays: Overlays = {tints, relief: {value: 0}, reliefRange: {value: new THREE.Vector2(0, 1)}, base};
+  const bases = new THREE.DataTexture(new Float32Array(buildings).fill(-1e4), buildings, 1, THREE.RedFormat, THREE.FloatType);
+  bases.needsUpdate = true;
+  const overlays: Overlays = {tints, bases, relief: {value: 0}, reliefRange: {value: new THREE.Vector2(0, 1)}, base};
   let seed = 17;
   const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const textures = {} as Record<Surface, THREE.CanvasTexture>, near = {} as Record<Surface, THREE.MeshStandardMaterial>;
@@ -192,9 +206,35 @@ export function surveyMaterials(anisotropy: number, buildings: number, base: num
   }
   const water = waterSurface(tintable(new THREE.MeshStandardMaterial({vertexColors: true, side: THREE.DoubleSide, roughness: .3, flatShading: flat}), overlays), anisotropy);
   near.water = water.material;
+  water.glaze(near.glass, true);
   const far = Object.fromEntries(SURFACES.map(k => [k, k === 'water' ? water.material : tintable(new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, map: null, flatShading: flat}), overlays)])) as unknown as Record<Surface, THREE.Material>;
   return {
     near, far, tints, overlays, water,
+    // Refined models paint their own walls. Tagged meshes carry the same building attribute as the
+    // survey, so they share its base heights and the ground's shade map.
+    shadeFoot(material: THREE.MeshStandardMaterial | THREE.MeshLambertMaterial) {
+      const before = material.onBeforeCompile.bind(material), key = material.customProgramCacheKey();
+      material.onBeforeCompile = (shader, renderer) => {
+        before(shader, renderer);
+        Object.assign(shader.uniforms, groundUniforms, {buildingBases: {value: bases}});
+        shader.vertexShader = 'attribute float building;\nuniform sampler2D buildingBases;\nvarying vec3 vFoot;\n' + shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+vec4 footAt = vec4(transformed, 1.);
+#ifdef USE_INSTANCING
+footAt = instanceMatrix * footAt;
+#endif
+footAt = modelMatrix * footAt;
+vFoot = vec3(footAt.x, footAt.y - texelFetch(buildingBases, ivec2(int(building + .5), 0), 0).r, footAt.z);`);
+        shader.fragmentShader = `uniform sampler2D groundCover;\nuniform vec4 groundCoverArea;\nvarying vec3 vFoot;\nfloat contactAt(vec2 p) { return texture2D(groundCover, (p - groundCoverArea.xy) * groundCoverArea.zw).b; }\nfloat wallFoot(float up, float around) { return (1. - smoothstep(0., ${WALL_FOOT}, up)) * (.15 + .75 * around); }\n` + shader.fragmentShader
+          .replace('#include <aomap_fragment>', 'float groundContact = wallFoot(vFoot.y, contactAt(vFoot.xz));\n' + GROUND_CONTACT + '#include <aomap_fragment>');
+      };
+      material.customProgramCacheKey = () => key + '-wall-foot';
+      material.needsUpdate = true;
+    },
+    setBases(heights: Map<number, number>) {
+      const data = bases.image.data as Float32Array;
+      for (const [pick, height] of heights) data[pick] = height;
+      bases.needsUpdate = true;
+    },
     setTextures(enabled: boolean) {
       for (const kind of SURFACES) {
         const m = near[kind];
