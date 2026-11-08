@@ -33,11 +33,11 @@ export interface RoadSurface {
   lift: number;
   ring: [number, number, number][];
   surface?: Finish;
-  studio?: string; // the studio square whose drawn road this belongs to; the editor previews those itself
+  studio?: string; // id of the studio road this belongs to; the editor previews those itself
 }
 
 export interface WorldData extends SceneData {
-  roadCuts?: (RoadCut & {site: string})[];
+  roadCuts?: RoadCut[];
   zones: Zone[];
   stairs: Stair[];
   roads: RoadSurface[];

@@ -5,13 +5,19 @@ import {LINE_HEIGHT, standLine} from '../src/engine/lines.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TREE_MATCH, TRIANGLE, type CityDefinition, type Placement, type PlacementSite, type Point2, type SceneData} from '../src/engine/types.ts';
 import {DRIVEN, FOOTWAY, nearestOn, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth, SNAP} from '../src/engine/streets.ts';
+import type {TerrainChunks} from '../src/engine/terrain-edit.ts';
 import type {Georeference, OsmExtract} from './geo.ts';
 import type {RoadShape} from './roads.ts';
 
-// What the studio site editor saved: placed objects and tree edits, one file per square.
-export function loadSites(dir: string): PlacementSite[] {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort().map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as PlacementSite);
+// What the studio site editor saved for the town, and its terrain chunks.
+export function loadSite(dir: string): {site: PlacementSite; terrain: TerrainChunks} {
+  if (fs.existsSync(path.join(dir, '../placements'))) throw Error('data/source/placements holds work saved before the town store; move it in with npm run site:migrate');
+  const file = path.join(dir, 'items.json'), chunks = path.join(dir, 'terrain');
+  const site = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) as PlacementSite : {version: 3 as const, placements: []};
+  if (site.version !== 3) throw Error(file + ' is not a version 3 site store');
+  const terrain: TerrainChunks = {};
+  for (const f of fs.existsSync(chunks) ? fs.readdirSync(chunks).filter(f => f.endsWith('.json')).sort() : []) terrain[f.slice(0, -5)] = JSON.parse(fs.readFileSync(path.join(chunks, f), 'utf8')).deltas;
+  return {site, terrain};
 }
 
 // Runs after the trees are moved off roads, as the studio saw them, and before
@@ -51,7 +57,7 @@ export function dropHidden(v: Float32Array, scene: SceneData, sites: PlacementSi
 // Areas drawn in the studio, as footways in the local frame for the road layer to lay.
 export function studioSurfaces(sites: PlacementSite[], city: CityDefinition): RoadShape[] {
   const [ox, oz] = city.frame.origin;
-  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], ...r.type === 'tiled-path' && {tileLayout: {points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), width: roadWidth(r)}}, ...r.type === 'kerbed-path' && {kerbed: true}, studio: s.id, ring: pathOutline(r.type, r.points.map(([x, z]): Point2 => [x - ox, z - oz]), r.tiles)}))]);
+  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], ...r.type === 'tiled-path' && {tileLayout: {points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), width: roadWidth(r)}}, ...r.type === 'kerbed-path' && {kerbed: true}, studio: r.id, ring: pathOutline(r.type, r.points.map(([x, z]): Point2 => [x - ox, z - oz]), r.tiles)}))]);
 }
 
 // Lines drawn in the studio, stood on the built terrain in the local frame.
@@ -109,10 +115,10 @@ export function addStudioRoads(osm: OsmExtract, sites: PlacementSite[], {local, 
   return {osm: {...osm, highways}, report: `studio roads: ${roads.length}, ${joined} ends joined to streets, ${footways} footways`};
 }
 
-// Marks the laid road surfaces that belong to drawn roads with their square,
+// Marks the laid road surfaces that belong to drawn roads with the road's id,
 // by distance from the road's course, junction pieces at their ends included.
 export function markStudioRoads(surfaces: RoadSurface[], sites: PlacementSite[], city: CityDefinition) {
-  const [ox, oz] = city.frame.origin, courses = sites.flatMap(s => (s.roads ?? []).filter(r => !PATH_FINISH[r.type]).map(r => ({site: s.id, points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), half: ROAD_WIDTH[r.type] / 2, footways: !!r.footways})));
+  const [ox, oz] = city.frame.origin, courses = sites.flatMap(s => (s.roads ?? []).filter(r => !PATH_FINISH[r.type]).map(r => ({site: r.id, points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), half: ROAD_WIDTH[r.type] / 2, footways: !!r.footways})));
   if (!courses.length) return;
   // A cell's centre lies within half its 3 m size of its own band; streets beyond stay the town's.
   const SLACK = .75;
@@ -145,6 +151,6 @@ export function collectPlacements(sites: PlacementSite[], library: string, heigh
     if (p.attach === 'ground') { const h = heightAt(p.p[0], p.p[1]); if (h !== null && Math.abs(h - p.p[2]) > .5) adrift++; }
     placements.push(p);
   }
-  const report = `studio placements: ${placements.length} from ${sites.length} squares` + (skipped.size ? `; left out, not in the library: ${[...skipped].join(', ')}` : '') + (adrift ? `; ${adrift} on the ground stand more than 0.5 m from the terrain, check them in the studio` : '');
+  const report = `studio placements: ${placements.length} in the store` + (skipped.size ? `; left out, not in the library: ${[...skipped].join(', ')}` : '') + (adrift ? `; ${adrift} on the ground stand more than 0.5 m from the terrain, check them in the studio` : '');
   return {placements, report};
 }

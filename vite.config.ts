@@ -6,7 +6,7 @@ import {studioMcp} from './src/studio/mcp/bridge.ts';
 // Relative base keeps the build working under a GitHub Pages repository path.
 export default defineConfig({
   base: './',
-  plugins: [react(), studioSites(), studioMcp()],
+  plugins: [react(), studioSites(), studioMcp(), studioMcp('/__studio/site-mcp', 'sillamae-site')],
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 700, // three.js alone is ~600 kB

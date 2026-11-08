@@ -21,7 +21,11 @@ import {Measure} from './measure.ts';
 import {createStage} from './stage.ts';
 import {TerrainEdit, type TerrainMode} from './terrain.ts';
 import {thumbnail} from './thumbnails.ts';
-import {loadSquare, type Square} from './scene.ts';
+import {loadSquare, MARGIN, type Square} from './scene.ts';
+import {connectSession, paintMcp, type McpStatus} from '../mcp/link.ts';
+import {createSiteSession, type SiteHost} from '../mcp/site-session.ts';
+import {mergeArea, takeArea} from './store.ts';
+import {chunkGrid, type TerrainChunks} from '../../engine/terrain-edit.ts';
 import {BROADLEAF, CONIFER, pickTree, TreeLayer, treeGhost, treeItems, type TreeItem} from './trees.ts';
 import '../style.css';
 import './site.css';
@@ -57,7 +61,7 @@ let persist = false, rememberTimer = 0;
 function remember() {
   if (!persist || !site) return;
   const coordinate = (value: number) => String(round(value, 2));
-  const query = new URLSearchParams({x: String(site.square.centre[0]), z: String(site.square.centre[1]), size: String(site.square.size), position: camera.position.toArray().map(coordinate).join(','), target: controls.target.toArray().map(coordinate).join(',')});
+  const query = new URLSearchParams({x: String(area!.centre[0]), z: String(area!.centre[1]), size: String(area!.size), position: camera.position.toArray().map(coordinate).join(','), target: controls.target.toArray().map(coordinate).join(',')});
   const next = '?' + query;
   if (next !== location.search) history.replaceState(null, '', next);
 }
@@ -77,8 +81,11 @@ type Gesture =
   | {kind: 'bulldoze'; before: string; x: number; y: number}
   | {kind: 'click'};
 
+// The open area, the town's store as last read or saved, and the area's items as
+// they were then: a save merges the area's edits into the store (see store.ts).
+let area: Square | undefined, town: PlacementSite | undefined, openedArea: PlacementSite | undefined, revision = '', worldData: WorldData | undefined;
 let loaded: Loaded | undefined, site: PlacementSite | undefined, sun: THREE.DirectionalLight | undefined, trees: TreeLayer | undefined, measure: Measure | undefined;
-// The square's terrain edit, and the one the loaded data was built with: the
+// The terrain edit around the area, and the one the loaded data was built with: the
 // preview shows only the difference.
 let terrain: TerrainEdit | undefined, built: TerrainEdit | undefined;
 let tool: Tool = 'select', brush: Brush | null = null, gesture: Gesture | null = null, dirty = false, treesChanged = false, detailsChanged = false, space = false;
@@ -152,8 +159,9 @@ function ground(clientX: number, clientY: number, snap = false) {
   return point && point.y > -Infinity ? point : null;
 }
 const isWithin = (object: THREE.Object3D, root: THREE.Object3D) => { for (let o: THREE.Object3D | null = object; o; o = o.parent) if (o === root) return true; return false; };
-function inSquare(x: number, z: number) {
-  const [ox, oz] = loaded!.frame.origin, [cx, cz] = site!.square.centre, half = site!.square.size / 2;
+// Whether local x/z is in the open area; with beyond, up to that many metres past its edge.
+function inSquare(x: number, z: number, beyond = 0) {
+  const [ox, oz] = loaded!.frame.origin, [cx, cz] = area!.centre, half = area!.size / 2 + beyond;
   return Math.abs(x + ox - cx) <= half && Math.abs(z + oz - cz) <= half;
 }
 
@@ -279,13 +287,13 @@ function own(key: string) {
   if (selection.delete(key)) selection.add(next);
   return next;
 }
-// Moves an item's base to source x/z on the ground; false where that is outside the square or off the ground.
+// Moves an item's base to source x/z on the ground; false where that is outside the area or off the ground.
 function moveTo(key: string, x: number, z: number) {
   const [ox, oz] = loaded!.frame.origin, base = loaded!.frame.base, h = loaded!.heights.at(x - ox, z - oz);
   const points = pointsOf(key);
   if (points) {
     const [cx, cz] = centroid(points), moved = points.map(([px, pz]): Point2 => [round(px + x - cx), round(pz + z - cz)]);
-    if (!moved.every(([px, pz]) => inSquare(px - ox, pz - oz))) return false;
+    if (!moved.every(([px, pz]) => inSquare(px - ox, pz - oz, MARGIN))) return false;
     setPoints(key, moved);
     return true;
   }
@@ -466,7 +474,7 @@ function step(from: string[], to: string[]) {
   dirty = true;
   sync();
 }
-// The square as it was opened, for Reset, and as last saved, to tell whether a reset leaves unsaved changes.
+// The area as it was opened, for Reset, and as last saved, to tell whether a reset leaves unsaved changes.
 let opened = '', saved = '';
 function reset() {
   if (!site || snapshot() === opened || !confirm(translate('All changes will be lost. Do you want to reset?'))) return;
@@ -531,15 +539,15 @@ function settle() {
   reshaped.clear();
   treesChanged = true;
 }
-function dab(at: THREE.Vector3, target: number | null) {
+// The brush is the tool's own settings unless a model passes one (see the model connection).
+function dab(at: THREE.Vector3, target: number | null, brush = {shape: options.shape, radius: options.radius, strength: options.shape === 'raise' || options.shape === 'lower' ? options.lift : options.blend}) {
   if (!terrain || !loaded) return;
-  const [ox, oz] = loaded.frame.origin, r = options.radius, near = (x: number, z: number) => Math.hypot(x - at.x, z - at.z) < r;
+  const [ox, oz] = loaded.frame.origin, r = brush.radius, near = (x: number, z: number) => Math.hypot(x - at.x, z - at.z) < r;
   const riders = [
     ...site!.placements.filter(p => p.attach === 'ground' && near(p.p[0] - ox, p.p[1] - oz)).map(p => ({get: () => p.p[2], set: (v: number) => { p.p[2] = v; }, x: p.p[0] - ox, z: p.p[1] - oz})),
     ...edits().add.filter(t => near(t.p[0] - ox, t.p[1] - oz)).map(t => ({get: () => t.z, set: (v: number) => { t.z = v; treesChanged = true; }, x: t.p[0] - ox, z: t.p[1] - oz})),
   ].map(item => ({...item, before: shift(item.x, item.z)}));
-  const strength = options.shape === 'raise' || options.shape === 'lower' ? options.lift : options.blend;
-  const box = terrain.dab(options.shape, at.x, at.z, r, strength, (x, z) => loaded!.heights.at(x, z), target);
+  const box = terrain.dab(brush.shape, at.x, at.z, r, brush.strength, (x, z) => loaded!.heights.at(x, z), target);
   for (const item of riders) item.set(round(item.get() + shift(item.x, item.z) - item.before));
   reshape(box);
   sync(true);
@@ -801,7 +809,7 @@ function turn(by: number, start?: Map<string, Start>, centre?: THREE.Vector3) {
     if (points) {
       const [px, pz] = from.size > 1 && !options.inPlace ? [c.x + ox, c.z + oz] : p;
       const turned = points.map(([x, z]): Point2 => { const dx = x - px, dz = z - pz; return [round(px + dx * cos + dz * sin), round(pz - dx * sin + dz * cos)]; });
-      if (turned.every(([x, z]) => inSquare(x - ox, z - oz))) setPoints(key, turned);
+      if (turned.every(([x, z]) => inSquare(x - ox, z - oz, MARGIN))) setPoints(key, turned);
       continue;
     }
     const dx = p[0] - ox - c.x, dz = p[1] - oz - c.z;
@@ -956,7 +964,7 @@ function bulldoze(clientX: number, clientY: number) {
     roads.splice(roads.indexOf(road), 1, ...pieces);
     selection.delete('road:' + road.id);
     detailsChanged = true;
-  } else { (site!.roadCuts ??= []).push(target.cut); detailsChanged = true; }
+  } else { (site!.roadCuts ??= []).push({...target.cut, id: newId('c')}); detailsChanged = true; }
   hoverBox.visible = demolitionPreview.visible = false;
 }
 
@@ -1081,7 +1089,7 @@ renderer.domElement.addEventListener('pointermove', event => {
     const target = at.clone().add(new THREE.Vector3(start[0] - ox - g.anchor.x, 0, start[1] - oz - g.anchor.z));
     if (element<HTMLInputElement>('grid').checked) { target.x = Math.round(target.x / GRID) * GRID; target.z = Math.round(target.z / GRID) * GRID; }
     const snap = road ? snapRoad(target, road.type, road.id, [event.clientX, event.clientY]) : snapLine(target, line.kind);
-    if (!inSquare(snap.at.x, snap.at.z)) return;
+    if (!inSquare(snap.at.x, snap.at.z, MARGIN)) return;
     g.moved = true;
     (road ?? line).points = extendRoad(g.points, g.end, [round(snap.at.x + ox), round(snap.at.z + oz)]);
     detailsChanged = true; snapMark.visible = snap.snapped;
@@ -1158,7 +1166,7 @@ addEventListener('pointerup', event => {
       for (const key of [...site.placements.map(p => 'p:' + p.id), ...(site.surfaces ?? []).map(s => 'area:' + s.id), ...(site.lines ?? []).map(l => 'line:' + l.id), ...(site.roads ?? []).map(r => 'road:' + r.id), ...list.map(i => i.key)]) {
         const a = anchorOf(key, list)!, v = a.at.clone().setY(a.at.y + a.height / 2).project(camera);
         const sx = rect.left + (v.x + 1) / 2 * rect.width, sy = rect.top + (1 - v.y) / 2 * rect.height;
-        if (v.z < 1 && sx >= left && sx <= right && sy >= top && sy <= bottom && inSquare(a.at.x, a.at.z)) selection.add(key);
+        if (v.z < 1 && sx >= left && sx <= right && sy >= top && sy <= bottom && inSquare(a.at.x, a.at.z, /^(area|line|road):/.test(key) ? MARGIN : 0)) selection.add(key);
       }
     }
     return sync();
@@ -1175,7 +1183,7 @@ addEventListener('pointerup', event => {
     // A road keeps each click as clicked and where it would snap: only its two ends join streets.
     if (at && tool === 'road') roadSnaps[path.length] = snapRoad(at, options.roadType, undefined, [event.clientX, event.clientY]).at;
     // The second click of a double-click lands on the first.
-    if (at && inSquare(at.x, at.z) && !(path.length && path[path.length - 1].distanceTo(at) < .05)) { path.push(at); updatePreview(); }
+    if (at && inSquare(at.x, at.z, MARGIN) && !(path.length && path[path.length - 1].distanceTo(at) < .05)) { path.push(at); updatePreview(); }
   } else if (tool === 'hide') {
     const id = buildingAt(event.clientX, event.clientY);
     if (id) toggleHidden(id);
@@ -1264,7 +1272,7 @@ const TOOLS: [Tool, string, string][] = [
   ['place', 'Place (A)', 'Pick an asset or tree on the left, then click the ground or a wall · Q/E turn before placing · Alt-click an object to pick up its asset · right-click or Esc stops'],
   ['path', 'Draw a row along a path (P)', 'Click points along the path · double-click or Enter places the row · Backspace removes the last point · Esc or right-click clears'],
   ['scatter', 'Scatter brush (B)', 'Drag over the ground to scatter the brush; nothing lands closer than the gap to its own kind · Alt-click picks up an object'],
-  ['terrain', 'Shape the ground (U)', 'Drag over the ground to raise, lower, flatten (to the height where the stroke began), smooth, or reset it to the survey · objects and trees on the ground ride with it · edits fade out 5 m inside the square · keep away from refined buildings, whose models do not follow'],
+  ['terrain', 'Shape the ground (U)', 'Drag over the ground to raise, lower, flatten (to the height where the stroke began), smooth, or reset it to the survey · objects and trees on the ground ride with it · the brush reaches 15 m past the square · keep away from refined buildings, whose models do not follow'],
   ['area', 'Draw a ground surface (L)', 'Click the corners of an area of paving, asphalt, gravel, lawn or flowerbed · double-click or Enter closes it · Backspace removes the last corner · drawn over footways; select it to move, turn or change its finish'],
   ['line', 'Draw a fence, hedge, wall or kerb (K)', 'Click points along it · double-click or Enter finishes · it follows the ground · select it to move, turn or change its kind and height'],
   ['road', 'Draw a road (W)', 'Click along the road · ends near a street or another drawn road snap to it (orange ring) and join it as a junction · double-click or Enter finishes · Curved rounds the corners · the preview is close; the data build lays the real road with its junctions, markings and graded ground'],
@@ -1424,7 +1432,7 @@ function frame() {
   controls.update();
 }
 function topView() {
-  const height = site!.square.size * 1.3;
+  const height = area!.size * 1.3;
   camera.position.set(controls.target.x, controls.target.y + height, controls.target.z + .01);
   controls.update();
 }
@@ -1434,7 +1442,7 @@ function turnView() {
 }
 function resetView() {
   if (!loaded || !site) return;
-  const [ox, oz] = loaded.frame.origin, cx = site.square.centre[0] - ox, cz = site.square.centre[1] - oz, size = site.square.size, h = loaded.heights.at(cx, cz), y = h > -Infinity ? h : 0;
+  const [ox, oz] = loaded.frame.origin, cx = area!.centre[0] - ox, cz = area!.centre[1] - oz, size = area!.size, h = loaded.heights.at(cx, cz), y = h > -Infinity ? h : 0;
   controls.target.set(cx, y, cz);
   camera.position.set(cx - size * .55, y + size * .6, cz - size * .75);
   controls.update();
@@ -1633,13 +1641,13 @@ let saving = false;
 function showAtlasBuild(build: AtlasBuildStatus) {
   const output = element<HTMLOutputElement>('atlas-build'), link = element<HTMLAnchorElement>('atlas');
   element<HTMLButtonElement>('update-atlas').disabled = build.state === 'building';
-  output.textContent = build.state === 'building' ? 'Rebuilding atlas… You can keep editing.' : build.state === 'ready' ? 'Atlas updated · open atlas to view your saved edits.' : build.state === 'pending' ? 'Square saved · atlas update pending.' : build.state === 'error' ? 'Atlas update failed. Choose Update atlas to retry.' : '';
+  output.textContent = build.state === 'building' ? 'Rebuilding atlas… You can keep editing.' : build.state === 'ready' ? 'Atlas updated · open atlas to view your saved edits.' : build.state === 'pending' ? 'Saved · atlas update pending.' : build.state === 'error' ? 'Atlas update failed. Choose Update atlas to retry.' : '';
   output.title = build.error ?? '';
   link.setAttribute('aria-disabled', String(build.state === 'building'));
   link.onclick = event => { if (link.getAttribute('aria-disabled') === 'true') event.preventDefault(); };
 }
 async function updateAtlas() {
-  if (!confirm(translate('Rebuild the atlas from all saved squares? This can take several minutes. Unsaved edits are excluded. You can keep editing while it runs.'))) return;
+  if (!confirm(translate('Rebuild the atlas from all saved work? This can take several minutes. Unsaved edits are excluded. You can keep editing while it runs.'))) return;
   const response = await fetch('/__studio/atlas-build', {method: 'POST'});
   if (!response.ok) throw Error(translate('Could not start the atlas update.'));
   showAtlasBuild(await response.json() as AtlasBuildStatus);
@@ -1657,22 +1665,23 @@ addEventListener('pagehide', () => window.clearInterval(atlasPoll));
 async function save() {
   if (!site || saving) return;
   saving = true;
-  const before = snapshot(), id = site.id;
+  const before = snapshot();
   element<HTMLButtonElement>('save').disabled = true;
   element<HTMLButtonElement>('choose').disabled = true;
   try {
     const kept: PlacementSite = {...site, placements: site.placements.filter(p => !drafts.some(d => d.id === p.asset)), trees: edits()};
-    if (!kept.trees!.add.length && !kept.trees!.remove.length) delete kept.trees;
-    for (const key of ['surfaces', 'lines', 'roads', 'roadCuts', 'hidden'] as const) if (!kept[key]?.length) delete kept[key];
-    const deltas = terrain?.saved();
-    if (deltas) kept.terrain = {deltas}; else delete kept.terrain;
-    const response = await fetch('/__studio/sites/' + id, {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(kept)});
+    const merged = mergeArea(town!, openedArea!, kept);
+    const response = await fetch('/__studio/site', {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify({revision, site: merged, terrain: terrain?.saved() ?? {}})});
     if (!response.ok) throw Error('Save failed: ' + (await response.json()).error);
+    const result = await response.json();
+    revision = result.revision;
+    town = merged;
+    openedArea = structuredClone(kept);
     saved = kept.placements.length !== site.placements.length ? '' : before;
     dirty = snapshot() !== saved;
-    showAtlasBuild((await response.json()).build);
+    showAtlasBuild(result.build);
     showStatus();
-    status.textContent = `Saved to data/source/placements/${id}.json`;
+    status.textContent = 'Saved to data/source/site';
   } finally {
     saving = false;
     element<HTMLButtonElement>('save').disabled = false;
@@ -1715,17 +1724,18 @@ element('reset').onclick = reset;
 const action = (run: () => Promise<unknown>) => { void run().catch(e => { error.textContent = String(e instanceof Error ? e.message : e); }); };
 addEventListener('beforeunload', event => { if (dirty) event.preventDefault(); });
 
-// ---- Choosing a square -----------------------------------------------------------
+// ---- Choosing an area ------------------------------------------------------------
 
 // The map is drawn north up in the national grid, which the survey's own axes are not.
-function chooseSquare(data: WorldData, sites: {id: string; square: Square}[]) {
+// Saved work is marked in blue, so it is easy to find again; an area can open anywhere.
+function chooseSquare(data: WorldData, saved: PlacementSite) {
   const dialog = element<HTMLDialogElement>('map'), canvas = element<HTMLCanvasElement>('chart'), x = canvas.getContext('2d')!;
   const [a, b, c, d, e, f] = data.geo.toGrid, [ox, oz] = city.frame.origin;
   const grid = ([sx, sz]: Point2): Point2 => [a * sx + b * sz + c, d * sx + e * sz + f];
   const source = ([gx, gy]: Point2): Point2 => { const det = a * e - b * d, px = gx - c, py = gy - f; return [(e * px - b * py) / det, (a * py - d * px) / det]; };
   const corners = data.buildings.flatMap(bd => bd.g).map(grid), es = corners.map(p => p[0]), ns = corners.map(p => p[1]);
   const view = {scale: Math.min(canvas.width / (Math.max(...es) - Math.min(...es)), canvas.height / (Math.max(...ns) - Math.min(...ns))) * .9, e: (Math.max(...es) + Math.min(...es)) / 2, n: (Math.max(...ns) + Math.min(...ns)) / 2};
-  let centre: Point2 | null = site?.square.centre ?? null, drag: {x: number; y: number; e: number; n: number; moved: boolean} | null = null;
+  let centre: Point2 | null = area?.centre ?? null, drag: {x: number; y: number; e: number; n: number; moved: boolean} | null = null;
   const toCanvas = ([ge, gn]: Point2): Point2 => [canvas.width / 2 + (ge - view.e) * view.scale, canvas.height / 2 - (gn - view.n) * view.scale];
   const fromCanvas = (px: number, py: number): Point2 => [view.e + (px - canvas.width / 2) / view.scale, view.n - (py - canvas.height / 2) / view.scale];
   const outline = (points: Point2[]) => { x.beginPath(); points.map(grid).map(toCanvas).forEach(([px, py], i) => i ? x.lineTo(px, py) : x.moveTo(px, py)); x.closePath(); };
@@ -1739,9 +1749,12 @@ function chooseSquare(data: WorldData, sites: {id: string; square: Square}[]) {
     x.strokeStyle = '#7d6a58';
     x.lineWidth = .5;
     for (const bd of data.buildings) { outline(bd.g); x.fill(); x.stroke(); }
-    x.strokeStyle = '#2b6cb0';
-    x.lineWidth = 1.5;
-    for (const s of sites) { outline(squareOf(s.square.centre, s.square.size)); x.stroke(); }
+    x.strokeStyle = x.fillStyle = '#2b6cb0';
+    x.lineWidth = 2;
+    const trace = (points: Point2[]) => { x.beginPath(); points.map(grid).map(toCanvas).forEach(([px, py], i) => i ? x.lineTo(px, py) : x.moveTo(px, py)); x.stroke(); };
+    for (const item of [...saved.roads ?? [], ...saved.lines ?? []]) trace(item.points);
+    for (const s of saved.surfaces ?? []) { outline(s.ring); x.stroke(); }
+    for (const p of [...saved.placements.map(p => [p.p[0], p.p[1]] as Point2), ...(saved.trees?.add ?? []).map(t => t.p), ...saved.trees?.remove ?? []]) { const [px, py] = toCanvas(grid(p)); x.fillRect(px - 1.5, py - 1.5, 3, 3); }
     if (centre) {
       x.strokeStyle = '#e07b00';
       x.lineWidth = 2.5;
@@ -1773,9 +1786,7 @@ function chooseSquare(data: WorldData, sites: {id: string; square: Square}[]) {
   canvas.onpointerup = event => {
     if (drag && !drag.moved) {
       const rect = canvas.getBoundingClientRect(), k = canvas.width / rect.width, picked = source(fromCanvas((event.clientX - rect.left) * k, (event.clientY - rect.top) * k));
-      const existing = sites.find(s => Math.abs(s.square.centre[0] - picked[0]) <= s.square.size / 2 && Math.abs(s.square.centre[1] - picked[1]) <= s.square.size / 2);
-      if (existing) element<HTMLSelectElement>('size').value = String(existing.square.size);
-      centre = existing?.square.centre ?? [Math.round(picked[0]), Math.round(picked[1])];
+      centre = [Math.round(picked[0]), Math.round(picked[1])];
       draw();
     }
     drag = null;
@@ -1783,7 +1794,7 @@ function chooseSquare(data: WorldData, sites: {id: string; square: Square}[]) {
   element('size').onchange = draw;
   dialog.onclose = () => {
     if (dialog.returnValue !== 'open' || !centre) return;
-    if (dirty && !confirm(translate('Leave this square without saving?'))) return;
+    if (dirty && !confirm(translate('Leave this area without saving?'))) return;
     dirty = false;
     location.search = new URLSearchParams({x: String(centre[0]), z: String(centre[1]), size: element<HTMLSelectElement>('size').value}).toString();
   };
@@ -1792,26 +1803,35 @@ function chooseSquare(data: WorldData, sites: {id: string; square: Square}[]) {
 }
 
 async function open(square: Square) {
-  const data = await world, id = `${square.centre[0]}_${square.centre[1]}_${square.size}`;
-  loaded = await loadSquare(data, await survey, square, renderer, text => { status.textContent = text; });
-  const response = await fetch('/__studio/sites/' + id);
-  if (!response.ok && response.status !== 404) throw Error('Could not open saved square: ' + (await response.text()));
-  site = response.ok ? await response.json() as PlacementSite : {version: 1, id, square, placements: []};
+  const data = worldData = await world, [cx, cz] = square.centre, half = square.size / 2;
+  const response = await fetch('/__studio/site');
+  if (!response.ok) throw Error('Could not read the saved site: ' + (await response.text()));
+  ({revision, site: town} = await response.json() as {revision: string; site: PlacementSite});
+  const within = (x: number, z: number) => Math.abs(x - cx) <= half && Math.abs(z - cz) <= half;
+  area = square;
+  openedArea = takeArea(town!, within, id => !!data.buildings.find(b => b.id === id)?.g.some(([x, z]) => within(x, z)));
+  site = structuredClone(openedArea);
+  const own = new Set([...site.roads ?? [], ...site.roadCuts ?? []].flatMap(i => i.id ? [i.id] : []));
+  loaded = await loadSquare(data, await survey, square, own, renderer, text => { status.textContent = text; });
   const missing = site.placements.filter(p => !assetById.has(p.asset));
   if (missing.length) {
     element<HTMLButtonElement>('save').disabled = true;
     const ids = [...new Set(missing.map(p => p.asset))].join(', ');
     site = undefined;
-    throw Error('This square uses unavailable assets: ' + ids + '. Restore the matching project version before editing; saved data has not been changed.');
+    throw Error('This area uses unavailable assets: ' + ids + '. Restore the matching project version before editing; saved data has not been changed.');
   }
   const {scene, frame} = loaded, [ox, oz] = frame.origin;
-  // The built data holds this square's added trees from the last data build; they
-  // are drawn from the edits instead. Trees can only be added inside their square.
-  loaded.trees = loaded.trees.filter(t => !t.added || !inSquare(t.p[0] - ox, t.p[1] - oz));
-  const low: Point2 = [square.centre[0] - ox - square.size / 2, square.centre[1] - oz - square.size / 2];
-  const baked: Record<string, number[]> = await fetch('/data/terrain.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
-  built = new TerrainEdit(...low, square.size, baked[id]);
-  terrain = new TerrainEdit(...low, square.size, site.terrain?.deltas);
+  // The built data holds the area's added trees from the last data build; they
+  // are drawn from the edits instead.
+  const added = new Set(edits().add.map(t => t.id));
+  loaded.trees = loaded.trees.filter(t => !t.added || !added.has(t.added));
+  // The brush reaches the ground loaded around the area; whole chunks are kept so a save writes them back complete.
+  const shaped = half + MARGIN - 1, {grid, keys} = chunkGrid(cx - shaped, cz - shaped, cx + shaped, cz + shaped);
+  const editable = {minX: cx - ox - shaped, minZ: cz - oz - shaped, maxX: cx - ox + shaped, maxZ: cz - oz + shaped};
+  const baked: TerrainChunks = await fetch('/data/terrain.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+  const current: TerrainChunks = await fetch('/__studio/terrain?keys=' + keys.join(',')).then(r => r.json());
+  built = new TerrainEdit(grid, frame.origin, editable, baked);
+  terrain = new TerrainEdit(grid, frame.origin, editable, current);
   for (const b of data.buildings) { pickOf.set(b.id, b.pick); footprintOf.set(b.id, b.g); }
   if (JSON.stringify(terrain.saved()) !== JSON.stringify(built.saved()) || site.hidden?.length) { reshape(); settle(); }
   opened = saved = snapshot();
@@ -1837,7 +1857,7 @@ async function open(square: Square) {
   persist = true;
   remember();
   lighting();
-  element('where').textContent = `Square ${square.size} m at ${square.centre.join(', ')} · ${id}.json`;
+  element('where').textContent = `Square ${square.size} m at ${square.centre.join(', ')}`;
   element<HTMLAnchorElement>('atlas').href = `/#x=${(square.centre[0] - ox).toFixed(1)}&y=6&z=${(square.centre[1] - oz).toFixed(1)}&s=120&zoom=1&h=140&e=35`;
   sync();
   resize();
@@ -1857,9 +1877,214 @@ function squareOutline(square: Square, scene: Loaded) {
 }
 
 element('choose').onclick = () => action(async () => {
-  const sites = await (await fetch('/__studio/sites')).json() as {id: string; square: Square}[];
-  chooseSquare(await world, sites);
+  const response = await fetch('/__studio/site');
+  if (!response.ok) throw Error('Could not read the saved site: ' + (await response.text()));
+  chooseSquare(await world, (await response.json()).site as PlacementSite);
 });
+
+// ---- Model connection -------------------------------------------------------------
+
+// A model works on the open area through the same edits as the tools, each one undo
+// step; see mcp/site-session.ts for the tools and TOOLS.md for connecting.
+const done = (ids?: string[]) => ({ok: true as const, ...(ids && {ids})});
+const exists = (key: string) => !!(placementOf(key) || pointsOf(key) || (key.startsWith('a:') && edits().add.some(t => 'a:' + t.id === key)));
+const unknown = (keys: string[]) => keys.filter(k => !exists(k));
+const localAt = (x: number, z: number) => {
+  const [ox, oz] = loaded!.frame.origin, h = loaded!.heights.at(x - ox, z - oz);
+  return h > -Infinity ? new THREE.Vector3(x - ox, h, z - oz) : null;
+};
+const buildingAtPoint = (x: number, z: number) => [...footprintOf].find(([, g]) => inRing(g, x, z))?.[0] ?? null;
+function grounded(x: number, z: number) {
+  const at = localAt(x, z);
+  if (!at) return {error: 'no ground is loaded there'};
+  const inside = buildingAtPoint(x, z);
+  return inside ? {error: `that is inside building ${inside}`} : at;
+}
+// The point on a building's walls nearest x/z, and the heading that faces out from it.
+function wallSpot(building: string, x: number, z: number) {
+  const g = footprintOf.get(building);
+  if (!g) return null;
+  const [cx, cz] = centroid(g);
+  let best: {x: number; z: number; heading: number; d: number} | null = null;
+  for (let i = 0; i < g.length; i++) {
+    const [ax, az] = g[i], [bx, bz] = g[(i + 1) % g.length], dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+    if (len < .01) continue;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (len * len))), px = ax + dx * t, pz = az + dz * t, d = Math.hypot(x - px, z - pz);
+    let nx = dz / len, nz = -dx / len;
+    if ((px - cx) * nx + (pz - cz) * nz < 0) { nx = -nx; nz = -nz; }
+    if (!best || d < best.d) best = {x: px, z: pz, heading: Math.atan2(nx, nz), d};
+  }
+  return best;
+}
+const siteHost: SiteHost = {
+  area: () => loaded && site && area ? {centre: area.centre, size: area.size, reach: MARGIN, dirty, undo: undo.length, redo: redo.length} : null,
+  items: () => ({objects: site!.placements, trees: {added: edits().add, removed: edits().remove}, roads: site!.roads ?? [], lines: site!.lines ?? [], areas: site!.surfaces ?? [], cuts: site!.roadCuts?.length ?? 0, hidden: site!.hidden ?? []}),
+  selection: () => [...selection],
+  library: () => library.filter(a => !a.retired).map(a => ({id: a.id, name: a.name, category: a.category, attach: a.attach, size: a.size, variants: a.variants.map(v => v.id)})),
+  buildings: () => {
+    const [ox, oz] = loaded!.frame.origin, refined = new Set(city.overrides.map(o => o.id)), hidden = new Set(site!.hidden ?? []);
+    return (worldData?.buildings ?? []).filter(b => b.g.some(([x, z]) => inSquare(x - ox, z - oz, MARGIN))).map(b => ({id: b.id, name: b.name, centre: b.c, footprint: b.g.map(([x, z]): Point2 => [round(x, 1), round(z, 1)]), height: round(b.h, 1), hidden: hidden.has(b.id), refined: refined.has(b.id)}));
+  },
+  streets: () => {
+    const [ox, oz] = loaded!.frame.origin;
+    return streetLines.filter(line => line.some(([x, z]) => inSquare(x - ox, z - oz, MARGIN)));
+  },
+  ground: points => points.map(([x, z]) => { const at = localAt(x, z); return {x, z, height: at ? round(at.y + loaded!.frame.base, 2) : null, indoors: buildingAtPoint(x, z)}; }),
+  camera: () => ({position: camera.position.toArray().map(v => round(v, 2)), target: controls.target.toArray().map(v => round(v, 2))}),
+  async screenshot(width) {
+    render();
+    const source = renderer.domElement, out = document.createElement('canvas');
+    out.width = width;
+    out.height = Math.round(width * source.height / source.width);
+    out.getContext('2d')!.drawImage(source, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', .85);
+  },
+  select(keys) {
+    const missing = unknown(keys);
+    if (missing.length) return {error: 'no such items in the area: ' + missing.join(', ')};
+    selection = new Set(keys);
+    sync();
+    return done(keys);
+  },
+  frame(keys) {
+    const picked = siteHost.select(keys);
+    if ('error' in picked) return picked;
+    frame();
+    render();
+    return picked;
+  },
+  place({asset: id, x, z, heading, variant, wall}) {
+    const asset = assetById.get(id)!, b: Brush = {kind: 'asset', asset, variant: variant ?? asset.variants[0].id};
+    let key = '';
+    if (wall) {
+      const spot = wallSpot(wall.building, x, z), at = spot && localAt(spot.x, spot.z);
+      if (!spot || !at) return {error: `no walls of building ${wall.building} here`};
+      if (!inSquare(at.x, at.z)) return {error: 'that wall is outside the open area'};
+      at.y += wall.height;
+      edit(() => { key = add(b, at, spot.heading, {heading: spot.heading, attach: 'wall', building: wall.building}); });
+    } else {
+      const at = grounded(x, z);
+      if ('error' in at) return at;
+      edit(() => { key = add(b, at, heading ?? 0); });
+    }
+    return done([key]);
+  },
+  addTree({x, z, conifer, height, radius}) {
+    const at = grounded(x, z);
+    if ('error' in at) return at;
+    let key = '';
+    edit(() => { key = add({kind: 'tree', type: conifer ? CONIFER : BROADLEAF, h: height, r: radius}, at, 0); });
+    return done([key]);
+  },
+  removeTree(x, z) {
+    const near = treeList().filter(i => Math.hypot(i.tree.p[0] - x, i.tree.p[1] - z) <= 2).sort((a, b) => Math.hypot(a.tree.p[0] - x, a.tree.p[1] - z) - Math.hypot(b.tree.p[0] - x, b.tree.p[1] - z))[0];
+    if (!near) return {error: 'no tree within 2 m'};
+    selection = new Set([near.key]);
+    edit(removeSelection);
+    return done([near.key]);
+  },
+  change(key, patch) {
+    if (!exists(key)) return {error: 'no such item in the area: ' + key};
+    const p = placementOf(key), road = roadOf(key), line = lineOf(key), surface = areaOf(key);
+    // Every check comes first, so a refused change leaves the item as it was.
+    if (patch.heading !== undefined && (!p || p.attach === 'wall')) return {error: 'only objects on the ground turn'};
+    const asset = p && assetById.get(p.asset);
+    if (patch.variant !== undefined && !asset?.variants.some(v => v.id === patch.variant)) return {error: 'not a variant of this object'};
+    if ((patch.type || patch.footways !== undefined || patch.tiles !== undefined) && !road) return {error: 'type, footways and tiles are for roads'};
+    if (patch.tiles !== undefined && (patch.type ?? road!.type) !== 'tiled-path') return {error: 'only tiled paths have tiles'};
+    if ((patch.lineKind || patch.height !== undefined) && !line) return {error: 'lineKind and height are for lines'};
+    if (patch.finish && !surface) return {error: 'finish is for areas'};
+    let moved = true;
+    edit(() => {
+      if (patch.x !== undefined && patch.z !== undefined) moved = moveTo(key, patch.x, patch.z);
+      if (!moved) return;
+      if (patch.heading !== undefined) p!.heading = round(patch.heading, 4);
+      if (patch.variant !== undefined) { if (patch.variant === asset!.variants[0].id) delete p!.variant; else p!.variant = patch.variant; }
+      if (patch.points) setPoints(key, patch.points);
+      if (road) {
+        if (patch.type) { road.type = patch.type; if (PATH_FINISH[patch.type]) delete road.footways; if (patch.type !== 'tiled-path') delete road.tiles; else road.tiles ??= 4; }
+        if (patch.footways !== undefined) { if (patch.footways && !PATH_FINISH[road.type]) road.footways = true; else delete road.footways; }
+        if (patch.tiles !== undefined) road.tiles = patch.tiles;
+      }
+      if (line) {
+        if (patch.lineKind) { line.kind = patch.lineKind; delete line.height; }
+        if (patch.height !== undefined) { if (patch.height === LINE_HEIGHT[line.kind]) delete line.height; else line.height = round(patch.height, 2); }
+      }
+      if (surface && patch.finish) surface.finish = patch.finish;
+      detailsChanged = treesChanged = true;
+    });
+    return moved ? done([key]) : {error: 'cannot move it there: off the ground, inside a building or outside the area'};
+  },
+  remove(keys) {
+    const missing = unknown(keys);
+    if (missing.length) return {error: 'no such items in the area: ' + missing.join(', ')};
+    selection = new Set(keys);
+    edit(removeSelection);
+    return done(keys);
+  },
+  draw(request) {
+    let key = '';
+    if (request.kind === 'area') {
+      const surface: SiteSurface = {id: newId('s'), finish: request.finish!, ring: request.points};
+      edit(() => { (site!.surfaces ??= []).push(surface); detailsChanged = true; key = 'area:' + surface.id; });
+    } else if (request.kind === 'line') {
+      const line: SiteLine = {id: newId('l'), kind: request.lineKind!, points: request.points, ...request.height !== undefined && request.height !== LINE_HEIGHT[request.lineKind!] && {height: round(request.height, 2)}};
+      edit(() => { (site!.lines ??= []).push(line); detailsChanged = true; key = 'line:' + line.id; });
+    } else {
+      const type = request.type!;
+      if (request.tiles !== undefined && type !== 'tiled-path') return {error: 'only tiled paths have tiles'};
+      const road: SiteRoad = {id: newId('r'), type, ...type === 'tiled-path' && {tiles: request.tiles ?? 4}, points: request.points, ...request.footways && !PATH_FINISH[type] && {footways: true}};
+      edit(() => { (site!.roads ??= []).push(road); detailsChanged = true; key = 'road:' + road.id; });
+    }
+    selection = new Set([key]);
+    sync();
+    return done([key]);
+  },
+  hide(ids, on) {
+    const refined = new Set(city.overrides.map(o => o.id)), bad = ids.filter(id => refined.has(id) || !pickOf.has(id));
+    if (!ids.length || bad.length) return {error: 'not survey buildings that can be hidden: ' + bad.join(', ')};
+    edit(() => { site!.hidden = on ? [...new Set([...site!.hidden ?? [], ...ids])] : (site!.hidden ?? []).filter(id => !ids.includes(id)); reshape(); });
+    return done(ids);
+  },
+  shape({mode, points, radius, strength, target}) {
+    const spots = points.map(([x, z]) => localAt(x, z));
+    if (spots.some(s => !s)) return {error: 'a point has no ground loaded'};
+    const level = mode !== 'flatten' ? null : target !== undefined ? target - loaded!.frame.base : spots[0]!.y;
+    edit(() => { for (const at of spots) dab(at!, level, {shape: mode, radius, strength}); });
+    settle();
+    sync();
+    return done();
+  },
+  setCamera(position, target) { camera.position.fromArray(position); controls.target.fromArray(target); controls.update(); render(); },
+  undo() { step(undo, redo); },
+  redo() { step(redo, undo); },
+  async save() {
+    await save();
+    return dirty ? {error: 'not everything was saved; draft previews are never saved'} : done();
+  },
+  open(centre, size, discard) {
+    if (dirty && !discard) return {error: 'the area has unsaved changes; save first, or pass discard: true'};
+    dirty = false;
+    window.setTimeout(() => { location.search = new URLSearchParams({x: String(centre[0]), z: String(centre[1]), size: String(size)}).toString(); }, 100);
+    return done();
+  },
+};
+const mcpButton = element<HTMLButtonElement>('mcp'), mcpPop = element<HTMLDivElement>('mcp-pop');
+mcpButton.textContent = 'MCP';
+const mcpNodes = {status: element<HTMLParagraphElement>('mcp-status'), channels: element<HTMLParagraphElement>('mcp-channels'), toggle: element<HTMLButtonElement>('mcp-toggle')};
+let mcpSharing = false;
+const closeMcp = () => { mcpPop.hidden = true; mcpButton.setAttribute('aria-expanded', 'false'); };
+mcpButton.onclick = () => {
+  if (!mcpPop.hidden) return closeMcp();
+  const rect = mcpButton.getBoundingClientRect();
+  mcpPop.hidden = false;
+  mcpPop.style.left = `${Math.min(rect.left, innerWidth - 240)}px`;
+  mcpPop.style.top = `${rect.bottom + 4}px`;
+  mcpButton.setAttribute('aria-expanded', 'true');
+};
+addEventListener('pointerdown', event => { if (!mcpPop.hidden && event.target instanceof Node && !mcpPop.contains(event.target) && !mcpButton.contains(event.target)) closeMcp(); }, true);
+const mcpLink = connectSession(() => createSiteSession(siteHost), (status: McpStatus) => { mcpSharing = status.sharing; paintMcp(status, mcpNodes); }, true, '/__studio/site-mcp/session');
+mcpNodes.toggle.onclick = () => { closeMcp(); if (mcpSharing) mcpLink.disconnect(); else mcpLink.connect(); };
 
 // For capture scripts and debugging, as window.studio in the building studio.
 Object.assign(window, {site: {
@@ -1873,7 +2098,7 @@ navigation();
 showPalette();
 action(async () => {
   const x = Number(params.get('x')), z = Number(params.get('z')), size = Number(params.get('size'));
-  if (params.has('x') && Number.isFinite(x) && Number.isFinite(z) && [50, 100, 200].includes(size)) await open({centre: [x, z], size});
+  if (params.has('x') && Number.isFinite(x) && Number.isFinite(z) && [100, 200, 300].includes(size)) await open({centre: [x, z], size});
   else {
     status.textContent = 'Choose a square to edit';
     element('choose').click();

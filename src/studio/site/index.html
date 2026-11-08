@@ -7,6 +7,12 @@
   <span class="bar-name">Site editor</span>
   <span id="where">Choose a square</span>
   <span class="bar-spacer"></span>
+  <button type="button" id="mcp" class="bar-text" aria-haspopup="menu" aria-expanded="false" aria-label="Model connection"></button>
+  <div id="mcp-pop" class="menu-pop" data-no-i18n hidden>
+    <p id="mcp-status">Waiting for a model</p>
+    <p id="mcp-channels"></p>
+    <button type="button" id="mcp-toggle">Disconnect</button>
+  </div>
   <a class="bar-icon" href="../" title="Building studio" aria-label="Building studio"><i class="fa-solid fa-city" aria-hidden="true"></i></a>
   <a id="atlas" class="bar-icon" href="/" target="_blank" rel="noopener" title="Open atlas" aria-label="Open atlas"><i class="fa-solid fa-map" aria-hidden="true"></i></a>
   <a class="bar-icon" href="../ASSETS.md" title="Asset guide" aria-label="Asset guide"><i class="fa-solid fa-book" aria-hidden="true"></i></a>
@@ -40,9 +46,9 @@
 <footer><output id="atlas-build" role="status" aria-live="polite"></output><output id="status">Loading…</output><output id="cursor"></output><span id="hint"></span></footer>
 <dialog id="map">
   <form method="dialog">
-    <p><strong>Choose a square</strong> Click the map to centre it; scroll to zoom, drag to pan. Squares already worked on are outlined.</p>
+    <p><strong>Choose a square</strong> Click the map to centre it; scroll to zoom, drag to pan. Saved work is marked in blue.</p>
     <canvas id="chart" width="900" height="600"></canvas>
-    <p><label>Size <select id="size"><option value="50">50 m</option><option value="100" selected>100 m</option><option value="200">200 m</option></select></label>
+    <p><label>Size <select id="size"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option></select></label>
     <output id="picked"></output><button id="open" value="open">Open square</button><button value="cancel">Cancel</button></p>
   </form>
 </dialog>

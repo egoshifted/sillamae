@@ -17,19 +17,21 @@ function send(response: ServerResponse, status: number, headers: Record<string, 
   response.end(body == null ? undefined : JSON.stringify(body));
 }
 
-export function studioMcp(): Plugin {
-  const hub = createMcpHub();
+// The building studio serves /__studio/mcp and the site editor /__studio/site-mcp, each
+// with its own model and tab, so working in one never takes the other's connection.
+export function studioMcp(base = '/__studio/mcp', serverName = 'sillamae-studio'): Plugin {
+  const hub = createMcpHub(serverName);
   return {
-    name: 'studio-mcp',
+    name: 'studio-mcp' + base.replaceAll('/', '-'),
     apply: 'serve',
     configureServer(server) {
       server.httpServer?.on('upgrade', (request, socket, head) => {
-        if ((request.url ?? '').split('?')[0] !== '/__studio/mcp/session') return;
+        if ((request.url ?? '').split('?')[0] !== base + '/session') return;
         let slot: {message(value: unknown): void; close(): void} | null = null;
         const link = acceptWebSocket(request, socket, head, {message: value => slot?.message(value), close: () => slot?.close()});
         if (link) slot = hub.attach({send: value => link.send(value)});
       });
-      server.middlewares.use('/__studio/mcp', (request, response, next) => {
+      server.middlewares.use(base, (request, response, next) => {
         const path = (request.url ?? '').split('?')[0];
         if (path !== '/' && path !== '') { next(); return; }
         void (async () => {

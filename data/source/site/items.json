@@ -1,14 +1,39 @@
 {
- "version": 1,
- "id": "214_572_50",
- "square": {
-  "centre": [
-   214,
-   572
-  ],
-  "size": 50
- },
+ "version": 3,
  "placements": [
+  {
+   "id": "pmvzg72dp8yx",
+   "asset": "bin-cylindrical-01",
+   "p": [
+    220.366,
+    607.707,
+    12.173
+   ],
+   "heading": 2.618,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzg7bni6k6",
+   "asset": "bin-bio-01",
+   "p": [
+    219.949,
+    606.234,
+    12.183
+   ],
+   "heading": 2.3562,
+   "attach": "ground"
+  },
+  {
+   "id": "pmvzg7jywpyg",
+   "asset": "bin-cylindrical-01",
+   "p": [
+    218.506,
+    605.808,
+    12.213
+   ],
+   "heading": 2.0944,
+   "attach": "ground"
+  },
   {
    "id": "pmvzdhqf09a4",
    "asset": "bench-slatted-01",
@@ -98,7 +123,152 @@
    "attach": "ground"
   }
  ],
+ "trees": {
+  "remove": [
+   [
+    223.46,
+    553.25
+   ],
+   [
+    243.28,
+    566.63
+   ]
+  ],
+  "add": [
+   {
+    "id": "ranna31a-linden-1",
+    "p": [
+     1198.53,
+     645.94
+    ],
+    "z": 7.85,
+    "h": 12.5,
+    "r": 3.2,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "ranna31a-linden-2",
+    "p": [
+     1191.34,
+     646.41
+    ],
+    "z": 7.85,
+    "h": 12,
+    "r": 3.1,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw87gmkfqm2",
+    "p": [
+     243.28,
+     566.63
+    ],
+    "z": 12.867535053861682,
+    "h": 13.8,
+    "r": 3.8,
+    "type": "Lehtpuu"
+   }
+  ]
+ },
+ "lines": [
+  {
+   "id": "lmw87htea78d",
+   "kind": "kerb",
+   "points": [
+    [
+     230.219,
+     553.711
+    ],
+    [
+     214.016,
+     547.096
+    ]
+   ]
+  },
+  {
+   "id": "lmw87iok0pw5",
+   "kind": "kerb",
+   "points": [
+    [
+     227.808,
+     554.463
+    ],
+    [
+     210.553,
+     547.473
+    ]
+   ]
+  },
+  {
+   "id": "lmw87itm5d3i",
+   "kind": "kerb",
+   "points": [
+    [
+     225.486,
+     560.327
+    ],
+    [
+     227.791,
+     554.429
+    ]
+   ]
+  },
+  {
+   "id": "lmw87jeqk3tl",
+   "kind": "kerb",
+   "points": [
+    [
+     224.57,
+     562.736
+    ],
+    [
+     221.182,
+     571.341
+    ]
+   ]
+  }
+ ],
  "roads": [
+  {
+   "id": "rmvzexkw45kv",
+   "type": "kerbed-path",
+   "points": [
+    [
+     216.217,
+     596.537
+    ],
+    [
+     218.854,
+     602.921
+    ],
+    [
+     221.62,
+     605.569
+    ],
+    [
+     235.474,
+     617.02
+    ]
+   ]
+  },
+  {
+   "id": "rmvzg9cj9bvx",
+   "type": "worn-path",
+   "points": [
+    [
+     217.198,
+     601.848
+    ],
+    [
+     217.042,
+     601.826
+    ],
+    [
+     202.45,
+     626.948
+    ]
+   ]
+  },
   {
    "id": "rmvzddt580rl",
    "type": "kerbed-path",
@@ -246,14 +416,5 @@
     ]
    ]
   }
- ],
- "trees": {
-  "remove": [
-   [
-    223.46,
-    553.25
-   ]
-  ],
-  "add": []
- }
+ ]
 }

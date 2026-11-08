@@ -2,7 +2,8 @@ import {randomUUID} from 'node:crypto';
 
 interface Rpc {id?: unknown; method?: string; params?: unknown}
 
-export function createMcpHub() {
+// One model and one editor tab at a time; name is what the client sees as the server.
+export function createMcpHub(serverName = 'sillamae-studio') {
   let tab: {send(message: unknown): void} | null = null;
   let client: {id: string; name: string; seen: number} | null = null;
   let seq = 0;
@@ -63,7 +64,7 @@ export function createMcpHub() {
         if (!client || session !== client.id) client = {id: randomUUID(), name, seen: now};
         else { client.name = name; client.seen = now; }
         tab?.send({kind: 'client', attached: true, name: client.name});
-        return json(rpc.id, {result: {protocolVersion: '2024-11-05', capabilities: {tools: {listChanged: true}}, serverInfo: {name: 'sillamae-studio', version: '1'}}}, 200, {'mcp-session-id': client.id});
+        return json(rpc.id, {result: {protocolVersion: '2024-11-05', capabilities: {tools: {listChanged: true}}, serverInfo: {name: serverName, version: '1'}}}, 200, {'mcp-session-id': client.id});
       }
       if (!client || session !== client.id) return json(rpc.id, {error: {code: -32001, message: 'No model session'}});
       client.seen = now;
