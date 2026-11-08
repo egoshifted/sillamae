@@ -1,6 +1,7 @@
 import {makeAddressSigns} from './signs.ts';
 import {finishOpening, finishRoof, addressPlaques, sheetLaps} from './finishing.ts';
 import {finishMaterials} from './surfaces.ts';
+import {wearUniforms} from './wear.ts';
 import * as THREE from 'three';
 import type {OverrideContext} from '../../../engine/types.ts';
 import type {StudyModel} from '../../../studio/types.ts';
@@ -10,8 +11,8 @@ import {addCourtyardDetail, addCourtyardCornice} from './courtyard.ts';
 import {refinedLevels} from './levels.ts';
 import {addBalconyOrnament, addWindowPanel, addPlinth} from './ornament.ts';
 import {corrugatedNormal, roofUV} from './roof-finish.ts';
-import {addDownpipes, addEntranceFrame} from './access.ts';
-import {addMouldings, addCornerRustication} from './mouldings.ts';
+import {addDownpipes, addEntranceFrame, downpipes, streetDownpipes} from './access.ts';
+import {addMouldings, addCornerRustication, quoinCorners} from './mouldings.ts';
 import {addJoinery} from './joinery.ts';
 import {addChimneys} from './chimneys.ts';
 import {addVentedRoof} from './roof.ts';
@@ -91,11 +92,11 @@ function build({building, frame, scene}: OverrideContext, stage: 'shell' | 'stre
         facade ? o => {
           const detailPart = (id: string, name: string) => part(`edge-${i}/${id}`, `Edge ${i} ${name}`);
           addJoinery(o, i, emit(whites, 5), emit(browns, 6), emit(irons, 7), detailPart, ornament, courtyard, complete);
-          if (finished) addMouldings(o, i, trimVertex, detailPart, ornament);
+          if (finished) addMouldings(o, i, trimVertex, detailPart, ornament, complete);
           if (access) addEntranceFrame(o, door, detailPart);
           if (complete) finishOpening(o, i, trimVertex, emit(metals,3), door, detailPart);
           if (courtyard) addCourtyardDetail(o, i, trimVertex, emit(irons, 7), detailPart);
-          if (ornament) {addBalconyOrnament(o, i, trimVertex, emit(irons, 7), detailPart, levels); addWindowPanel(o, i, trimVertex, detailPart);}
+          if (ornament) {addBalconyOrnament(o, i, trimVertex, emit(irons, 7), detailPart, levels); addWindowPanel(o, i, trimVertex, detailPart, false, complete);}
         } : undefined, ornament, levels, courtyard, roofShape.breaks?.[i]);
       continue;
     }
@@ -135,8 +136,8 @@ function build({building, frame, scene}: OverrideContext, stage: 'shell' | 'stre
 
   if (detailed) addChimneys(complete ? emit(metals,3) : vertex, emit(metals, 3), emit(flues, 4), part, roofShape, complete);
 
-  if (finished) addCornerRustication(trimVertex, part);
-  if (access) addDownpipes(emit(metals, 3), part, levels?.plinth, roofShape.eaves);
+  if (finished) for (const corner of complete ? quoinCorners : [0]) addCornerRustication(trimVertex, part, corner);
+  if (access) addDownpipes(emit(metals, 3), part, levels?.plinth, roofShape.eaves, complete ? streetDownpipes : downpipes);
 
   if (courtyard) addCourtyardCornice(trimVertex, part, roofShape.eaves, roofShape.edgeHeights, roofShape.breaks);
   if (ornament) addPlinth(emit(plinth, 10), emit(brick, 11), trimVertex, part, levels?.plinth, complete ? 14.72 : undefined);
@@ -207,7 +208,7 @@ function build({building, frame, scene}: OverrideContext, stage: 'shell' | 'stre
   }
   const signs = complete ? makeAddressSigns(building.c) : undefined;
   if(signs) root.add(...signs.meshes);
-  const surfaceControl = complete ? finishMaterials(ownedMaterials) : undefined;
+  const surfaceControl = complete ? finishMaterials(ownedMaterials, wearUniforms(building.c)) : undefined;
   root.name = 'kesk13-' + stage;
   root.position.set(building.c[0] - frame.origin[0], baseElevation - frame.base, building.c[1] - frame.origin[1]);
   root.castShadow = root.receiveShadow = true;

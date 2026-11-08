@@ -13,15 +13,10 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:trans
 
 #debug{position:absolute;right:16px;top:16px;width:290px;padding:12px 14px;background:#1d2420e6;color:#e3ead9;font-size:11px;box-shadow:0 8px 24px #0004;z-index:10}#debug .debug-title{display:flex;justify-content:space-between;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}#debug .debug-title span{opacity:.5;font-weight:400}#debug pre{margin:0 0 10px;font:11px/1.55 Consolas,ui-monospace,monospace;white-space:pre-wrap}#debug label{display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer}
 #debug .debug-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}#debug .debug-legend i{flex:1;height:8px;background:linear-gradient(90deg,#2f6b3f,#7fa65a,#e3d27c,#c98a4a,#8a4b2f)}#debug .debug-legend small{flex-basis:100%;opacity:.7}
-.building-card{position:absolute;right:24px;bottom:55px;width:290px;padding:16px 18px;background:#fbfcf3ed;border:1px solid #d2d8c7;border-radius:15px;box-shadow:0 12px 40px #32452c16;backdrop-filter:blur(12px);font-size:12px}.building-card .card-title{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;margin-bottom:10px}.building-card .card-title button{border:0;font-size:18px;line-height:1;padding:2px 6px}.building-card dl{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0 0 12px}.building-card dt{color:#76846d}.building-card dd{margin:0}.building-card a{color:#405b43}.building-card .card-action{width:100%}
-@media(max-width:850px),(pointer:coarse){footer,.building-card{display:none}}
+@media(max-width:850px),(pointer:coarse){footer{display:none}}
 .panel{left:50%;bottom:18px;width:auto;padding:14px 20px 12px;transform:translateX(-50%)}footer{justify-content:flex-end;bottom:4px}
-.panel-title{flex-direction:column;align-items:center;gap:2px;margin-bottom:6px}.panel>label{justify-content:center;margin:6px 0 4px}
-/* Wide enough for the longest time of day, so the slider stays put as the label changes. */
-#time{min-width:72px}
-.dial{display:grid;grid-template:repeat(3,40px)/repeat(3,40px);place-items:center;width:max-content;margin:0 auto}
-.dial button{display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:50%}.dial svg{width:30px;height:30px;fill:currentColor}.dial .line{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
-#tilt-up{grid-area:1/2}#rotate-back{grid-area:2/1}.dial .hub{grid-area:2/2;width:20px;height:20px;border:2px solid #40553e;border-radius:50%}#rotate{grid-area:2/3}#rotate svg{transform:scaleX(-1)}#tilt-down{grid-area:3/2}#tilt-down svg{transform:rotate(180deg)}
+.panel{text-align:center}.panel>label{justify-content:center;margin:4px 0}.panel .buttons{justify-content:center;margin:6px 0 0}
+.sun-icon{width:20px;height:20px;flex:none;fill:#64815b;stroke:#64815b;stroke-width:1.8;stroke-linecap:round}
 #loading{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;padding:0;background:none;border-radius:0;pointer-events:none}#loading svg{width:min(170px,42vw);height:auto;overflow:visible}
 #loading .track,#loading .ring{fill:none;stroke-width:14}#loading .track{stroke:#cdd5c6b0}#loading .ring{stroke:#405b43;stroke-linecap:round;transition:stroke-dashoffset .3s}
 #loading .field{fill:#1d4fa8}#loading .block{fill:#f8d21c;animation:lay 3.6s infinite both}
@@ -31,5 +26,3 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:trans
 /* A pill, because the page behind is black until the first frame. */
 /* Hangs below the ring (half the crest's width) so the crest itself sits at the centre. */
 #loading p{position:absolute;top:calc(50% + min(85px,21vw) + 14px);margin:0;padding:5px 12px;border-radius:12px;background:#fffef3e0;font-size:11px;letter-spacing:1.5px;color:#53654f}
-/* Below this width the centred panel reaches under the card, so the card rises above it. */
-@media(max-width:1040px){.building-card{bottom:240px}}

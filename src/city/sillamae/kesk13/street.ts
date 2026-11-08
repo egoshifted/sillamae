@@ -14,6 +14,15 @@ const street: Schedule = {
 };
 
 export const streetWalls: Partial<Record<number, Schedule>> = {0: street, 7: street};
+
+// Both street fronts carry the garland window second from each end (Street View May 2024).
+export const garlandBays = [2, 9] as const;
+export function hasGarland(edge: number, bay: number) {
+  return !!streetWalls[edge] && (garlandBays as readonly number[]).includes(bay);
+}
+
+// Upper sashes still in brown-stained timber; every other street sash is white PVC (Street View May 2024).
+export const timberSashes: Partial<Record<number, readonly number[]>> = {7: [2, 7, 8, 9, 10], 0: [1, 2]};
 export const courtyardWalls: Partial<Record<number, Schedule>> = {
   2: {courtyard: true, bays: [
     {centre: .10, lower: 'window', upper: 'window'}, {centre: .30, lower: 'window', upper: 'balcony'},

@@ -248,6 +248,19 @@ export class Engine {
     this.#redraw = true;
   }
 
+  // Centres the current view on the building, closing in until it is comfortably framed.
+  glideToBuilding(b: Building) {
+    const prism = this.#prisms.find(p => p.building === b);
+    if (!prism) return;
+    const xs = prism.outline.map(p => p[0]), zs = prism.outline.map(p => p[1]);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const radius = Math.max(...prism.outline.map(([x, z]) => Math.hypot(x - cx, z - cz)), b.h * .7);
+    const base = Math.max(prism.bottom, prism.top - b.h);
+    this.focusedId = b.id;
+    this.camera.glide(new THREE.Vector3(cx, base + b.h / 2, cz), Math.max(this.camera.ortho.zoom, this.camera.zoomToFit(radius)));
+    this.#redraw = true;
+  }
+
   setTextures(enabled: boolean) {
     for (const built of this.#built.values()) built.setTextures(enabled);
     this.#setSurveyTextures(enabled);

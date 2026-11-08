@@ -3,7 +3,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {fitCameraDepth} from './depth.ts';
 import {MAX_ELEVATION, MIN_ELEVATION, orbitOffset, orbitStep, unwrapAngle, type Orbit} from './orbit.ts';
 
-const TURN_MS = 500;
+const TURN_MS = 500, GLIDE_MS = 800;
 const SPIN_RATE = Math.PI / 4 / (TURN_MS / 1000), TILT_RATE = Math.PI / 12 / (TURN_MS / 1000);
 
 export interface SavedView {
@@ -21,6 +21,14 @@ export interface CameraView {
   span: number;
 }
 
+interface Glide {
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  fromZoom: number;
+  toZoom: number;
+  start: number;
+}
+
 interface Turn {
   from: Orbit;
   to: Orbit;
@@ -34,6 +42,7 @@ export class CameraController {
   #span = 108; // visible metres, top to bottom, at zoom 1
   #aspect = 1;
   #turn: Turn | null = null;
+  #glide: Glide | null = null;
   #spin = {horizontal: 0, vertical: 0};
   #last = 0;
   readonly #interactListeners = new Set<() => void>();
@@ -51,7 +60,7 @@ export class CameraController {
     controls.maxPolarAngle = Math.PI / 2 - MIN_ELEVATION;
     controls.minPolarAngle = 0;
     controls.addEventListener('change', onChange);
-    controls.addEventListener('start', () => { this.#turn = null; this.#interacted(); });
+    controls.addEventListener('start', () => { this.#turn = this.#glide = null; this.#interacted(); });
   }
 
   get target() {
@@ -94,7 +103,7 @@ export class CameraController {
 
   set view(v: SavedView) {
     const radian = Math.PI / 180, radius = this.ortho.position.distanceTo(this.#controls.target);
-    this.#turn = null;
+    this.#turn = this.#glide = null;
     this.#controls.target.set(v.x, v.y, v.z);
     this.ortho.position.copy(this.#controls.target).add(new THREE.Vector3(...orbitOffset({theta: v.heading * radian, elevation: v.elevation * radian, radius})));
     this.#span = v.span;
@@ -109,13 +118,24 @@ export class CameraController {
   }
 
   focus(target: THREE.Vector3, view: CameraView) {
-    this.#turn = null;
+    this.#turn = this.#glide = null;
     this.#controls.target.copy(target);
     this.ortho.position.copy(target).add(new THREE.Vector3(...view.offset));
     this.#span = view.span;
     this.ortho.zoom = 1;
     this.#updateFrustum();
     this.#controls.update();
+  }
+
+  // Keeps the heading and tilt; the view only moves and zooms, so a turn can run at the same time.
+  glide(target: THREE.Vector3, zoom: number) {
+    const toZoom = Math.max(this.#controls.minZoom, Math.min(this.#controls.maxZoom, zoom));
+    this.#glide = {from: this.#controls.target.clone(), to: target.clone(), fromZoom: this.ortho.zoom, toZoom, start: performance.now()};
+  }
+
+  // Zoom at which a disc of this radius fills about a third of the view height.
+  zoomToFit(radius: number) {
+    return this.#span / Math.max(30, radius * 3);
   }
 
   // Steps requested mid-turn add up from the turn's destination.
@@ -134,6 +154,17 @@ export class CameraController {
   update(now: number) {
     const spinning = this.#spinStep(Math.min(.1, (now - this.#last) / 1000));
     this.#last = now;
+    const glide = this.#glide;
+    if (glide) {
+      const k = Math.min(1, (now - glide.start) / GLIDE_MS), u = k * k * (3 - 2 * k);
+      const target = glide.from.clone().lerp(glide.to, u), shift = target.clone().sub(this.#controls.target);
+      this.#controls.target.copy(target);
+      this.ortho.position.add(shift);
+      // Zoom eases in log space so far-out starts do not rush the last stretch.
+      this.ortho.zoom = glide.fromZoom * Math.pow(glide.toZoom / glide.fromZoom, u);
+      this.ortho.updateProjectionMatrix();
+      if (k === 1) this.#glide = null;
+    }
     const turn = this.#turn;
     if (turn) {
       const k = Math.min(1, (now - turn.start) / TURN_MS), u = k * k * (3 - 2 * k), {from, to} = turn;
@@ -143,7 +174,7 @@ export class CameraController {
       if (k === 1) this.#turn = null;
     }
     this.#controls.update();
-    return !!turn || spinning;
+    return !!turn || !!glide || spinning;
   }
 
   prepareRender() {

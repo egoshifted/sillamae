@@ -4,7 +4,7 @@ import {detailBuilder} from './ornament.ts';
 import {wallCorners} from './cornice.ts';
 import {eaveHeight, baseElevation, ridges, type RoofShape, type SurveyPoint} from './design.ts';
 import {roofHeight, roofVents} from './roof.ts';
-import {chimneyRows} from './chimneys.ts';
+import {stackFrame, stackIds} from './chimneys.ts';
 import type {OpeningDetail} from './joinery.ts';
 type Emit=(p:SurveyPoint)=>void;
 type Part=(id:string,name:string)=>void;
@@ -72,16 +72,14 @@ export function finishRoof(shape:RoofShape,roof:Emit,metal:Emit,dark:Emit,part:P
   for(let x=-radius+.07;x<radius;x+=.14){const top=d.arched?.15+Math.sqrt(Math.max(0,radius*radius-x*x)):.46;g.box(x-.012,x+.012,.10,top,.035,.065);}
   g.box(-radius,radius,.19,.215,.03,.065);
  }
- for(const row of chimneyRows) {
-  const a=shape.eaves[row.edge],b=shape.eaves[(row.edge+1)%8],len=Math.hypot(b[0]-a[0],b[1]-a[1]),ux=(b[0]-a[0])/len,uz=(b[1]-a[1])/len;
-  for(const [group,t] of row.fractions.entries())for(const [stack,s] of [1.7,3.25,4.8].entries()) {
-   const cx=a[0]+(b[0]-a[0])*t-uz*s,cz=a[1]+(b[1]-a[1])*t+ux*s;
-   const p=(u:number,y:number,v=0):SurveyPoint=>[cx+ux*u-uz*v,cz+uz*u+ux*v,y];
-   const w=stack===2?.28:.34,depth=stack===2?.34:.4;
-   const top=Math.max(...[[-w,-depth],[w,-depth],[w,depth],[-w,depth]].map(([u,v])=>{const q=p(u,0,v);return roofHeight(q[0],q[1],shape)+.035;}))+(stack===2?.77:.92);
-   if(stack===1)continue;
-   part('chimney-'+row.edge+'-'+group+'-'+stack+'/cladding','Chimney vertical sheet seams');const g=emitBox(p,metal);
-   for(const side of [-1,1])for(let x=-w+.06;x<w-.02;x+=.14){const q=p(x,0,side*(depth+.005)),bottom=roofHeight(q[0],q[1],shape)+.18;g.box(x-.008,x+.008,bottom,top,side*.405-.008,side*.405+.008);}
+ for(const {stack:s,id} of stackIds(true)) {
+  if(!s.clad)continue;
+  const {at,ground,top}=stackFrame(s,shape),p=(u:number,y:number,v=0):SurveyPoint=>at(u,v,y);
+  part(id+'/cladding','Chimney standing-seam sheet cladding');const g=emitBox(p,metal);
+  // Seams stop under the rim lip and above the flashing collar so they never cut either.
+  for(const side of [-1,1]) {
+   for(let x=-s.w+.07;x<s.w-.03;x+=.14){const v=side*(s.d+.008);g.box(x-.009,x+.009,ground(x,v,.18),top-.09,v-.009,v+.009);}
+   for(let v=-s.d+.07;v<s.d-.03;v+=.14){const u=side*(s.w+.008);g.box(u-.009,u+.009,ground(u,v,.18),top-.09,v-.009,v+.009);}
   }
  }
 }
