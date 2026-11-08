@@ -11,6 +11,7 @@ const DATA = './data/', PARALLEL = 6;
 export interface Progress {
   loaded: number;
   total: number;
+  viewTiles: number; // tiles the first view waits for; 0 until known
   viewReady: boolean;
   firstView: number; // ms since navigation start, 0 until known
   complete: number;
@@ -22,7 +23,7 @@ export interface TownState {
   error: string;
 }
 
-let state: TownState = {engine: null, progress: {loaded: 0, total: 0, viewReady: false, firstView: 0, complete: 0}, error: ''};
+let state: TownState = {engine: null, progress: {loaded: 0, total: 0, viewTiles: 0, viewReady: false, firstView: 0, complete: 0}, error: ''};
 const listeners = new Set<() => void>();
 let visibleTilesReady = () => false;
 const update = (patch: Partial<TownState>) => {
@@ -84,6 +85,7 @@ async function load(container: HTMLElement) {
   };
   const tiles = engine.tilesByDistance(survey), radius = engine.camera.visibleRadius;
   const near = tiles.filter(t => t.distance <= radius), far = tiles.filter(t => t.distance > radius);
+  progress.viewTiles = near.length;
   root.dataset.tiles = 'loading';
   report();
 

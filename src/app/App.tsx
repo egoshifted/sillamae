@@ -3,6 +3,7 @@ import {BuildingCard} from './BuildingCard.tsx';
 import {DebugPanel} from './DebugPanel.tsx';
 import {ExplorePanel} from './ExplorePanel.tsx';
 import {HoverLabel} from './HoverLabel.tsx';
+import {Loading} from './Loading.tsx';
 import {SearchPanel} from './SearchPanel.tsx';
 import {town} from './town.ts';
 import {useSpinKeys} from './useSpinKeys.ts';
@@ -17,7 +18,7 @@ export function App() {
     <SearchPanel engine={engine}/>
     <ExplorePanel engine={engine}/>
     <footer><span>Geometry: Maa- ja Ruumiamet · Map: © OpenStreetMap contributors</span></footer>
-    {!progress.viewReady && <div id="loading">Loading the town…{progress.total ? ` ${progress.loaded} / ${progress.total}` : ''}</div>}
+    {!progress.viewReady && <Loading progress={progress}/>}
     {engine && <HoverLabel engine={engine}/>}
     {engine && <BuildingCard engine={engine}/>}
     {error && <div id="error">The town could not start: {error}</div>}
