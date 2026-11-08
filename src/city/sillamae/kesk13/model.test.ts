@@ -99,6 +99,15 @@ test('only garland bays and balconies keep a plaster surround on the street fron
   assert.ok(partIds.includes('kesk13/edge-2/bay-1/L2/moulding'), 'courtyard surrounds are untouched');
 });
 
+test('quoins rise at the street corner and the west end of the Kesk front, clear of the end-wall windows', () => {
+  for (const corner of [0, 7]) assert.equal(partIds.filter(id => id.startsWith(`kesk13/corner-${corner}/course-`)).length, 20);
+  assert.ok(!partIds.some(id => /\/corner-[1-6]\//.test(id)));
+  const walls = wallCorners(), end = Math.hypot(walls[7][0] - walls[6][0], walls[7][1] - walls[6][1]);
+  assert.ok(.72 * end + .72 < end - .58, 'the widest quoin stops short of the nearer end-wall window');
+  const {length, spans} = openingSpans(7);
+  assert.ok(spans[0][0] > .58 && length > 0, 'and of bay 1 on the Kesk front');
+});
+
 test('timber and PVC sashes follow the photographed street windows', () => {
   const brown = '51473f', white = 'e1dfd5';
   for (const bay of [2, 7, 8, 9, 10]) assert.equal(materialOf(`kesk13/edge-7/bay-${bay}/L2/frame`), brown);

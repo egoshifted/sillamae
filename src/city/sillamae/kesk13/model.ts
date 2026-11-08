@@ -12,7 +12,7 @@ import {refinedLevels} from './levels.ts';
 import {addBalconyOrnament, addWindowPanel, addPlinth} from './ornament.ts';
 import {corrugatedNormal, roofUV} from './roof-finish.ts';
 import {addDownpipes, addEntranceFrame, downpipes, streetDownpipes} from './access.ts';
-import {addMouldings, addCornerRustication} from './mouldings.ts';
+import {addMouldings, addCornerRustication, quoinCorners} from './mouldings.ts';
 import {addJoinery} from './joinery.ts';
 import {addChimneys} from './chimneys.ts';
 import {addVentedRoof} from './roof.ts';
@@ -136,7 +136,7 @@ function build({building, frame, scene}: OverrideContext, stage: 'shell' | 'stre
 
   if (detailed) addChimneys(complete ? emit(metals,3) : vertex, emit(metals, 3), emit(flues, 4), part, roofShape, complete);
 
-  if (finished) addCornerRustication(trimVertex, part);
+  if (finished) for (const corner of complete ? quoinCorners : [0]) addCornerRustication(trimVertex, part, corner);
   if (access) addDownpipes(emit(metals, 3), part, levels?.plinth, roofShape.eaves, complete ? streetDownpipes : downpipes);
 
   if (courtyard) addCourtyardCornice(trimVertex, part, roofShape.eaves, roofShape.edgeHeights, roofShape.breaks);
