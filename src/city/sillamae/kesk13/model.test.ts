@@ -89,6 +89,16 @@ test('both street fronts carry the garland under bays 2 and 9 and nowhere else',
   }
 });
 
+test('only garland bays and balconies keep a plaster surround on the street fronts', () => {
+  for (const edge of [0, 7]) for (const [index, bay] of streetWalls[edge]!.bays.entries()) for (const level of ['L1', 'L2']) {
+    const kind = level === 'L1' ? bay.lower : bay.upper;
+    const framed = partIds.includes(`kesk13/edge-${edge}/bay-${index + 1}/${level}/moulding`);
+    assert.equal(framed, kind === 'balcony' || index + 1 === 2 || index + 1 === 9, `edge ${edge} bay ${index + 1} ${level}`);
+    if (kind === 'window') assert.ok(partIds.includes(`kesk13/edge-${edge}/bay-${index + 1}/${level}/sill`));
+  }
+  assert.ok(partIds.includes('kesk13/edge-2/bay-1/L2/moulding'), 'courtyard surrounds are untouched');
+});
+
 test('timber and PVC sashes follow the photographed street windows', () => {
   const brown = '51473f', white = 'e1dfd5';
   for (const bay of [2, 7, 8, 9, 10]) assert.equal(materialOf(`kesk13/edge-7/bay-${bay}/L2/frame`), brown);

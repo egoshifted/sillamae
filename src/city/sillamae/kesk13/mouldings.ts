@@ -19,12 +19,16 @@ export function addMouldings(o: OpeningDetail, edge: number, emit: Emit, part: P
     const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, back - front);
     g.translate((x0 + x1) / 2, (y0 + y1) / 2, (front + back) / 2); geometry(g, o.point, emit);
   }
-  part(o.id + '/moulding', o.label + ' plaster surround');
-  const jamb = street ? .10 : .06;
-  box(l - jamb, l, b, t, street ? -.045 : -.025);
-  box(r, r + jamb, b, t, street ? -.045 : -.025);
-  box(l - jamb, r + jamb, t, t + .11, -.06);
-  if (street && o.upper && (!ornament || o.kind === 'balcony' || (complete ? hasGarland(edge, o.bay) : (edge === 0 && o.bay === 2) || (edge === 7 && o.bay === 9)))) {
+  // Street View May 2024: plain street windows are bare reveals with a sill; only the garland bays and balconies are framed.
+  const framed = !(complete && street && o.kind === 'window' && !hasGarland(edge, o.bay));
+  if (framed) {
+    part(o.id + '/moulding', o.label + ' plaster surround');
+    const jamb = street ? .10 : .06;
+    box(l - jamb, l, b, t, street ? -.045 : -.025);
+    box(r, r + jamb, b, t, street ? -.045 : -.025);
+    box(l - jamb, r + jamb, t, t + .11, -.06);
+  }
+  if (framed && street && o.upper && (!ornament || o.kind === 'balcony' || (complete ? hasGarland(edge, o.bay) : (edge === 0 && o.bay === 2) || (edge === 7 && o.bay === 9)))) {
     box(l - .16, r + .16, t + .11, t + .19, -.11);
     box(l - .20, r + .20, t + .19, t + .24, -.15);
   }
