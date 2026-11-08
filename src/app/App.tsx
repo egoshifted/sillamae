@@ -16,7 +16,7 @@ export function App() {
   return <>
     <SearchPanel engine={engine}/>
     <ExplorePanel engine={engine}/>
-    <footer>Left-drag to move · Scroll to zoom · A D Rotate · W S Tilt <span>Geometry: Maa- ja Ruumiamet · Map: © OpenStreetMap contributors</span></footer>
+    <footer><span>Geometry: Maa- ja Ruumiamet · Map: © OpenStreetMap contributors</span></footer>
     {!progress.viewReady && <div id="loading">Loading the town…{progress.total ? ` ${progress.loaded} / ${progress.total}` : ''}</div>}
     {engine && <HoverLabel engine={engine}/>}
     {engine && <BuildingCard engine={engine}/>}
