@@ -17,7 +17,8 @@ export interface Square {
   size: number; // metres
 }
 
-// Metres of context shown around the square; editing stays inside the square.
+// Metres of context shown around the square. Objects stay inside it; drawn roads,
+// lines and areas may run this far past its edge.
 export const MARGIN = 15;
 // Metres between ground height samples; finer than the 1 m rebuilt ground, so kerbs register.
 const STEP = .25;
@@ -112,7 +113,8 @@ export class HeightField {
   }
 }
 
-export async function loadSquare(world: WorldData, survey: SurveyManifest, square: Square, renderer: THREE.WebGLRenderer, progress: (text: string) => void) {
+// own: ids of the open area's drawn roads and road cuts, which the editor previews itself.
+export async function loadSquare(world: WorldData, survey: SurveyManifest, square: Square, own: Set<string>, renderer: THREE.WebGLRenderer, progress: (text: string) => void) {
   const frame = {...city.frame, base: world.base}, [ox, oz] = frame.origin, [cx, cz] = square.centre, half = square.size / 2 + MARGIN;
   const box = {minX: cx - ox - half, maxX: cx - ox + half, minZ: cz - oz - half, maxZ: cz - oz + half};
   const inside = (x: number, z: number) => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
@@ -147,14 +149,13 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
   layer.setLevel(2);
 
   progress('Roads, trees and buildings…');
-  // The square's own drawn roads come from the data build too; the editor previews those instead.
-  const id = `${cx}_${cz}_${square.size}`;
-  const roads = world.roads.filter(r => r.studio !== id && r.ring.some(([x, , z]) => inside(x, z))).flatMap(r => {
+  const theirs = (r: RoadSurface) => !r.studio || !own.has(r.studio);
+  const roads = world.roads.filter(r => theirs(r) && r.ring.some(([x, , z]) => inside(x, z))).flatMap(r => {
     const rings = heights.surface.drape(r.ring.map(([x, , z]): Point2 => [x, z]), r.kind === 'marking' ? .05 : .02);
     return rings.length ? rings.map(ring => ({...r, ring, lift: 0})) : [r];
   });
   // Kerbs follow the built outlines on the top ground; the draped fragments would break them up.
-  const kerbsFrom = world.roads.filter(r => r.studio !== id && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({...r, lift: 0, ring: (r.kerbed ? densify(r.ring.map(([x, , z]): Point2 => [x, z]), .25) : r.ring.map(([x, , z]): Point2 => [x, z])).map(([x, z]): [number, number, number] => {
+  const kerbsFrom = world.roads.filter(r => theirs(r) && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({...r, lift: 0, ring: (r.kerbed ? densify(r.ring.map(([x, , z]): Point2 => [x, z]), .25) : r.ring.map(([x, , z]): Point2 => [x, z])).map(([x, z]): [number, number, number] => {
     const h = heights.at(x, z);
     return [x, (h > -Infinity ? h : 0) + .02, z];
   })}));
@@ -204,7 +205,7 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
 
   shapeable.push({mesh: wallMesh, picks: wallGeometry.attributes.pick as THREE.BufferAttribute});
   const centres = new Map(world.buildings.map(b => [b.pick, [b.c[0] - ox, b.c[1] - oz] as Point2]));
-  const otherCuts = (world.roadCuts ?? []).filter(c => c.site !== id).map(c => ({...c, exposeGround: true}));
+  const otherCuts = (world.roadCuts ?? []).filter(c => !c.id || !own.has(c.id)).map(c => ({...c, exposeGround: true}));
   const groundColours = new Map<THREE.BufferAttribute, {original: Float32Array; position: THREE.BufferAttribute; buildings: THREE.BufferAttribute}>();
   scene.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
@@ -223,6 +224,6 @@ export async function loadSquare(world: WorldData, survey: SurveyManifest, squar
     roadGroup = addRoads(scene, shifted(roads), renderer.capabilities.getMaxAnisotropy(), allCuts, [], shifted(kerbsFrom));
     usePhysicalDepth(roadGroup);
   }
-  const roadFootprints = world.roads.filter(r => r.studio !== id && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({kind: r.kind, ring: r.ring.map(([x, , z]): Point2 => [x + ox, z + oz])}));
+  const roadFootprints = world.roads.filter(r => theirs(r) && r.kind !== 'marking' && r.ring.some(([x, , z]) => inside(x, z))).map(r => ({kind: r.kind, ring: r.ring.map(([x, , z]): Point2 => [x + ox, z + oz])}));
   return {scene, heights, wallMesh, refined, trees, byPick, box, frame, indoors, shapeable, centres, setRoadCuts, otherCuts, roadFootprints, groundColour};
 }

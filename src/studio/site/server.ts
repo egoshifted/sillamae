@@ -1,20 +1,22 @@
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {AtlasBuildQueue} from './atlas-build.ts';
 import path from 'node:path';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import type {Plugin} from 'vite';
+import {CHUNK, CHUNK_KEY} from '../../engine/terrain-edit.ts';
 
-// Development-server endpoints for the site editor: it saves placements into
-// data/source and moves reviewed drafts. Only the local dev server has them;
+// Development-server endpoints for the site editor: it saves the town's site store
+// into data/source and moves reviewed drafts. Only the local dev server has them;
 // the published build is static.
-const SITES = 'data/source/placements', BUILDINGS = 'data/source/buildings', ASSETS = 'src/city/sillamae/assets', DRAFTS = 'src/city/sillamae/asset-drafts';
-const SITE_ID = /^-?\d+_-?\d+_\d+$/, BUILDING_ID = /^\d+$/, ASSET_ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*-\d{2}$/;
+const SITE = 'data/source/site', TERRAIN = 'data/source/site/terrain', BUILDINGS = 'data/source/buildings', ASSETS = 'src/city/sillamae/assets', DRAFTS = 'src/city/sillamae/asset-drafts';
+const BUILDING_ID = /^\d+$/, ASSET_ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*-\d{2}$/;
 
 const body = (request: IncomingMessage) => new Promise<string>((resolve, reject) => {
   let text = '';
   request.setEncoding('utf8');
-  request.on('data', chunk => { text += chunk; if (text.length > 5e6) reject(Error('Body too large')); });
+  request.on('data', chunk => { text += chunk; if (text.length > 5e7) reject(Error('Body too large')); });
   request.on('end', () => resolve(text));
   request.on('error', reject);
 });
@@ -24,6 +26,23 @@ function send(response: ServerResponse, status: number, value: unknown) {
   response.setHeader('content-type', 'application/json');
   response.setHeader('cache-control', 'no-store');
   response.end(JSON.stringify(value));
+}
+
+// The store as saved, items and every terrain chunk, so a save from a stale window is refused.
+function revision(root: string) {
+  const hash = createHash('sha1'), items = path.join(root, SITE, 'items.json'), chunks = path.join(root, TERRAIN);
+  hash.update(fs.existsSync(items) ? fs.readFileSync(items) : '');
+  for (const f of fs.existsSync(chunks) ? fs.readdirSync(chunks).sort() : []) hash.update('/' + f + '/').update(fs.readFileSync(path.join(chunks, f)));
+  return hash.digest('hex');
+}
+
+// Writes atomically, and only when the contents change; true when it wrote.
+function write(file: string, contents: string) {
+  if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') === contents) return false;
+  fs.mkdirSync(path.dirname(file), {recursive: true});
+  fs.writeFileSync(file + '.tmp', contents);
+  fs.renameSync(file + '.tmp', file);
+  return true;
 }
 
 function rebuildAtlas(root: string) {
@@ -42,7 +61,7 @@ export function studioSites(run = rebuildAtlas): Plugin {
   return {
     name: 'studio-sites',
     apply: 'serve',
-    config: () => ({server: {watch: {ignored: ['**/public/data', '**/public/data/**', '**/public/.data-*', '**/public/.data-*/**', '**/public/.data-build.lock', '**/data/source/placements/**', '**/data/source/buildings/**']}}}),
+    config: () => ({server: {watch: {ignored: ['**/public/data', '**/public/data/**', '**/public/.data-*', '**/public/.data-*/**', '**/public/.data-build.lock', '**/data/source/site/**', '**/data/source/buildings/**']}}}),
     configureServer(server) {
       const root = server.config.root, builds = new AtlasBuildQueue(() => run(root));
       server.middlewares.use((request, response, next) => {
@@ -54,33 +73,35 @@ export function studioSites(run = rebuildAtlas): Plugin {
         void (async () => {
           if (parts[0] === 'atlas-build' && parts.length === 1 && request.method === 'GET') return send(response, 200, builds.status());
           if (parts[0] === 'atlas-build' && parts.length === 1 && request.method === 'POST') return send(response, 202, builds.request());
-          if (parts[0] === 'sites' && parts.length === 1 && request.method === 'GET') {
-            const dir = path.join(root, SITES);
-            const sites = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
-              const site = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-              return {id: site.id, square: site.square, count: site.placements?.length ?? 0};
-            }) : [];
-            return send(response, 200, sites);
+          if (parts[0] === 'site' && parts.length === 1 && request.method === 'GET') {
+            const file = path.join(root, SITE, 'items.json');
+            const site = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {version: 3, placements: []};
+            return send(response, 200, {revision: revision(root), site});
           }
-          if (parts[0] === 'sites' && parts.length === 2 && request.method === 'GET') {
-            const file = path.join(root, SITES, parts[1] + '.json');
-            if (!SITE_ID.test(parts[1]) || !fs.existsSync(file)) return send(response, 404, {error: 'No such site'});
-            return send(response, 200, JSON.parse(fs.readFileSync(file, 'utf8')));
-          }
-          if (parts[0] === 'sites' && parts.length === 2 && request.method === 'PUT') {
-            const id = parts[1];
-            if (!SITE_ID.test(id)) return send(response, 400, {error: 'Bad site id'});
-            const site = JSON.parse(await body(request));
-            if (site.version !== 1 || site.id !== id || !Array.isArray(site.placements)) return send(response, 400, {error: 'Not a placement site'});
-            fs.mkdirSync(path.join(root, SITES), {recursive: true});
-            const file = path.join(root, SITES, id + '.json'), temporary = file + '.tmp';
-            const contents = JSON.stringify(site, null, 1) + '\n';
-            if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== contents) {
-              fs.writeFileSync(temporary, contents);
-              fs.renameSync(temporary, file);
-              builds.saved();
+          if (parts[0] === 'terrain' && parts.length === 1 && request.method === 'GET') {
+            const keys = (new URL(request.url ?? '', 'http://local').searchParams.get('keys') ?? '').split(',').filter(k => CHUNK_KEY.test(k));
+            const chunks: Record<string, number[]> = {};
+            for (const key of keys) {
+              const file = path.join(root, TERRAIN, key + '.json');
+              if (fs.existsSync(file)) chunks[key] = JSON.parse(fs.readFileSync(file, 'utf8')).deltas;
             }
-            return send(response, 200, {saved: site.placements.length, build: builds.status()});
+            return send(response, 200, chunks);
+          }
+          if (parts[0] === 'site' && parts.length === 1 && request.method === 'PUT') {
+            const {revision: base, site, terrain = {}} = JSON.parse(await body(request));
+            if (site?.version !== 3 || !Array.isArray(site.placements)) return send(response, 400, {error: 'Not a site store'});
+            const chunksOk = Object.entries(terrain as Record<string, unknown>).every(([key, deltas]) => CHUNK_KEY.test(key) && (deltas === null || (Array.isArray(deltas) && deltas.length === CHUNK * CHUNK && deltas.every(v => Number.isInteger(v)))));
+            if (!chunksOk) return send(response, 400, {error: 'Bad terrain chunks'});
+            // Another window or tool saved since this one opened; writing now would undo its work.
+            if (base !== revision(root)) return send(response, 409, {error: 'The site was saved elsewhere since this area was opened. Reopen the area to continue; saving now would undo that work.'});
+            let changed = write(path.join(root, SITE, 'items.json'), JSON.stringify(site, null, 1) + '\n');
+            for (const [key, deltas] of Object.entries(terrain as Record<string, number[] | null>)) {
+              const file = path.join(root, TERRAIN, key + '.json');
+              if (deltas) changed = write(file, JSON.stringify({deltas}) + '\n') || changed;
+              else if (fs.existsSync(file)) { fs.rmSync(file); changed = true; }
+            }
+            if (changed) builds.saved();
+            return send(response, 200, {revision: revision(root), saved: site.placements.length, build: builds.status()});
           }
           if (parts[0] === 'buildings' && parts.length === 2 && BUILDING_ID.test(parts[1]) && request.method === 'GET') {
             const file = path.join(root, BUILDINGS, parts[1] + '.json');

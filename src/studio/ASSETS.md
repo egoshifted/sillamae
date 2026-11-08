@@ -13,7 +13,7 @@ An agent only ever writes **drafts**. The owner approves a draft in the site edi
 | `src/city/sillamae/assets/palette.ts` | Shared materials and geometry helpers. Use these before making your own. |
 | `src/city/sillamae/assets/library.ts` | The index the studio reads: every library and draft folder, validated. |
 | `src/engine/types.ts` | `AssetDefinition` and `Placement`: the contract. |
-| `data/source/placements/<site>.json` | What the owner placed in each studio square. Do not edit by hand. |
+| `data/source/site/` | What the owner placed and shaped in the site editor, for the whole town. Do not edit by hand. |
 | [templates/asset-request.md](templates/asset-request.md) | Reusable blank template; filled requests stay local. |
 | `<local-review-root>/<id>/` (outside every checkout) | Filled requests, sources, reviews, approvals, logs, reference images and preview evidence. |
 

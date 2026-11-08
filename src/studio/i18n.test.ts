@@ -5,8 +5,8 @@ import {translate} from './i18n.ts';
 
 test('Russian status messages keep counts, identifiers and file paths intact', () => {
   assert.equal(translate('2 objects · trees +1 −0 · 3 roads · unsaved changes · 12,345 triangles · 60 draws', 'ru'), 'Объектов: 2 · Деревья +1 −0 · Дорог: 3 · несохранённые изменения · Треугольников: 12,345 · Вызовов отрисовки: 60');
-  assert.equal(translate('Square 50 m at 210, 573 · 210_573_50.json', 'ru'), 'Участок 50 м, центр: 210, 573 · 210_573_50.json');
-  assert.equal(translate('Saved to data/source/placements/210_573_50.json', 'ru'), 'Сохранено в data/source/placements/210_573_50.json');
+  assert.equal(translate('Square 200 m at 210, 573', 'ru'), 'Участок 200 м, центр: 210, 573');
+  assert.equal(translate('Saved to data/source/site', 'ru'), 'Сохранено в data/source/site');
   assert.equal(translate('rm123 · 20.8 m long · 2 m wide', 'ru'), 'rm123 · Длина: 20.8 м · Ширина: 2 м');
   assert.equal(translate('Preview Concrete street lamp', 'ru'), 'Просмотр: Уличный фонарь на бетонной опоре');
 });

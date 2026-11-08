@@ -17,7 +17,7 @@ import {blendSites, gridGround, seatBuildings, surveyWater} from './ground.ts';
 import {shoreline} from './shore.ts';
 import {deckAt, loadTracedWater} from './water-bodies.ts';
 import {buildNav} from './nav.ts';
-import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSites, markStudioRoads, streetLines, studioLines, studioSurfaces} from './placements.ts';
+import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSite, markStudioRoads, streetLines, studioLines, studioSurfaces} from './placements.ts';
 import {buildRoads, clearFootwayPaint, layRoads, moveTreesOffPaths} from './roads.ts';
 import {buildStairs} from './stairs.ts';
 import {moveTreesOffRoads} from './trees.ts';
@@ -40,11 +40,11 @@ async function build() {
     const vertices = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
     const osm: OsmExtract = JSON.parse(fs.readFileSync(path.join(SOURCE, 'osm.json'), 'utf8'));
     const georef = georeference(osm, data, sillamae), geo = georef.geo;
-    const sites = loadSites(path.join(SOURCE, 'placements'));
+    const {site, terrain: terrainEdits} = loadSite(path.join(SOURCE, 'site')), sites = [site];
     const {osm: streets, report: studioRoadReport} = addStudioRoads(osm, sites, georef, sillamae);
     const {shapes, centrelines, report: roadReport} = buildRoads(streets, data, sillamae, georef, vertices);
     // Studio terrain edits go in before the roads are graded, so roads follow them too.
-    const model = withTerrainEdits(loadDtm(geo.toGrid), sites);
+    const model = withTerrainEdits(loadDtm(geo.toGrid), terrainEdits);
     const heightAt = blendSites(gradeRoads(model, centrelines), vertices, data, sillamae);
     const treeReport = moveTreesOffRoads(vertices, data), pathTreeReport = moveTreesOffPaths(shapes, data, sillamae);
     const editReport = applyTreeEdits(data, sites);
@@ -95,7 +95,7 @@ async function build() {
     // Site ground comes from Float32 survey data; millimetres keep it exact enough and halve world.json.
     const mm = (v: number) => Math.round(v * 1000) / 1000;
     const siteGroundMm = Object.fromEntries(Object.entries(siteGround).map(([id, triangles]) => [id, triangles.map(t => t.map(mm))]));
-    const roadCuts = sites.flatMap(s => (s.roadCuts ?? []).map(c => ({...c, site: s.id, ring: c.ring.map(([x, z]): [number, number] => [x - sillamae.frame.origin[0], z - sillamae.frame.origin[1]])})));
+    const roadCuts = sites.flatMap(s => (s.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): [number, number] => [x - sillamae.frame.origin[0], z - sillamae.frame.origin[1]])})));
     const world: WorldData = {...data, siteGround: siteGroundMm, geo, zones, stairs, roads, roadCuts};
     fs.writeFileSync(path.join(OUT, 'survey.json'), JSON.stringify(manifest));
     const worldText = Buffer.from(JSON.stringify(world));
@@ -107,8 +107,7 @@ async function build() {
     // The OSM streets, without the studio's own, for drawn roads to snap to in the editor.
     fs.writeFileSync(path.join(OUT, 'streets.json'), JSON.stringify(streetLines(osm, georef, sillamae)));
     // The edits this data was built with, so the studio previews only what changed since.
-    const terrain = Object.fromEntries(sites.filter(s => s.terrain).map(s => [s.id, s.terrain!.deltas]));
-    fs.writeFileSync(path.join(OUT, 'terrain.json'), JSON.stringify(terrain));
+    fs.writeFileSync(path.join(OUT, 'terrain.json'), JSON.stringify(terrainEdits));
 
     const mb = (n: number) => (n / 1048576).toFixed(1) + ' MB';
     console.log(`georeference RMS ${geo.rms.toFixed(2)} m; ${report}`);
@@ -122,7 +121,7 @@ async function build() {
     console.log(seatReport);
     console.log(treeReport);
     console.log(pathTreeReport);
-    console.log(editReport + `; terrain edited in ${Object.keys(terrain).length} squares`);
+    console.log(editReport + `; terrain edited in ${Object.keys(terrainEdits).length} chunks`);
     console.log(placementReport + `; ${drawn.length} area cells, ${lines.length} lines`);
     console.log(hiddenReport);
     console.log(`ground on the 1 m terrain model: ${draped!.before} -> ${draped!.after} triangles; ${settled} buildings lowered onto it`);

@@ -21,7 +21,8 @@
     "studio:capture": "node src/studio/tools/capture.ts",
     "studio:evidence": "node src/studio/tools/evidence.ts",
     "studio:finalize": "node src/studio/tools/finalize.ts",
-    "studio:new": "node src/studio/tools/new.ts"
+    "studio:new": "node src/studio/tools/new.ts",
+    "site:migrate": "node src/studio/tools/migrate-site.ts"
   },
   "type": "module",
   "dependencies": {

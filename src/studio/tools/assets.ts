@@ -4,14 +4,14 @@ import {pathToFileURL} from 'node:url';
 import * as THREE from 'three';
 import {sillamae} from '../../city/sillamae/index.ts';
 import type {WorldData} from '../../engine/data.ts';
-import {gridSize} from '../../engine/terrain-edit.ts';
+import {CHUNK, CHUNK_KEY} from '../../engine/terrain-edit.ts';
 import type {AssetDefinition, AssetDetail, PlacementSite, Point2} from '../../engine/types.ts';
 import {installInertCanvas} from '../assembly/inert-canvas.ts';
 import {option, repo} from './local.ts';
 
 // Checks the asset library, drafts and saved placements; see src/studio/ASSETS.md.
 // Exit 1 lists every failure. Looks are judged by the owner in the studio, not here.
-const ASSETS = path.join(repo, 'src/city/sillamae/assets'), DRAFTS = path.join(repo, 'src/city/sillamae/asset-drafts'), SITES = path.join(repo, 'data/source/placements');
+const ASSETS = path.join(repo, 'src/city/sillamae/assets'), DRAFTS = path.join(repo, 'src/city/sillamae/asset-drafts'), SITE = path.join(repo, 'data/source/site');
 // Relative imports that resolve the same from assets/<id>/ and asset-drafts/<id>/,
 // so approving a draft moves its folder without breaking it.
 const PORTABLE = /^(\.\/|\.\.\/\.\.\/assets\/|\.\.\/\.\.\/\.\.\/\.\.\/engine\/)/;
@@ -125,9 +125,17 @@ function againstTown(name: string, id: string, attach: string, x: number, z: num
 
 const byId = new Map(loaded.map(l => [l.asset.id, l]));
 let placed = 0;
-for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.endsWith('.json')) : []) {
-  const site = JSON.parse(fs.readFileSync(path.join(SITES, file), 'utf8')) as PlacementSite, name = 'placements/' + file;
-  if (site.version !== 1 || file !== site.id + '.json') fail(name, 'must be version 1 and named after its id');
+if (fs.existsSync(path.join(repo, 'data/source/placements'))) fail('placements', 'work saved before the town store is still in data/source/placements; move it in with npm run site:migrate');
+for (const file of fs.existsSync(path.join(SITE, 'terrain')) ? fs.readdirSync(path.join(SITE, 'terrain')) : []) {
+  const name = 'site/terrain/' + file, d = JSON.parse(fs.readFileSync(path.join(SITE, 'terrain', file), 'utf8')).deltas;
+  if (!file.endsWith('.json') || !CHUNK_KEY.test(file.slice(0, -5))) fail(name, 'terrain chunks are named cx_cz.json');
+  else if (!Array.isArray(d) || d.length !== CHUNK * CHUNK) fail(name, `terrain needs ${CHUNK * CHUNK} heights, has ${Array.isArray(d) ? d.length : 'none'}`);
+  else if (!d.every(v => Number.isInteger(v) && Math.abs(v) <= 1000)) fail(name, 'terrain heights must be whole centimetres within 10 m');
+}
+for (const file of fs.existsSync(path.join(SITE, 'items.json')) ? ['items.json'] : []) {
+  const site = JSON.parse(fs.readFileSync(path.join(SITE, file), 'utf8')) as PlacementSite, name = 'site/' + file;
+  if (site.version !== 3) fail(name, 'must be version 3');
+  // One store for the town: ids are unique across every kind, as the editor merges by them.
   const ids = new Set<string>();
   for (const p of site.placements ?? []) {
     placed++;
@@ -141,11 +149,6 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     if (!(p.p?.length === 3 && p.p.every(Number.isFinite) && Number.isFinite(p.heading))) fail(name, `${p.id} has an invalid position or heading`);
     if (p.attach === 'wall' && !p.building) fail(name, `${p.id} is on a wall but names no building`);
     else if (p.p?.every(Number.isFinite)) againstTown(name, p.id, p.attach, p.p[0], p.p[1], p.building);
-  }
-  if (site.terrain) {
-    const d = site.terrain.deltas, n = gridSize(site.square.size);
-    if (!Array.isArray(d) || d.length !== n * n) fail(name, `terrain needs ${n * n} heights for a ${site.square.size} m square, has ${Array.isArray(d) ? d.length : 'none'}`);
-    else if (!d.every(v => Number.isInteger(v) && Math.abs(v) <= 1000)) fail(name, 'terrain heights must be whole centimetres within 10 m');
   }
   const pair = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
   for (const s of site.surfaces ?? []) {
@@ -165,6 +168,8 @@ for (const file of fs.existsSync(SITES) ? fs.readdirSync(SITES).filter(f => f.en
     if (!['main', 'residential', 'service', 'sidewalk', 'kerbed-path', 'asphalt-path', 'gravel-path', 'worn-path', 'tiled-path'].includes(r.type) || !Array.isArray(r.points) || r.points.length < 2 || !r.points.every(pair)) fail(name, `road ${r.id} needs a type and at least two x/z points`);
   }
   for (const c of site.roadCuts ?? []) {
+    if (!c.id || ids.has(c.id)) fail(name, `road demolition ${c.id ?? 'without an id'} needs an id of its own`);
+    else ids.add(c.id);
     if (!['carriageway', 'footway'].includes(c.kind) || !Array.isArray(c.ring) || c.ring.length !== 4 || !c.ring.every(pair)) fail(name, 'road demolition needs a kind and four x/z corners');
     if (c.groundColour && (c.groundColour.length !== 3 || !c.groundColour.every(v => Number.isFinite(v) && v >= 0 && v <= 1))) fail(name, 'road demolition ground colour must be linear RGB between zero and one');
     if (c.groundColours && (c.groundColours.length !== 4 || !c.groundColours.every(colour => colour.length === 3 && colour.every(v => Number.isFinite(v) && v >= 0 && v <= 1)))) fail(name, 'road demolition needs four valid corner colours');

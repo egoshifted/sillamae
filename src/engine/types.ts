@@ -152,17 +152,15 @@ export interface SiteRoad {
   footways?: boolean; // a path along each side
 }
 
+// Everything the site editor has saved for the town, in one store with ids unique
+// across all kinds; the editor works on whatever lies in the area it has open.
+// Terrain changes are kept beside it in chunks, see terrain-edit.ts.
 export interface PlacementSite {
-  version: 1;
-  id: string;
-  square: {centre: Point2; size: number}; // source x/z, metres
+  version: 3;
   placements: Placement[];
   // Survey trees are named by position: the data build moves some by up to a few
   // metres, so an edit matches the nearest survey tree within TREE_MATCH.
   trees?: {remove: Point2[]; add: SiteTree[]};
-  // Change to the terrain model over the square, centimetres on a TERRAIN_STEP grid
-  // from its low corner, rows along z; see terrain-edit.ts.
-  terrain?: {deltas: number[]};
   surfaces?: SiteSurface[];
   lines?: SiteLine[];
   roads?: SiteRoad[];
@@ -171,6 +169,7 @@ export interface PlacementSite {
 }
 
 export interface RoadCut {
+  id?: string; // in the store; previews made while editing have none
   exposeGround?: boolean;
   groundColour?: [number, number, number]; // linear RGB sampled from the surrounding unpaved ground
   groundColours?: [number, number, number][];
