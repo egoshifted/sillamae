@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
-import {spawn} from 'node:child_process';
+import {spawn, type ChildProcess} from 'node:child_process';
 import {AtlasBuildQueue} from './atlas-build.ts';
 import path from 'node:path';
 import type {IncomingMessage, ServerResponse} from 'node:http';
@@ -45,25 +45,50 @@ function write(file: string, contents: string) {
   return true;
 }
 
-function rebuildAtlas(root: string) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--max-old-space-size=8192', 'pipeline/build.ts'], {cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
-    let log = '';
+// Rebuilds go to one long-lived build process (pipeline/build.ts --serve) that keeps
+// the town's ground between them: the first takes minutes, and later ones whose edits
+// leave the ground alone take seconds. It exits on its own when idle.
+function atlasBuilder(root: string) {
+  let child: ChildProcess | undefined, log = '';
+  const start = () => {
+    const c = spawn(process.execPath, ['--max-old-space-size=8192', 'pipeline/build.ts', '--serve'], {cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc']});
     const capture = (chunk: Buffer) => { log = (log + chunk.toString()).slice(-12000); };
-    child.stdout.on('data', capture);
-    child.stderr.on('data', capture);
-    child.once('error', reject);
-    child.once('close', code => code === 0 ? resolve() : reject(Error(log.trim() || 'Atlas rebuild failed (' + code + ')')));
+    c.stdout!.on('data', capture);
+    c.stderr!.on('data', capture);
+    c.once('exit', () => { if (child === c) child = undefined; });
+    return c;
+  };
+  const once = () => new Promise<'built' | 'restart'>((resolve, reject) => {
+    const c = child ??= start();
+    log = '';
+    const settle = () => { c.off('message', message); c.off('exit', exit); c.off('error', exit); };
+    const message = (m: {state: string; error?: string}) => {
+      settle();
+      if (m.state === 'failed') return reject(Error(log.trim() || m.error || 'Atlas rebuild failed'));
+      if (m.state === 'restart') { if (child === c) child = undefined; c.kill(); }
+      resolve(m.state === 'restart' ? 'restart' : 'built');
+    };
+    const exit = (code: unknown) => { settle(); reject(Error(log.trim() || 'Atlas rebuild failed (' + code + ')')); };
+    c.on('message', message);
+    c.once('exit', exit);
+    c.once('error', exit);
+    c.send('build');
   });
+  return {
+    // A process started before code changed would build with the old modules, so it hands over to a fresh one.
+    async run() { if (await once() === 'restart' && await once() === 'restart') throw Error('Atlas build process restarted twice'); },
+    stop() { child?.kill(); },
+  };
 }
 
-export function studioSites(run = rebuildAtlas): Plugin {
+export function studioSites(run?: (root: string) => Promise<void>): Plugin {
   return {
     name: 'studio-sites',
     apply: 'serve',
     config: () => ({server: {watch: {ignored: ['**/public/data', '**/public/data/**', '**/public/.data-*', '**/public/.data-*/**', '**/public/.data-build.lock', '**/data/source/site/**', '**/data/source/buildings/**']}}}),
     configureServer(server) {
-      const root = server.config.root, builds = new AtlasBuildQueue(() => run(root));
+      const root = server.config.root, builder = run ? null : atlasBuilder(root), builds = new AtlasBuildQueue(() => run ? run(root) : builder!.run());
+      server.httpServer?.once('close', () => builder?.stop());
       server.middlewares.use((request, response, next) => {
         if ((request.url ?? '').startsWith('/data/')) response.setHeader('cache-control', 'no-store');
         next();

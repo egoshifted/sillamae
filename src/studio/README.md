@@ -31,4 +31,4 @@ All site work for the town is kept together in `data/source/site/`, so you can o
 
 Work saved per square before the town store existed is moved in with `npm run site:migrate`; add `--dry-run` to see the counts first. The old files go to `../sillamae-local/placements-before-store/`.
 
-Choose **Update atlas** when you want to see all saved work in the atlas. Confirm the rebuild, which can take several minutes. You can keep editing while it runs. If you save more changes during the build, choose **Update atlas** again when ready. The footer shows progress and reports failures.
+Choose **Update atlas** when you want to see all saved work in the atlas. Confirm the rebuild. The first one in a studio session takes a few minutes. Later ones take seconds when the saved changes leave the ground alone, which covers everything except non-path roads, hidden buildings and terrain shaping. The studio keeps about a gigabyte of ground in memory for this and releases it after 20 idle minutes. You can keep editing while it runs. If you save more changes during the build, choose **Update atlas** again when ready. The footer shows progress and reports failures.
