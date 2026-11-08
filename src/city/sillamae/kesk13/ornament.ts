@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {baseElevation, type SurveyPoint} from './design.ts';
 import {wallCorners} from './cornice.ts';
-import {courtyardWalls} from './street.ts';
+import {courtyardWalls, hasGarland} from './street.ts';
 import type {FacadeLevels} from './levels.ts';
 import type {OpeningDetail} from './joinery.ts';
 
@@ -72,10 +72,37 @@ export function addBalconyOrnament(o: OpeningDetail, edge: number, trim: Emit, i
   }
 }
 
-export function addWindowPanel(o: OpeningDetail, edge: number, emit: Emit, part: Part, transposed = false) {
+// Proportions scaled from the Kesk-front bay 2 close-up (Street View May 2024, window height = 1.8 m):
+// consoles about 0.7 m tall under the sill ends, a rosette between them, the swag and its two
+// tassels hanging below, the tassels reaching about 1.3 m under the sill.
+export function addGarland(o: OpeningDetail, emit: Emit, part: Part) {
+  const {left:l,right:r,bottom:b} = o, c=(l+r)/2, {add,box,line,leaf}=detailBuilder(o.point,emit);
+  part(o.id+'/sill-consoles',o.label+' carved sill consoles');
+  for(const x of [l-.03,r+.03]) {
+    box(x-.11,x+.11,b-.20,b-.115,-.15);
+    box(x-.09,x+.09,b-.74,b-.20,-.10);
+    box(x-.065,x+.065,b-.80,b-.74,-.08);
+    for(let k=0;k<3;k++) leaf(x,b-.30-k*.15,.13,.16,Math.PI,-.115);
+    const volute=new THREE.CylinderGeometry(.045,.045,.18,10);volute.rotateZ(Math.PI/2);volute.translate(x,b-.72,-.12);add(volute);
+  }
+  part(o.id+'/rosette',o.label+' rosette between the consoles');
+  const disc=new THREE.CylinderGeometry(.075,.08,.035,16);disc.rotateX(Math.PI/2);disc.translate(c,b-.62,-.03);add(disc);
+  for(let k=0;k<8;k++){const a=k*Math.PI/4;leaf(c+Math.sin(a)*.035,b-.62-Math.cos(a)*.035,.045,.05,a+Math.PI,-.05);}
+  part(o.id+'/foliate-swag',o.label+' foliate swag and tassels');
+  const x0=l+.2,x1=r-.2,top=b-.80,sag=.32,curve=(u:number)=>top-sag*Math.sin(Math.PI*u);
+  line(Array.from({length:21},(_,i)=>{const u=i/20;return[x0+u*(x1-x0),curve(u),-.05];}),.035);
+  for(let i=0;i<15;i++){const u=(i+.5)/15,slope=Math.atan(-sag*Math.PI/(x1-x0)*Math.cos(Math.PI*u));leaf(x0+u*(x1-x0),curve(u)-.03,.13,.15,-Math.PI/2+slope,-.085);}
+  for(const x of [x0,x1]) {
+    box(x-.04,x+.04,top-.03,top+.05,-.08);
+    for(let k=0;k<3;k++) leaf(x,top-.08-k*.14,.12,.16,Math.PI,-.075);
+  }
+}
+
+export function addWindowPanel(o: OpeningDetail, edge: number, emit: Emit, part: Part, transposed = false, complete = false) {
   if (o.kind !== 'window' || (!transposed && edge !== 0 && edge !== 7)) return;
   const {left:l,right:r,bottom:b} = o, c=(l+r)/2, {box,line,leaf}=detailBuilder(o.point,emit);
-  const decorated = transposed || (edge===0&&o.bay===2)||(edge===7&&o.bay===9);
+  const decorated = transposed || (complete ? hasGarland(edge,o.bay) : (edge===0&&o.bay===2)||(edge===7&&o.bay===9));
+  if (o.upper && decorated && complete && !transposed) {addGarland(o,emit,part);return;}
   if (o.upper && decorated) {
     part(o.id+'/foliate-swag',o.label+' foliate swag and hanging drops');
     const y=b-.20,w=r-l-.12;

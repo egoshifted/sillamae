@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {baseElevation, type SurveyPoint} from './design.ts';
 import {wallCorners} from './cornice.ts';
 import type {OpeningDetail} from './joinery.ts';
+import {hasGarland} from './street.ts';
 type Emit = (p: SurveyPoint) => void;
 type Part = (id: string, name: string) => void;
 
@@ -11,7 +12,7 @@ function geometry(g: THREE.BufferGeometry, point: (x: number, y: number, d: numb
   g.dispose();
 }
 
-export function addMouldings(o: OpeningDetail, edge: number, emit: Emit, part: Part, ornament = false) {
+export function addMouldings(o: OpeningDetail, edge: number, emit: Emit, part: Part, ornament = false, complete = false) {
   if (o.kind === 'door') return;
   const {left: l, right: r, bottom: b, top: t} = o, street = edge === 0 || edge === 7;
   function box(x0: number, x1: number, y0: number, y1: number, front: number, back = .015) {
@@ -23,7 +24,7 @@ export function addMouldings(o: OpeningDetail, edge: number, emit: Emit, part: P
   box(l - jamb, l, b, t, street ? -.045 : -.025);
   box(r, r + jamb, b, t, street ? -.045 : -.025);
   box(l - jamb, r + jamb, t, t + .11, -.06);
-  if (street && o.upper && (!ornament || o.kind === 'balcony' || (edge === 0 && o.bay === 2) || (edge === 7 && o.bay === 9))) {
+  if (street && o.upper && (!ornament || o.kind === 'balcony' || (complete ? hasGarland(edge, o.bay) : (edge === 0 && o.bay === 2) || (edge === 7 && o.bay === 9)))) {
     box(l - .16, r + .16, t + .11, t + .19, -.11);
     box(l - .20, r + .20, t + .19, t + .24, -.15);
   }

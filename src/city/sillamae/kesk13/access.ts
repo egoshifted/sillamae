@@ -21,9 +21,14 @@ export function addEntranceFrame(o: OpeningDetail, emit: Emit, part: Part) {
   box(l + .075, r - .075, t - .075, t, .08, .18, o.point, emit);
 }
 export const downpipes = [{edge: 0, fraction: .22}, {edge: 7, fraction: .78}, {edge: 2, fraction: .80}] as const;
-export function addDownpipes(emit: Emit, part: Part, plinthTop?: number, eavePoints: readonly SurveyPoint[] = eaves) {
+// Each street front drains through three pipes between the bays (Street View May 2024).
+export const streetDownpipes = [
+  {edge: 7, fraction: .22}, {edge: 7, fraction: .50}, {edge: 7, fraction: .78},
+  {edge: 0, fraction: .13}, {edge: 0, fraction: .50}, {edge: 0, fraction: .87}, {edge: 2, fraction: .80},
+] as const;
+export function addDownpipes(emit: Emit, part: Part, plinthTop?: number, eavePoints: readonly SurveyPoint[] = eaves, pipes: readonly {edge: number; fraction: number}[] = downpipes) {
   const walls = wallCorners(eavePoints);
-  for (const {edge, fraction} of downpipes) {
+  for (const [index, {edge, fraction}] of pipes.entries()) {
     const a = walls[edge], b = walls[(edge + 1) % walls.length], length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const dx = (b[0] - a[0]) / length, dz = (b[1] - a[1]) / length, x = fraction * length;
     const point = (u: number, h: number, d: number): SurveyPoint => [a[0] + dx * u - dz * d, a[1] + dz * u + dx * d, h];
@@ -34,7 +39,8 @@ export function addDownpipes(emit: Emit, part: Part, plinthTop?: number, eavePoi
     curve.add(new THREE.CatmullRomCurve3(upper));
     curve.add(new THREE.LineCurve3(upper[3], lower[0]));
     curve.add(new THREE.CatmullRomCurve3(lower));
-    part(`drain-${edge}/pipe`, `Edge ${edge} downpipe`);
+    const id = pipes === downpipes ? `drain-${edge}` : `drain-${edge}-${index}`;
+    part(id + '/pipe', `Edge ${edge} downpipe`);
     const segments = 56, radial = 10;
     const outer = new THREE.TubeGeometry(curve, segments, .045, radial, false), inner = new THREE.TubeGeometry(curve, segments, .037, radial, false);
     emitGeometry(outer, point, emit);emitGeometry(inner, point, emit, true);
@@ -46,7 +52,7 @@ export function addDownpipes(emit: Emit, part: Part, plinthTop?: number, eavePoi
       (end === 0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]).forEach(i => emit(ring[i]));
     }
     outer.dispose();inner.dispose();
-    part(`drain-${edge}/brackets`, `Edge ${edge} downpipe brackets`);
+    part(id + '/brackets', `Edge ${edge} downpipe brackets`);
     for (const h of [16.3, 19.0, 22.0]) {
       // Long straight spans are sampled from the same curve so collars cannot drift from the pipe.
       let best = 0, distance = Infinity;
