@@ -40,7 +40,13 @@ export function wasteDrum(kind: string, small: boolean, detail: string) {
 }
 
 const shrubMaterials = new Map<string, ReturnType<typeof foliageMaterials>>();
-export function shrub(size: [number, number, number], detail: string, spreading: boolean, variant = 'atlas') {
+// Growth stages for shrubs, medium first as the default so placements saved before sizes keep their look.
+// A young shrub is half the size with a third of the leaves, so its twigs show through.
+export const SHRUB_SIZES = [{id: 'medium', label: 'Medium'}, {id: 'small', label: 'Small (young)'}, {id: 'large', label: 'Large'}];
+const SHRUB_STAGE: Record<string, {scale: number; density: number}> = {medium: {scale: 1, density: 1}, small: {scale: .5, density: .35}, large: {scale: 1.5, density: 1}};
+
+export function shrub(full: [number, number, number], detail: string, spreading: boolean, variant = 'atlas', stage = 'medium') {
+  const {scale, density} = SHRUB_STAGE[stage] ?? SHRUB_STAGE.medium, size = full.map(s => s * scale) as [number, number, number];
   const parts: Part[] = [], bark = organic('#5c4f45');
   for (let i = 0; i < 8; i++) {
     const a = i * 2.399, rise = .7 + (i % 3) * .12;
@@ -65,7 +71,7 @@ export function shrub(size: [number, number, number], detail: string, spreading:
     let materials = shrubMaterials.get(season);
     if (!materials) shrubMaterials.set(season, materials = foliageMaterials(season));
     const material = detail === 'near' ? materials.near : materials.far;
-    const geometry = crownGeometry(false, spreading ? 1.3 : 2.1, detail === 'near' ? 2 : 0);
+    const geometry = crownGeometry(false, spreading ? 1.3 : 2.1, detail === 'near' ? 2 : 0, density);
     geometry.computeBoundingBox();
     const bounds = geometry.boundingBox!, extent = bounds.getSize(new THREE.Vector3()), centre = bounds.getCenter(new THREE.Vector3());
     const base = size[1] * (spreading ? .08 : .22);

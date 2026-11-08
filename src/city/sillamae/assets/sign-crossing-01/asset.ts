@@ -55,20 +55,30 @@ function panelFace(detail: string) {
 }
 export const asset: AssetDefinition = {
   id: 'sign-crossing-01', name: 'Illuminated pedestrian crossing sign', category: 'signs', tags: ['crossing', 'pedestrian', 'blue', 'lamp', 'Kesk'], attach: 'ground',
-  size: [.6, 6.15, .8], triangles: 400, variants: [{id: 'left', label: 'Walking left'}, {id: 'right', label: 'Walking right'}],
+  size: [.98, 6.15, .27], triangles: 420, variants: [{id: 'left', label: 'Walking left'}, {id: 'right', label: 'Walking right'}],
   build({variant, detail}) {
     const n = detail === 'near' ? 12 : 8;
     const parts: Part[] = [
       [box(.24, .22, .24), palette.concrete()],
       [cylinder(.075, .085, .045, n, 0, .2425), palette.galvanised()],
       [cylinder(.035, .055, 5.8, n, 0, 3.14), palette.galvanised()],
-      [new THREE.ExtrudeGeometry(panelShape(.6, .039), {depth: .025, bevelEnabled: false, curveSegments: detail === 'near' ? 4 : 2}).translate(0, 2.8, .0525), palette.galvanised()],
-      [panelFace(detail), face(variant === 'right')],
-      [rod([0, 5.98, 0], [0, 6.055, .2], .032, n), palette.galvanised()],
-      [box(.27, .09, .6, 0, 6.105, .38), palette.galvanised()],
-      [box(.225, .012, .51, 0, 6.054, .4), palette.lamp()],
     ];
-    if (detail === 'near') for (const y of [2.61, 2.99]) parts.push([box(.11, .04, .035, 0, y, .035), palette.darkMetal()]);
+    // The lamp lights the crossing, so it reaches along the sign's plane the way the walker faces.
+    const reach = variant === 'right' ? Math.PI / 2 : -Math.PI / 2;
+    parts.push(
+      [rod([0, 5.98, 0], [0, 6.055, .2], .032, n).rotateY(reach), palette.galvanised()],
+      [box(.27, .09, .6, 0, 6.105, .38).rotateY(reach), palette.galvanised()],
+      [box(.225, .012, .51, 0, 6.054, .4).rotateY(reach), palette.lamp()],
+    );
+    // Traffic from the other direction has the road on its other side, so the back walks the opposite way.
+    for (const back of [false, true]) {
+      const turn = (g: THREE.BufferGeometry) => back ? g.rotateY(Math.PI) : g;
+      parts.push(
+        [turn(new THREE.ExtrudeGeometry(panelShape(.6, .039), {depth: .025, bevelEnabled: false, curveSegments: detail === 'near' ? 4 : 2}).translate(0, 2.8, .0525)), palette.galvanised()],
+        [turn(panelFace(detail)), face((variant === 'right') !== back)],
+      );
+      if (detail === 'near') for (const y of [2.61, 2.99]) parts.push([turn(box(.11, .04, .035, 0, y, .035)), palette.darkMetal()]);
+    }
     return assemble(parts, 'sign-crossing-01');
   },
 };

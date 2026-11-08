@@ -11,7 +11,7 @@ export interface TreeItem {
 }
 
 export const surveyKey = (t: Tree) => `s:${t.p[0].toFixed(2)},${t.p[1].toFixed(2)}`;
-export const asTree = (t: SiteTree): Tree => ({p: t.p, z: t.z, h: t.h, r: t.r, type: t.type, year: 0});
+export const asTree = (t: SiteTree): Tree => ({p: t.p, z: t.z, h: t.h, r: t.r, type: t.type, year: 0, ...t.young && {young: true}});
 
 export function treeItems(survey: Tree[], edits: NonNullable<PlacementSite['trees']>): TreeItem[] {
   const kept = survey.filter(t => !edits.remove.some(([x, z]) => Math.hypot(x - t.p[0], z - t.p[1]) < TREE_MATCH));
@@ -52,25 +52,37 @@ export class TreeLayer {
   }
 }
 
-// Crowns as upright cylinders from the ground to the top: close enough to click,
-// and cheap enough to test every tree on every move.
+// Nearest positive ray distance to an upright cylinder's surface, or null.
+function intoCylinder(ray: THREE.Ray, cx: number, cz: number, r: number, bottom: number, top: number) {
+  const {origin: o, direction: d} = ray, fx = o.x - cx, fz = o.z - cz;
+  const a = d.x * d.x + d.z * d.z, b = 2 * (fx * d.x + fz * d.z), c = fx * fx + fz * fz - r * r, disc = b * b - 4 * a * c;
+  let best: number | null = null;
+  const take = (s: number) => { if (s > 0 && (best === null || s < best)) best = s; };
+  if (a > 1e-9 && disc >= 0) for (const s of [(-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a)]) {
+    const y = o.y + d.y * s;
+    if (y >= bottom && y <= top) take(s);
+  }
+  if (Math.abs(d.y) > 1e-9) for (const y of [bottom, top]) {
+    const s = (y - o.y) / d.y;
+    if ((fx + d.x * s) ** 2 + (fz + d.z * s) ** 2 <= r * r) take(s);
+  }
+  return best;
+}
+
+// A trunk under a crown, each an upright cylinder: close enough to click, cheap enough
+// to test every tree on every move. The crown starts above the ground (spruce near it),
+// so lines and objects beside a trunk stay clickable; a tree the camera stands in is skipped.
+const TRUNK_PICK = .4, CROWN_BASE = {broadleaf: .25, conifer: .1};
 export function pickTree(ray: THREE.Ray, items: TreeItem[], frame: WorldFrame) {
   const [ox, oz] = frame.origin;
   let best: {item: TreeItem; distance: number} | null = null;
-  const {origin: o, direction: d} = ray, a = d.x * d.x + d.z * d.z;
   for (const item of items) {
     const t = item.tree, cx = t.p[0] - ox, cz = t.p[1] - oz, r = Math.max(1, t.r), y0 = t.z - frame.base;
-    const fx = o.x - cx, fz = o.z - cz, b = 2 * (fx * d.x + fz * d.z), c = fx * fx + fz * fz - r * r, disc = b * b - 4 * a * c;
-    const candidates: number[] = [];
-    if (a > 1e-9 && disc >= 0) for (const s of [(-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a)]) {
-      const y = o.y + d.y * s;
-      if (y >= y0 && y <= y0 + t.h) candidates.push(s);
-    }
-    if (Math.abs(d.y) > 1e-9) for (const y of [y0, y0 + t.h]) {
-      const s = (y - o.y) / d.y;
-      if ((fx + d.x * s) ** 2 + (fz + d.z * s) ** 2 <= r * r) candidates.push(s);
-    }
-    for (const s of candidates) if (s > 0 && (!best || s < best.distance)) best = {item, distance: s};
+    const crown = y0 + t.h * (t.type === CONIFER ? CROWN_BASE.conifer : CROWN_BASE.broadleaf), top = y0 + t.h;
+    const fx = ray.origin.x - cx, fz = ray.origin.z - cz;
+    if (fx * fx + fz * fz <= r * r && ray.origin.y >= y0 && ray.origin.y <= top) continue;
+    for (const s of [intoCylinder(ray, cx, cz, r, crown, top), intoCylinder(ray, cx, cz, TRUNK_PICK, y0, crown)])
+      if (s !== null && (!best || s < best.distance)) best = {item, distance: s};
   }
   return best;
 }

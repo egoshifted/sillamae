@@ -37,8 +37,8 @@ async function load(dir: string, folder: string, draft: boolean) {
   return {asset, folder, draft};
 }
 
-function measure(asset: AssetDefinition, variant: string, detail: AssetDetail) {
-  const root = asset.build({variant, detail});
+function measure(asset: AssetDefinition, variant: string, detail: AssetDetail, size?: string) {
+  const root = asset.build({variant, detail, ...size && {size}});
   root.updateMatrixWorld(true);
   let triangles = 0;
   const box = new THREE.Box3(), geometries = new Set<THREE.BufferGeometry>();
@@ -65,19 +65,23 @@ function checkAsset(asset: AssetDefinition, folder: string) {
   if (!asset.variants?.length) { fail(id, 'needs at least one variant'); return; }
   if (new Set(asset.variants.map(v => v.id)).size !== asset.variants.length) fail(id, 'variant ids must be unique');
   if (!(asset.size?.length === 3 && asset.size.every(s => s > 0 && s <= MAX_SIZE))) { fail(id, `size must be three lengths in metres up to ${MAX_SIZE}`); return; }
-  for (const {id: variant} of asset.variants) {
+  if (asset.sizes && (!asset.sizes.length || new Set(asset.sizes.map(s => s.id)).size !== asset.sizes.length)) fail(id, 'sizes, when given, must be a non-empty list of unique ids');
+  // The declared size is the default size's; other sizes are checked for everything else.
+  const sizes = asset.sizes?.length ? asset.sizes.map(s => s.id) : [undefined];
+  for (const {id: variant} of asset.variants) for (const size of sizes) {
+    const label = variant + (size ? ` (${size})` : '');
     let near, far;
-    try { near = measure(asset, variant, 'near'); far = measure(asset, variant, 'far'); }
-    catch (e) { fail(id, `variant ${variant} failed to build: ${e instanceof Error ? e.message : e}`); continue; }
+    try { near = measure(asset, variant, 'near', size); far = measure(asset, variant, 'far', size); }
+    catch (e) { fail(id, `variant ${label} failed to build: ${e instanceof Error ? e.message : e}`); continue; }
     const built = near.box.getSize(new THREE.Vector3()).toArray();
-    if (built.some((s, i) => Math.abs(s - asset.size[i]) > SIZE_TOLERANCE))
-      fail(id, `variant ${variant} builds ${built.map(s => s.toFixed(2)).join(' x ')} m, declared ${asset.size.join(' x ')} m`);
-    if (near.triangles > asset.triangles) fail(id, `variant ${variant} has ${near.triangles} triangles, budget ${asset.triangles}`);
-    if (far.triangles > near.triangles) fail(id, `variant ${variant}: far detail (${far.triangles}) is heavier than near (${near.triangles})`);
-    if (asset.attach !== 'wall' && Math.abs(near.box.min.y) > CONTACT) fail(id, `variant ${variant}: base is ${near.box.min.y.toFixed(3)} m from the ground (y = 0)`);
-    if (asset.attach !== 'ground' && Math.abs(near.box.min.z) > CONTACT) fail(id, `variant ${variant}: back is ${near.box.min.z.toFixed(3)} m from the wall (z = 0)`);
-    if (asset.attach === 'ground' && (Math.abs(near.box.min.x + near.box.max.x) / 2 > asset.size[0] / 2 || near.box.max.z < 0 || near.box.min.z > 0))
-      fail(id, `variant ${variant}: the origin is not under the object`);
+    if (size === sizes[0] && built.some((s, i) => Math.abs(s - asset.size[i]) > SIZE_TOLERANCE))
+      fail(id, `variant ${label} builds ${built.map(s => s.toFixed(2)).join(' x ')} m, declared ${asset.size.join(' x ')} m`);
+    if (near.triangles > asset.triangles) fail(id, `variant ${label} has ${near.triangles} triangles, budget ${asset.triangles}`);
+    if (far.triangles > near.triangles) fail(id, `variant ${label}: far detail (${far.triangles}) is heavier than near (${near.triangles})`);
+    if (asset.attach !== 'wall' && Math.abs(near.box.min.y) > CONTACT) fail(id, `variant ${label}: base is ${near.box.min.y.toFixed(3)} m from the ground (y = 0)`);
+    if (asset.attach !== 'ground' && Math.abs(near.box.min.z) > CONTACT) fail(id, `variant ${label}: back is ${near.box.min.z.toFixed(3)} m from the wall (z = 0)`);
+    if (asset.attach === 'ground' && (Math.abs(near.box.min.x + near.box.max.x) / 2 > (near.box.max.x - near.box.min.x) / 2 || near.box.max.z < 0 || near.box.min.z > 0))
+      fail(id, `variant ${label}: the origin is not under the object`);
   }
 }
 
@@ -146,6 +150,7 @@ for (const file of fs.existsSync(path.join(SITE, 'items.json')) ? ['items.json']
     if (found.draft) fail(name, `${p.id} uses draft asset ${p.asset}; approve it first`);
     if (found.asset.retired) warnings.push(`${name}: ${p.id} still uses retired asset ${p.asset}`);
     if (p.variant && !found.asset.variants.some(v => v.id === p.variant)) fail(name, `${p.id} uses unknown variant ${p.variant} of ${p.asset}`);
+    if (p.size && !found.asset.sizes?.some(s => s.id === p.size)) fail(name, `${p.id} uses unknown size ${p.size} of ${p.asset}`);
     if (!(p.p?.length === 3 && p.p.every(Number.isFinite) && Number.isFinite(p.heading))) fail(name, `${p.id} has an invalid position or heading`);
     if (p.attach === 'wall' && !p.building) fail(name, `${p.id} is on a wall but names no building`);
     else if (p.p?.every(Number.isFinite)) againstTown(name, p.id, p.attach, p.p[0], p.p[1], p.building);

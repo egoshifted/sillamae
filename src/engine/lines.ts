@@ -9,7 +9,7 @@ const LOOK: Record<LineKind, {color: string; roughness: number; width: number}> 
   wall: {color: '#a9a59b', roughness: .95, width: .3},
   kerb: {color: '#a4a39c', roughness: .9, width: .15},
 };
-export const lineWidth = (kind: LineKind) => LOOK[kind].width;
+export const lineWidth = (kind: LineKind, width?: number) => width ?? LOOK[kind].width;
 const FOOT = .25; // metres below the ground, so a run's foot stays buried between its points
 const POST = {every: 2.5, size: .07}; // fence posts, metres
 // Depth-only lift over the survey ground's own (see placements.ts).
@@ -33,7 +33,7 @@ const hash = (x: number, z: number) => { const s = Math.sin(x * 12.9898 + z * 78
 export function lineMeshes(lines: BuiltLine[], {lifted = true, depthLift = DEPTH_LIFT} = {}) {
   const group = new THREE.Group(), positions: Record<LineKind, number[]> = {fence: [], hedge: [], wall: [], kerb: []};
   for (const line of lines) {
-    const {width} = LOOK[line.kind], h = line.height, out = positions[line.kind], p = line.points;
+    const width = lineWidth(line.kind, line.width), h = line.height, out = positions[line.kind], p = line.points;
     if (line.kind === 'fence') {
       for (let i = 1; i < p.length; i++) for (const y of [.3 * h, .85 * h]) run(p[i - 1], p[i], width, y, y + .05, out);
       let travelled = 0, next = 0;

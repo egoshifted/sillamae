@@ -37,10 +37,10 @@ export function addPlacements(parent: THREE.Object3D, placements: Placement[], a
   root.name = 'placements';
   parent.add(root);
   const prototypes = new Map<string, THREE.Object3D>();
-  const prototype = (asset: AssetDefinition, variant: string, detail: AssetDetail) => {
-    const key = `${asset.id}:${variant}:${detail}`;
+  const prototype = (asset: AssetDefinition, variant: string, size: string | undefined, detail: AssetDetail) => {
+    const key = `${asset.id}:${variant}:${size ?? ''}:${detail}`;
     let p = prototypes.get(key);
-    if (!p) { prototypes.set(key, p = asset.build({variant, detail})); p.updateMatrixWorld(true); }
+    if (!p) { prototypes.set(key, p = asset.build({variant, detail, ...size && {size}})); p.updateMatrixWorld(true); }
     return p;
   };
 
@@ -51,7 +51,7 @@ export function addPlacements(parent: THREE.Object3D, placements: Placement[], a
     const x = p.p[0] - ox, z = p.p[1] - oz, key = Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK);
     let chunk = chunks.get(key);
     if (!chunk) chunks.set(key, chunk = {centre: new THREE.Vector3((Math.floor(x / CHUNK) + .5) * CHUNK, 0, (Math.floor(z / CHUNK) + .5) * CHUNK), groups: new Map()});
-    const group = asset.id + ':' + (p.variant ?? asset.variants[0].id);
+    const group = asset.id + ':' + (p.variant ?? asset.variants[0].id) + (p.size ? ':' + p.size : '');
     chunk.groups.set(group, [...chunk.groups.get(group) ?? [], p]);
   }
 
@@ -60,10 +60,10 @@ export function addPlacements(parent: THREE.Object3D, placements: Placement[], a
   for (const {centre, groups} of chunks.values()) {
     const batches: Batch[] = [];
     for (const [key, list] of groups) {
-      const asset = assets.get(list[0].asset)!, variant = key.slice(asset.id.length + 1);
+      const asset = assets.get(list[0].asset)!, variant = list[0].variant ?? asset.variants[0].id;
       const levels = {near: new THREE.Group(), far: new THREE.Group()};
       for (const detail of ['near', 'far'] as const) {
-        prototype(asset, variant, detail).traverse(o => {
+        prototype(asset, variant, list[0].size, detail).traverse(o => {
           if (!(o instanceof THREE.Mesh)) return;
           const mesh = new THREE.InstancedMesh(o.geometry, liftedMaterial(o.material as THREE.Material), list.length);
           list.forEach((p, i) => {

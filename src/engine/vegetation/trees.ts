@@ -13,6 +13,8 @@ const CONIFERS = ['#5d7858', '#66815f', '#577251'];
 const CROWN_MUTE = .16; // share of a crown's colour given up to its grey, so trees sit with the town's paler paint
 // Close shades read as one crown; a wide spread reads as noise at every zoom.
 const LEAF_SHADE = [158, 226], NEEDLE_SHADE = [145, 215];
+// Share of a full crown's cards on a sapling, broadleaf and spruce: enough to read as leafy, sparse enough to show the limbs.
+const YOUNG_DENSITY = [.3, .45];
 
 // Seeded by position so a tree keeps its look across reloads and detail levels.
 const hash = (x: number, z: number, k: number) => { const s = Math.sin(x * 12.9898 + z * 78.233 + k * 37.719) * 43758.5453; return s - Math.floor(s); };
@@ -76,10 +78,11 @@ function foliageTexture() {
 }
 
 // Normals point out of the crown volume rather than along each card; per-card normals light a crown as noise.
-export function crownGeometry(conifer: boolean, aspect: number, level: number) {
+// A density below 1 keeps the first share of the full crown's cards, so a sparse crown is a thinned full one.
+export function crownGeometry(conifer: boolean, aspect: number, level: number, density = 1) {
   let seed = 1009 + Math.round(aspect * 100) + (conifer ? 61 : 0) + level * 7;
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-  const count = CARDS[+conifer][level], size = CARD_SIZE[+conifer][level], half = conifer ? .5 : 0;
+  const count = Math.round(CARDS[+conifer][level] * density), size = CARD_SIZE[+conifer][level], half = conifer ? .5 : 0;
   // Painted leaves fill about four fifths of a card's half-width.
   const reach = 1 - size * .4;
   const centre = new THREE.Vector3(0, aspect * (conifer ? .5 : .62), 0), radiusY = aspect * (conifer ? .46 : .38);
@@ -229,7 +232,9 @@ interface Chunk {
 export function addTrees(parent: THREE.Object3D, trees: Tree[], frame: WorldFrame) {
   const [ox, oz] = frame.origin, base = frame.base;
   const materials = foliageMaterials(), bark = new THREE.MeshStandardMaterial({color: '#7d6e62', roughness: 1});
-  const geometries = ASPECTS.map((aspects, con) => aspects.map(aspect => [0, 1, 2].map(level => crownGeometry(!!con, aspect, level))));
+  const full = ASPECTS.map((aspects, con) => aspects.map(aspect => [0, 1, 2].map(level => crownGeometry(!!con, aspect, level))));
+  const sparse = trees.some(t => t.young) ? ASPECTS.map((aspects, con) => aspects.map(aspect => [0, 1, 2].map(level => crownGeometry(!!con, aspect, level, YOUNG_DENSITY[con])))) : full;
+  const geometry = (young: boolean, con: number, aspect: number, level: number) => (young ? sparse : full)[con][aspect][level];
   const crowns = (geometry: THREE.BufferGeometry, count: number, level: number) => {
     const {leaf, depth} = level ? materials.near : materials.far, mesh = new THREE.InstancedMesh(geometry, leaf, count);
     mesh.customDepthMaterial = depth;
@@ -274,11 +279,11 @@ export function addTrees(parent: THREE.Object3D, trees: Tree[], frame: WorldFram
     trunks.computeBoundingSphere();
     trunks.castShadow = true;
     group.add(trunks);
-    for (let con = 0; con < 2; con++) for (let aspect = 0; aspect < ASPECTS[con].length; aspect++) {
-      const subset = list.filter(t => (t.type === CONIFER ? 1 : 0) === con && aspectOf(t, con) === aspect);
+    for (const young of [false, true]) for (let con = 0; con < 2; con++) for (let aspect = 0; aspect < ASPECTS[con].length; aspect++) {
+      const subset = list.filter(t => !!t.young === young && (t.type === CONIFER ? 1 : 0) === con && aspectOf(t, con) === aspect);
       if (!subset.length) continue;
       for (let level = 0; level < 3; level++) {
-        const mesh = crowns(geometries[con][aspect][level], subset.length, level);
+        const mesh = crowns(geometry(young, con, aspect, level), subset.length, level);
         subset.forEach((t, i) => {
           placeCrown(dummy, t, con, ox, oz, base);
           mesh.setMatrixAt(i, dummy.matrix);
@@ -292,16 +297,16 @@ export function addTrees(parent: THREE.Object3D, trees: Tree[], frame: WorldFram
     parent.add(group);
     chunks.push({group, levels, centre, trunks, level: -1});
   }
-  const distant = new THREE.Group(), farCells = new Map<string, {con: number; aspect: number; list: Tree[]}>();
+  const distant = new THREE.Group(), farCells = new Map<string, {young: boolean; con: number; aspect: number; list: Tree[]}>();
   parent.add(distant);
   for (const t of trees) {
     if (t.h < 3) continue;
-    const con = t.type === CONIFER ? 1 : 0, aspect = aspectOf(t, con), key = Math.floor(t.p[0] / 360) + ',' + Math.floor(t.p[1] / 360) + ',' + con + ',' + aspect;
-    if (!farCells.has(key)) farCells.set(key, {con, aspect, list: []});
+    const young = !!t.young, con = t.type === CONIFER ? 1 : 0, aspect = aspectOf(t, con), key = Math.floor(t.p[0] / 360) + ',' + Math.floor(t.p[1] / 360) + ',' + con + ',' + aspect + (young ? ',young' : '');
+    if (!farCells.has(key)) farCells.set(key, {young, con, aspect, list: []});
     farCells.get(key)!.list.push(t);
   }
-  for (const {con, aspect, list} of farCells.values()) {
-    const mesh = crowns(geometries[con][aspect][0], list.length, 0);
+  for (const {young, con, aspect, list} of farCells.values()) {
+    const mesh = crowns(geometry(young, con, aspect, 0), list.length, 0);
     mesh.castShadow = false;
     list.forEach((t, i) => {
       placeCrown(dummy, t, con, ox, oz, base);

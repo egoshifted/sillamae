@@ -121,6 +121,61 @@
    ],
    "heading": -1.309,
    "attach": "ground"
+  },
+  {
+   "id": "pmw8eceq6382",
+   "asset": "rack-carpet-01",
+   "p": [
+    212.084,
+    613.82,
+    12.025
+   ],
+   "heading": -0.447,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8edcq3041",
+   "asset": "rack-carpet-01",
+   "p": [
+    209.301,
+    612.401,
+    12.026
+   ],
+   "heading": -0.5236,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8eerwkbgb",
+   "asset": "sign-crossing-01",
+   "p": [
+    174.382,
+    528.793,
+    10.132
+   ],
+   "heading": -1.8326,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8ev7b2kjc",
+   "asset": "sign-crossing-01",
+   "p": [
+    180.19,
+    521.067,
+    10.207
+   ],
+   "heading": 1.309,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8ewbv15t6",
+   "asset": "lamp-post-concrete-01",
+   "p": [
+    189.231,
+    524.348,
+    10.633
+   ],
+   "heading": -0.3779,
+   "attach": "ground"
   }
  ],
  "trees": {
@@ -264,8 +319,8 @@
      601.826
     ],
     [
-     202.45,
-     626.948
+     210.977,
+     612.227
     ]
    ]
   },
@@ -413,6 +468,34 @@
     [
      212.842,
      569.048
+    ]
+   ]
+  },
+  {
+   "id": "rmw8ec6a8r56",
+   "type": "worn-path",
+   "points": [
+    [
+     210.977,
+     612.227
+    ],
+    [
+     214.019,
+     613.888
+    ]
+   ]
+  },
+  {
+   "id": "rmw8ecao9atp",
+   "type": "worn-path",
+   "points": [
+    [
+     210.977,
+     612.227
+    ],
+    [
+     208.095,
+     610.732
     ]
    ]
   }

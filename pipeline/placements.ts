@@ -33,7 +33,7 @@ export function applyTreeEdits(scene: SceneData, sites: PlacementSite[]) {
       removed++;
     }
     for (const t of site.trees?.add ?? []) {
-      scene.trees.push({p: t.p, z: t.z, h: t.h, r: t.r, type: t.type, year: 0, added: t.id});
+      scene.trees.push({p: t.p, z: t.z, h: t.h, r: t.r, type: t.type, year: 0, added: t.id, ...t.young && {young: true}});
       added++;
     }
   }
@@ -64,7 +64,7 @@ export function studioSurfaces(sites: PlacementSite[], city: CityDefinition): Ro
 export function studioLines(sites: PlacementSite[], city: CityDefinition, heightAt: HeightAt, base: number): BuiltLine[] {
   const [ox, oz] = city.frame.origin;
   return sites.flatMap(s => (s.lines ?? []).map(l => ({
-    kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind],
+    kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], ...l.width !== undefined && {width: l.width},
     points: standLine(l.points.map(([x, z]): [number, number] => [x - ox, z - oz]), (x, z) => { const h = heightAt(x + ox, z + oz); return h === null ? null : h - base; }).map(p => p.map(v => Math.round(v * 1000) / 1000) as [number, number, number]),
   })));
 }

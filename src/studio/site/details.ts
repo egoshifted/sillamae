@@ -101,7 +101,7 @@ export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads:
     for (const cell of cells(s)) lay(cell, s);
   }
   if (laid.length) group.add(addRoads(scratch, laid, anisotropy, cuts, context, kerbed));
-  if (lines.length) group.add(lineMeshes(lines.map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], points: standLine(local(l.points), height)})), {lifted: false}));
+  if (lines.length) group.add(lineMeshes(lines.map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], width: l.width, points: standLine(local(l.points), height)})), {lifted: false}));
   usePhysicalDepth(group);
   return group;
 }

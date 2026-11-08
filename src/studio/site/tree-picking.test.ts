@@ -18,3 +18,11 @@ test('oblique tree picking still chooses the nearest crown', () => {
   const farther: TreeItem = {...tree, key: 'farther', tree: {...tree.tree, p: [105, 215]}};
   assert.equal(pickTree(ray, [farther, tree], frame)?.item.key, 'tree');
 });
+test('the ground beside a trunk, under the crown, is not the tree', () => {
+  const ray = new THREE.Ray(new THREE.Vector3(7, 2, -10), new THREE.Vector3(0, -.1, 1).normalize());
+  assert.equal(pickTree(ray, [tree], frame), null);
+});
+test('a tree the camera stands in is not picked', () => {
+  const ray = new THREE.Ray(new THREE.Vector3(5.5, 8, 5), new THREE.Vector3(1, -.2, 0).normalize());
+  assert.equal(pickTree(ray, [tree], frame), null);
+});

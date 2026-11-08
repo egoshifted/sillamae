@@ -13,7 +13,7 @@ import {snapToRoadEdge} from '../../engine/road-kerbs.ts';
 import {demolishRoads, contains, roadSection} from '../../engine/road-demolition.ts';
 import {LINE_HEIGHT, lineMeshes, lineWidth, standLine} from '../../engine/lines.ts';
 import {FOOTWAY, nearestOn, offsetLine, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SNAP} from '../../engine/streets.ts';
-import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish} from '../../engine/types.ts';
+import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish, Tree} from '../../engine/types.ts';
 import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
 import {clearSection, extendRoad, insideEndpointMarker, nearestRoadEnd, roadBoundary} from './road-edit.ts';
@@ -68,7 +68,7 @@ function remember() {
 controls.addEventListener('change', () => { render(); window.clearTimeout(rememberTimer); rememberTimer = window.setTimeout(remember, 300); });
 
 type Loaded = Awaited<ReturnType<typeof loadSquare>>;
-type Brush = {kind: 'asset'; asset: AssetDefinition; variant: string} | {kind: 'tree'; type: string; h: number; r: number};
+type Brush = {kind: 'asset'; asset: AssetDefinition; variant: string; size?: string} | {kind: 'tree'; type: string; h: number; r: number; young?: boolean; size?: string};
 type Tool = 'select' | 'place' | 'path' | 'scatter' | 'terrain' | 'area' | 'line' | 'road' | 'hide' | 'bulldoze' | 'measure' | 'orbit' | 'pan';
 type Start = {p: Point2; heading: number; points?: Point2[]};
 type Gesture =
@@ -96,7 +96,7 @@ const pickOf = new Map<string, number>(), footprintOf = new Map<string, Point2[]
 const hoverBox = new THREE.Box3Helper(new THREE.Box3(), '#d33a2c');
 hoverBox.visible = false;
 const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), highlights = new THREE.Group(), preview = new THREE.Group();
-const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null};
+const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null, hover: null as Point2 | null};
 const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true, shape: 'raise' as TerrainMode, lift: .2, blend: .4,
   finish: 'paving' as SurfaceFinish, lineKind: 'fence' as LineKind, lineHeight: LINE_HEIGHT.fence,
   roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true, snapLine: true};
@@ -274,13 +274,14 @@ function anchorOf(key: string, list?: TreeItem[]) {
   return t ? {at: new THREE.Vector3(t.tree.p[0] - ox, t.tree.z - base, t.tree.p[1] - oz), height: t.tree.h} : null;
 }
 
+const replant = (t: Tree): SiteTree => ({id: newId('t'), p: [t.p[0], t.p[1]], z: t.z, h: t.h, r: t.r, type: t.type, ...t.young && {young: true}});
 // A survey tree becomes an added one the first time it is changed; returns its new key.
 function own(key: string) {
   if (!key.startsWith('s:')) return key;
   const item = treeOf(key);
   if (!item) return key;
-  const t = item.tree, added: SiteTree = {id: newId('t'), p: [t.p[0], t.p[1]], z: t.z, h: t.h, r: t.r, type: t.type};
-  edits().remove.push([t.p[0], t.p[1]]);
+  const added = replant(item.tree);
+  edits().remove.push([item.tree.p[0], item.tree.p[1]]);
   edits().add.push(added);
   treesChanged = true;
   const next = 'a:' + added.id;
@@ -320,16 +321,16 @@ function setHeading(key: string, heading: number) {
 // ---- Scene sync and history ------------------------------------------------------
 
 const prototypes = new Map<string, THREE.Object3D>();
-function instance(assetId: string, variant?: string) {
-  const asset = assetById.get(assetId)!, v = variant ?? asset.variants[0].id, key = assetId + ':' + v;
+function instance(assetId: string, variant?: string, size?: string) {
+  const asset = assetById.get(assetId)!, v = variant ?? asset.variants[0].id, key = assetId + ':' + v + ':' + (size ?? '');
   let prototype = prototypes.get(key);
-  if (!prototype) prototypes.set(key, prototype = asset.build({variant: v, detail: 'near'}));
+  if (!prototype) prototypes.set(key, prototype = asset.build({variant: v, detail: 'near', ...size && {size}}));
   return prototype.clone();
 }
 const ghostMaterials = new Map<THREE.Material, THREE.Material>();
 function ghostOf(b: Brush) {
   if (b.kind === 'tree') return treeGhost(b.type, b.h, b.r);
-  const object = b.asset.build({variant: b.variant, detail: 'near'});
+  const object = b.asset.build({variant: b.variant, detail: 'near', ...b.size && {size: b.size}});
   object.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
     const original = o.material as THREE.Material;
@@ -346,10 +347,10 @@ function sync(live = false) {
   for (const [id, object] of objects) if (!site!.placements.some(p => p.id === id)) { object.removeFromParent(); objects.delete(id); }
   for (const p of site!.placements) {
     let object = objects.get(p.id);
-    const key = p.asset + ':' + (p.variant ?? '');
+    const key = p.asset + ':' + (p.variant ?? '') + ':' + (p.size ?? '');
     if (object && object.userData.key !== key) { object.removeFromParent(); objects.delete(p.id); object = undefined; }
     if (!object) {
-      object = instance(p.asset, p.variant);
+      object = instance(p.asset, p.variant, p.size);
       object.userData = {key, placement: p.id};
       placed.add(object);
       objects.set(p.id, object);
@@ -391,7 +392,7 @@ function sync(live = false) {
     const line = lineOf(key);
     if (line) {
       // Padded, so a 4 cm fence still shows a band around it.
-      const course = line.points.map(([x, z]): Point2 => [x - ox, z - oz]), half = lineWidth(line.kind) / 2 + .15;
+      const course = line.points.map(([x, z]): Point2 => [x - ox, z - oz]), half = lineWidth(line.kind, line.width) / 2 + .15;
       const ring = [...offsetLine(course, half), ...offsetLine(course, -half).reverse()];
       highlights.add(groundOutline(ring.map((p, i): [Point2, Point2] => [p, ring[(i + 1) % ring.length]])));
       continue;
@@ -558,13 +559,14 @@ function dab(at: THREE.Vector3, target: number | null, brush = {shape: options.s
 function add(b: Brush, at: THREE.Vector3, heading: number, wall?: {heading?: number; attach: 'ground' | 'wall'; building?: string}) {
   const [ox, oz] = loaded!.frame.origin, base = loaded!.frame.base, x = round(at.x + ox), z = round(at.z + oz), y = round(at.y + base);
   if (b.kind === 'tree') {
-    const t: SiteTree = {id: newId('t'), p: [x, z], z: y, h: round(b.h, 2), r: round(b.r, 2), type: b.type};
+    const t: SiteTree = {id: newId('t'), p: [x, z], z: y, h: round(b.h, 2), r: round(b.r, 2), type: b.type, ...b.young && {young: true}};
     edits().add.push(t);
     treesChanged = true;
     return 'a:' + t.id;
   }
   const p: Placement = {id: newId('p'), asset: b.asset.id, p: [x, z, y], heading: round(wall?.heading ?? heading, 4), attach: wall?.attach ?? 'ground'};
   if (b.variant !== b.asset.variants[0].id) p.variant = b.variant;
+  if (b.size && b.size !== b.asset.sizes?.[0].id) p.size = b.size;
   if (wall?.building) p.building = wall.building;
   site!.placements.push(p);
   return 'p:' + p.id;
@@ -856,12 +858,62 @@ function duplicate() {
         site!.placements.push(copy);
         if (p.attach === 'ground' && !moveTo('p:' + copy.id, p.p[0] + right.x, p.p[1] + right.z)) site!.placements.pop(); else copies.add('p:' + copy.id);
       } else if (t) {
-        const copy: SiteTree = {id: newId('t'), p: [t.tree.p[0], t.tree.p[1]], z: t.tree.z, h: t.tree.h, r: t.tree.r, type: t.tree.type};
+        const copy = replant(t.tree);
         edits().add.push(copy);
         if (moveTo('a:' + copy.id, t.tree.p[0] + right.x, t.tree.p[1] + right.z)) copies.add('a:' + copy.id); else edits().add.pop();
       }
     }
     treesChanged = true;
+    selection = copies;
+  });
+}
+type Copied = {kind: 'p', item: Placement} | {kind: 't', item: SiteTree} | {kind: 'area', item: SiteSurface} | {kind: 'line', item: SiteLine} | {kind: 'road', item: SiteRoad};
+// A snapshot, not keys: the originals may be moved, removed or in another square by the time it is pasted.
+let clipboard: {items: Copied[]; centre: Point2} | null = null;
+function copy() {
+  if (!selection.size) return;
+  const list = treeList(), items: Copied[] = [], spots: Point2[] = [];
+  for (const key of selection) {
+    const p = placementOf(key), t = treeOf(key, list), a = areaOf(key), l = lineOf(key), r = roadOf(key), spot = spotOf(key, list);
+    if (!spot) continue;
+    if (p) items.push({kind: 'p', item: structuredClone(p)});
+    else if (a) items.push({kind: 'area', item: structuredClone(a)});
+    else if (l) items.push({kind: 'line', item: structuredClone(l)});
+    else if (r) items.push({kind: 'road', item: structuredClone(r)});
+    else if (t) items.push({kind: 't', item: replant(t.tree)});
+    else continue;
+    spots.push(spot);
+  }
+  if (items.length) clipboard = {items, centre: centroid(spots)};
+}
+// Centred under the pointer, or a metre to the side of where it was copied when the pointer is off the view.
+function paste() {
+  if (!clipboard) return;
+  const {items, centre} = clipboard, right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
+  const [dx, dz] = pointer.hover ? [pointer.hover[0] - centre[0], pointer.hover[1] - centre[1]] : [right.x, right.z];
+  edit(() => {
+    const copies = new Set<string>();
+    for (const {kind, item} of items) {
+      if (kind === 't') {
+        const tree: SiteTree = {...structuredClone(item), id: newId('t')};
+        edits().add.push(tree);
+        if (moveTo('a:' + tree.id, item.p[0] + dx, item.p[1] + dz)) copies.add('a:' + tree.id); else edits().add.pop();
+        treesChanged = true;
+      } else if (kind === 'p') {
+        const placement: Placement = {...structuredClone(item), id: newId('p')}, key = 'p:' + placement.id;
+        site!.placements.push(placement);
+        const [ox, oz] = loaded!.frame.origin;
+        const kept = item.attach === 'wall' ? inSquare(item.p[0] - ox, item.p[1] - oz) : moveTo(key, item.p[0] + dx, item.p[1] + dz);
+        if (kept) copies.add(key); else site!.placements.pop();
+      } else {
+        const id = newId(kind === 'area' ? 's' : kind === 'line' ? 'l' : 'r'), key = kind + ':' + id;
+        const list = (kind === 'area' ? site!.surfaces ??= [] : kind === 'line' ? site!.lines ??= [] : site!.roads ??= []) as {id: string}[];
+        list.push({...structuredClone(item), id});
+        const [cx, cz] = centroid(pointsOf(key)!);
+        if (moveTo(key, cx + dx, cz + dz)) copies.add(key); else list.pop();
+        detailsChanged = true;
+      }
+    }
     selection = copies;
   });
 }
@@ -880,8 +932,8 @@ function eyedrop(clientX: number, clientY: number) {
   const key = itemAt(clientX, clientY);
   if (!key) return;
   const p = placementOf(key), t = treeOf(key)?.tree, asset = p && assetById.get(p.asset);
-  if (asset) setBrush({kind: 'asset', asset, variant: p.variant ?? asset.variants[0].id});
-  else if (t) setBrush({kind: 'tree', type: t.type, h: t.h, r: t.r});
+  if (asset) setBrush({kind: 'asset', asset, variant: p.variant ?? asset.variants[0].id, ...p.size && {size: p.size}});
+  else if (t) setBrush({kind: 'tree', type: t.type, h: t.h, r: t.r, ...t.young && {young: true}});
 }
 
 // ---- Pointer ---------------------------------------------------------------------
@@ -997,7 +1049,7 @@ function showDemolition(clientX: number, clientY: number) {
   }
   render();
 }
-renderer.domElement.addEventListener('pointerleave', () => { hoverBox.visible = demolitionPreview.visible = false; render(); });
+renderer.domElement.addEventListener('pointerleave', () => { pointer.hover = null; hoverBox.visible = demolitionPreview.visible = false; render(); });
 
 renderer.domElement.addEventListener('pointercancel', () => {
   if (gesture?.kind === 'bulldoze') { const before = gesture.before; gesture = null; pointer.down = false; commit(before); }
@@ -1060,6 +1112,7 @@ renderer.domElement.addEventListener('pointermove', event => {
   if (!loaded || !site) return;
   const at = ground(event.clientX, event.clientY);
   const [ox, oz] = loaded.frame.origin;
+  pointer.hover = at ? [at.x + ox, at.z + oz] : null;
   element('cursor').textContent = at ? `x ${(at.x + ox).toFixed(2)} · z ${(at.z + oz).toFixed(2)} · ground ${(at.y + loaded.frame.base).toFixed(2)} m` : '';
   if (tool === 'measure') { measure!.hover(at); render(); }
   if (drawing(tool) && gesture?.kind !== 'extend') {
@@ -1220,6 +1273,8 @@ addEventListener('keydown', event => {
   else if (ctrl && (key === 'y' || key === 'z')) step(redo, undo);
   else if (ctrl && key === 's') action(save);
   else if (ctrl && key === 'd') duplicate();
+  else if (ctrl && key === 'c') copy();
+  else if (ctrl && key === 'v') paste();
   else if (ctrl && key === 'a') selectAll();
   else if (ctrl) return;
   else if (key === 'escape') {
@@ -1268,7 +1323,8 @@ const ICONS: Record<string, string> = {
   home: '<path d="M3 10l7-6 7 6M5 9v8h10V9"/>',
 };
 const TOOLS: [Tool, string, string][] = [
-  ['select', 'Select and move (V)', 'Click to select, Shift-click to add, Ctrl-click to toggle, drag empty ground for a box · drag to move · drag the orange ring to turn (Alt: free), round the group centre or each in place · Q/E turn 15° (Shift 90°) · arrows nudge 10 cm (Shift 1 m) · Del removes · Ctrl+D duplicates · Ctrl+A selects all'],
+  ['select', 'Select and move (V)', 'Click to select, Shift-click to add, Ctrl-click to toggle, drag empty ground for a box · drag to move · drag the orange ring to turn (Alt: free), round the group centre or each in place · Q/E turn 15° (Shift 90°) · arrows nudge 10 cm (Shift 1 m) · Del removes · Ctrl+D duplicates · Ctrl+C copies, Ctrl+V pastes under the pointer · Ctrl+A selects all'],
+  ['pan', 'Pan view (H)', 'Drag to pan · scroll zooms toward the pointer'],
   ['place', 'Place (A)', 'Pick an asset or tree on the left, then click the ground or a wall · Q/E turn before placing · Alt-click an object to pick up its asset · right-click or Esc stops'],
   ['path', 'Draw a row along a path (P)', 'Click points along the path · double-click or Enter places the row · Backspace removes the last point · Esc or right-click clears'],
   ['scatter', 'Scatter brush (B)', 'Drag over the ground to scatter the brush; nothing lands closer than the gap to its own kind · Alt-click picks up an object'],
@@ -1280,7 +1336,6 @@ const TOOLS: [Tool, string, string][] = [
   ['hide', 'Hide survey objects (X)', 'Click a survey building, shed or kiosk to leave it out of the town; click again, or use the list, to bring it back · refined buildings cannot be hidden'],
   ['measure', 'Measure (I)', 'Click points along the ground for lengths on plan, height changes and slope · double-click or Enter ends · Esc clears'],
   ['orbit', 'Orbit view (R)', 'Middle mouse orbits · Shift+middle pans · Ctrl+middle and the wheel zoom toward the cursor · hold Space to orbit with the left button'],
-  ['pan', 'Pan view (H)', 'Drag to pan · scroll zooms toward the pointer'],
 ];
 function showTools() {
   const bar = element('tools');
@@ -1380,6 +1435,15 @@ function showOptions() {
     inPlace.onchange = () => { options.inPlace = inPlace.checked; };
     parts.push(labelled('Turn each in place', inPlace));
   }
+  const sizes = brush?.kind === 'tree' ? TREE_SIZES[brush.type] : brush?.asset.sizes;
+  if (['place', 'path', 'scatter'].includes(tool) && brush && sizes) {
+    const size = document.createElement('select');
+    for (const s of sizes) size.add(new Option(s.label, s.id));
+    if (!brush.size && brush.kind === 'tree') size.add(new Option(`Picked up: ${round(brush.h, 1)} m`, ''));
+    size.value = brush.size ?? (brush.kind === 'tree' ? '' : sizes[0].id);
+    size.onchange = () => setBrush(brush!.kind === 'tree' ? treeBrush(brush!.type, size.value) : {...brush!, size: size.value});
+    parts.push(labelled('Size', size));
+  }
   if (['place', 'path', 'scatter'].includes(tool) && brush?.kind === 'tree') {
     const vary = Object.assign(document.createElement('input'), {type: 'checkbox', checked: options.vary});
     vary.title = 'Each tree gets its own height and crown, within a fifth of the brush size';
@@ -1450,10 +1514,16 @@ function resetView() {
 
 // ---- Panels ----------------------------------------------------------------------
 
-const TREE_BRUSHES: {label: string; brush: Brush}[] = [
-  {label: 'Broadleaf tree', brush: {kind: 'tree', type: BROADLEAF, h: 12, r: 3.5}},
-  {label: 'Conifer', brush: {kind: 'tree', type: CONIFER, h: 14, r: 2.5}},
-];
+// Medium is the size trees were added at before sizes existed; small is a sapling, drawn with a sparse crown.
+const TREE_SIZES: Record<string, {id: string; label: string; h: number; r: number; young?: boolean}[]> = {
+  [BROADLEAF]: [{id: 'small', label: 'Small (young)', h: 5, r: 1.6, young: true}, {id: 'medium', label: 'Medium', h: 12, r: 3.5}, {id: 'large', label: 'Large', h: 18, r: 5.5}],
+  [CONIFER]: [{id: 'small', label: 'Small (young)', h: 4.5, r: 1.3, young: true}, {id: 'medium', label: 'Medium', h: 14, r: 2.5}, {id: 'large', label: 'Large', h: 22, r: 3.6}],
+};
+function treeBrush(type: string, size = 'medium'): Brush {
+  const s = TREE_SIZES[type].find(s => s.id === size)!;
+  return {kind: 'tree', type, h: s.h, r: s.r, size, ...s.young && {young: true}};
+}
+const TREE_BRUSHES = [{label: 'Broadleaf tree', type: BROADLEAF}, {label: 'Conifer', type: CONIFER}];
 function showPalette() {
   const query = element<HTMLInputElement>('filter').value.toLowerCase(), palette = element('palette');
   const matches = (text: string) => !query || text.toLowerCase().includes(query);
@@ -1461,9 +1531,9 @@ function showPalette() {
   const groups = new Map<string, HTMLElement[]>(), into = (name: string, row: HTMLElement) => groups.set(name, [...groups.get(name) ?? [], row]);
   for (const a of library) if (!a.retired && matches(keyOf(a)))
     into(a.category, item(a.name, a.id, brush?.kind === 'asset' && brush.asset === a, () => setBrush(brush?.kind === 'asset' && brush.asset === a ? null : {kind: 'asset', asset: a, variant: a.variants[0].id}), thumbnail(a), () => openPreview(a)));
-  for (const t of TREE_BRUSHES) if (t.brush.kind === 'tree' && matches(t.label + ' tree vegetation ' + translate(t.label, 'ru') + ' дерево растительность')) {
-    const type = t.brush.type;
-    into('vegetation', item(t.label, `${t.brush.h} m tall`, brush?.kind === 'tree' && brush.type === type, () => setBrush(brush?.kind === 'tree' && brush.type === type ? null : {...t.brush}), TREE_PICTURES[type]));
+  for (const {label, type} of TREE_BRUSHES) if (matches(label + ' tree vegetation ' + translate(label, 'ru') + ' дерево растительность')) {
+    const sizes = TREE_SIZES[type].map(s => `${s.h}`).join(' / ');
+    into('vegetation', item(label, `small, medium, large · ${sizes} m`, brush?.kind === 'tree' && brush.type === type, () => setBrush(brush?.kind === 'tree' && brush.type === type ? null : treeBrush(type)), TREE_PICTURES[type]));
   }
   const sections = [...groups.keys()].sort().map(name => group(name, groups.get(name)!, !!query));
   const pending = drafts.filter(a => matches(keyOf(a))).map(a => {
@@ -1596,9 +1666,10 @@ function showSelection() {
   }
   if (l) {
     const height = number(l.height ?? LINE_HEIGHT[l.kind], .05, v => edit(() => { const h = round(Math.min(4, Math.max(.05, v)), 2); if (h === LINE_HEIGHT[l.kind]) delete l.height; else l.height = h; detailsChanged = true; }));
+    const width = number(lineWidth(l.kind, l.width), .01, v => edit(() => { const w = round(Math.min(3, Math.max(.02, v)), 2); if (w === lineWidth(l.kind)) delete l.width; else l.width = w; detailsChanged = true; }));
     const length = l.points.reduce((s, p, i) => i ? s + Math.hypot(p[0] - l.points[i - 1][0], p[1] - l.points[i - 1][1]) : 0, 0);
     panel.replaceChildren(heading(KINDS.find(k => k[0] === l.kind)![1]), Object.assign(document.createElement('small'), {textContent: `${l.id} · ${length.toFixed(1)} m long`}),
-      labelled('Kind', kindSelect(l.kind, v => edit(() => { l.kind = v; delete l.height; detailsChanged = true; }))), labelled('Height m', height), ...tools);
+      labelled('Kind', kindSelect(l.kind, v => edit(() => { l.kind = v; delete l.height; delete l.width; detailsChanged = true; }))), labelled('Height m', height), labelled('Width m', width), ...tools);
     return;
   }
   const p = placementOf(keys[0]);
@@ -1609,8 +1680,12 @@ function showSelection() {
     variant.onchange = () => edit(() => { if (variant.value === asset.variants[0].id) delete p.variant; else p.variant = variant.value; });
     const angle = number(THREE.MathUtils.radToDeg(p.heading), 15, v => edit(() => setHeading(keys[0], THREE.MathUtils.degToRad(v))));
     angle.disabled = p.attach === 'wall';
+    const size = document.createElement('select'), sizes = asset.sizes ?? [];
+    for (const s of sizes) size.add(new Option(s.label, s.id));
+    size.value = p.size ?? sizes[0]?.id ?? '';
+    size.onchange = () => edit(() => { if (size.value === sizes[0].id) delete p.size; else p.size = size.value; });
     panel.replaceChildren(heading(asset.name), Object.assign(document.createElement('small'), {textContent: `${p.id} · ${asset.id}${drafts.includes(asset) ? ' · draft' : ''}`}),
-      labelled('Variant', variant), labelled('Heading °', angle),
+      labelled('Variant', variant), ...sizes.length ? [labelled('Size', size)] : [], labelled('Heading °', angle),
       Object.assign(document.createElement('p'), {textContent: p.attach === 'wall' ? `On a wall of building ${p.building}` : 'On the ground'}), ...tools);
     return;
   }
@@ -1620,8 +1695,15 @@ function showSelection() {
   type.value = t.type;
   const change = (patch: Partial<SiteTree>) => edit(() => { const key = own(keys[0]); Object.assign(edits().add.find(a => 'a:' + a.id === key)!, patch); treesChanged = true; });
   type.onchange = () => change({type: type.value});
+  const stages = TREE_SIZES[t.type] ?? TREE_SIZES[BROADLEAF], size = document.createElement('select');
+  for (const s of stages) size.add(new Option(s.label, s.id));
+  size.add(new Option('Custom', ''));
+  size.value = stages.find(s => s.h === t.h && s.r === t.r && !!s.young === !!t.young)?.id ?? '';
+  size.onchange = () => { const s = stages.find(s => s.id === size.value); if (s) change({h: s.h, r: s.r, young: s.young}); };
+  const young = Object.assign(document.createElement('input'), {type: 'checkbox', checked: !!t.young});
+  young.onchange = () => change({young: young.checked || undefined});
   panel.replaceChildren(heading(keys[0].startsWith('s:') ? 'Survey tree' : 'Added tree'), Object.assign(document.createElement('small'), {textContent: keys[0]}),
-    labelled('Kind', type), labelled('Height m', number(t.h, .5, v => change({h: Math.max(3, v)}))), labelled('Crown radius m', number(t.r, .25, v => change({r: Math.max(.5, v)}))),
+    labelled('Kind', type), labelled('Size', size), labelled('Young, sparse crown', young), labelled('Height m', number(t.h, .5, v => change({h: Math.max(3, v)}))), labelled('Crown radius m', number(t.r, .25, v => change({r: Math.max(.5, v)}))),
     ...tools.slice(2));
 }
 

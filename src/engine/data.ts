@@ -107,6 +107,7 @@ export const loadPlacements = (root: string) => json<Placement[]>(root + 'placem
 export interface BuiltLine {
   kind: LineKind;
   height: number;
+  width?: number; // absent is the kind's default
   points: [number, number, number][];
 }
 export const loadLines = (root: string) => json<BuiltLine[]>(root + 'lines.json').catch(() => []);

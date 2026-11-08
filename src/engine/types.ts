@@ -29,6 +29,7 @@ export interface Tree {
   year: number;
   z: number; // ground height
   added?: string; // SiteTree id of a tree added in the studio
+  young?: boolean; // a sapling: drawn with a sparse crown
 }
 
 // Digital terrain model grid; values are heights in decimetres.
@@ -97,19 +98,21 @@ export interface AssetDefinition {
   category: string;
   tags: string[];
   attach: Attachment | 'either';
-  size: [number, number, number]; // metres along x, y, z, as built
+  size: [number, number, number]; // metres along x, y, z, as built at the default size
   triangles: number; // budget for the near detail
   variants: {id: string; label: string}[]; // the first is the default
+  sizes?: {id: string; label: string}[]; // independent of the variant; the first is the default
   retired?: boolean; // hidden from the palette, still drawn where placed
   // The origin is the contact point: the centre of the base on the ground, the
   // middle of the back against a wall. +z faces away from the wall.
-  build(options: {variant: string; detail: AssetDetail}): THREE.Object3D;
+  build(options: {variant: string; detail: AssetDetail; size?: string}): THREE.Object3D;
 }
 
 export interface Placement {
   id: string;
   asset: string;
   variant?: string;
+  size?: string; // absent is the asset's default size
   p: [number, number, number]; // source x, z and absolute height of the contact point
   heading: number; // radians about the vertical; 0 faces +z
   attach: Attachment;
@@ -124,6 +127,7 @@ export interface SiteTree {
   h: number;
   r: number;
   type: string; // as Tree.type
+  young?: boolean;
 }
 
 export type SurfaceFinish = 'asphalt' | 'paving' | 'gravel' | 'grass' | 'flowerbed' | 'worn-grass' | 'worn-paving';
@@ -139,6 +143,7 @@ export interface SiteLine {
   kind: LineKind;
   points: Point2[]; // source x/z
   height?: number; // metres; each kind has its own default
+  width?: number; // metres; likewise
 }
 
 export type RoadType = 'main' | 'residential' | 'service' | 'sidewalk' | 'asphalt-path' | 'kerbed-path' | 'gravel-path' | 'worn-path' | 'tiled-path';

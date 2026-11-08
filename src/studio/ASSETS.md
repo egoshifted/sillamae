@@ -45,7 +45,8 @@ Each `asset.ts` exports `const asset: AssetDefinition`:
 - `size`: the built bounding box in metres along x, y, z. The check builds every variant and compares.
 - `triangles`: the near-detail budget. Street furniture 150-400, a shelter or kiosk up to 1500. Lower is better: a street may hold hundreds.
 - `variants`: at least one; the first is the default.
-- `build({variant, detail})`: returns a new `THREE.Object3D`.
+- `sizes` (optional): growth stages or sizes chosen independently of the variant, such as a shrub's small (young), medium and large. The first is the default and is what `size` declares; keep an existing look first so earlier placements, which carry no size, do not change. The check builds every variant at every size.
+- `build({variant, detail, size})`: returns a new `THREE.Object3D`.
   - **Origin**: on the ground, the centre of the base at y = 0. On a wall, the middle of the back at z = 0, with the object in front of it (+z). Wall assets have their origin where they touch the wall; the editor puts it at the point clicked.
   - **Facing**: the front faces +z (a bench's sitters, a sign's face, a lamp arm's reach).
   - **Units**: metres, real dimensions. Look them up; do not guess from photos alone.
