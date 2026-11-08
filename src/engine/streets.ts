@@ -16,26 +16,62 @@ export const ROAD_WIDTH: Record<RoadType, number> = {main: 7, residential: 6, se
 export const PATH_FINISH: Partial<Record<RoadType, SurfaceFinish>> = {sidewalk: 'paving', 'kerbed-path': 'asphalt', 'asphalt-path': 'asphalt', 'gravel-path': 'gravel', 'worn-path': 'worn-grass', 'tiled-path': 'worn-paving'};
 
 export const tileCount = (tiles = 4) => Math.max(1, Math.min(6, Math.round(Number.isFinite(tiles) ? tiles : 4)));
-export const roadWidth = (road: Pick<SiteRoad, 'type' | 'tiles'>) => road.type === 'tiled-path' ? tileCount(road.tiles) * .5 : ROAD_WIDTH[road.type];
-export function pathOutline(type: RoadType, points: Point2[], tiles?: number): Point2[] {
-  const half = roadWidth({type, tiles}) / 2;
-  if (type !== 'worn-path') return [...offsetLine(points, half), ...offsetLine(points, -half).reverse()];
-  const sampled: Point2[] = [];
+export const roadWidth = (road: Pick<SiteRoad, 'type' | 'tiles' | 'width'>) => road.type === 'tiled-path' ? tileCount(road.tiles) * .5 : road.width ?? ROAD_WIDTH[road.type];
+// This osm2streets version builds every mapped footway and path this wide.
+export const OSM_PATH_WIDTH = 2;
+export const KERB = {width: .15, height: .12};
+type PathRoad = Pick<SiteRoad, 'type' | 'tiles' | 'width' | 'ends' | 'kerbs' | 'kerb'>;
+// A join eases over three times the change in width, at least 1.5 m, and never past the path's middle.
+const taperLength = (change: number, total: number) => Math.min(total / 2, Math.max(1.5, Math.abs(change) * 3));
+const smooth = (t: number) => t * t * (3 - 2 * t);
+
+// The course a path is outlined along and its half-width at each point. Plain paths keep
+// their clicked points; worn ones wander in width and tapering ones are sampled for a smooth ease.
+function pathCourse(road: PathRoad, points: Point2[]) {
+  const width = roadWidth(road), half = width / 2, [from, to] = road.ends ?? [];
+  const tapers = (from != null && from !== width) || (to != null && to !== width);
+  if (road.type !== 'worn-path' && !tapers) return {course: points, half: points.map(() => half), sides: null};
+  const sampled: Point2[] = [], along: number[] = [];
   let distance = 0;
   const widths: number[] = [];
   for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i], length = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(1, Math.ceil(length / .6));
+    const a = points[i - 1], b = points[i], length = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(1, Math.ceil(length / (road.type === 'worn-path' ? .6 : .5)));
     for (let j = 0; j < steps; j++) {
       const t = j / steps, d = distance + length * t;
       sampled.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-      widths.push(.84 + .12 * Math.sin(d * 2.1) + .04 * Math.sin(d * 5.3));
+      along.push(d);
+      widths.push(road.type === 'worn-path' ? .84 + .12 * Math.sin(d * 2.1) + .04 * Math.sin(d * 5.3) : 1);
     }
     distance += length;
   }
-  if (!sampled.length) return [];
-  sampled.push(points[points.length - 1]); widths.push(widths[widths.length - 1]);
-  const side = (sign: number) => offsetLine(sampled, sign * half).map((p, i): Point2 => [sampled[i][0] + (p[0] - sampled[i][0]) * widths[i], sampled[i][1] + (p[1] - sampled[i][1]) * widths[i]]);
+  if (!sampled.length) return {course: [], half: [], sides: null};
+  sampled.push(points[points.length - 1]); widths.push(widths[widths.length - 1]); along.push(distance);
+  if (tapers) along.forEach((d, i) => {
+    let w = width;
+    if (from != null && from !== width) { const l = taperLength(from - width, distance); if (d < l) w = from + (width - from) * smooth(d / l); }
+    if (to != null && to !== width) { const l = taperLength(to - width, distance); if (distance - d < l) w = to + (w - to) * smooth((distance - d) / l); }
+    widths[i] *= w / width;
+  });
+  return {course: sampled, half: widths.map(w => half * w), sides: widths};
+}
+// The ring of a path's surface, source or local x/z as its points are.
+export function pathOutline(road: PathRoad, points: Point2[]): Point2[] {
+  const {course, sides} = pathCourse(road, points), half = roadWidth(road) / 2;
+  if (!course.length) return [];
+  if (!sides) return [...offsetLine(course, half), ...offsetLine(course, -half).reverse()];
+  const side = (sign: number) => offsetLine(course, sign * half).map((p, i): Point2 => [course[i][0] + (p[0] - course[i][0]) * sides[i], course[i][1] + (p[1] - course[i][1]) * sides[i]]);
   return [...side(1), ...side(-1).reverse()];
+}
+// The centre lines of a path's kerbs, standing just outside its edges, with their size.
+export function pathKerbs(road: PathRoad, points: Point2[]) {
+  if (!road.kerbs || !PATH_FINISH[road.type]) return [];
+  const {course, half} = pathCourse(road, points), width = road.kerb?.width ?? KERB.width, height = road.kerb?.height ?? KERB.height;
+  if (course.length < 2) return [];
+  // In source x/z seen from above, offsetLine's positive side is on the walker's right.
+  return (road.kerbs === 'both' ? [-1, 1] : road.kerbs === 'left' ? [-1] : [1]).map(sign => ({
+    width, height,
+    points: offsetLine(course, sign).map((p, i): Point2 => { const out = half[i] + width / 2; return [course[i][0] + (p[0] - course[i][0]) * out, course[i][1] + (p[1] - course[i][1]) * out]; }),
+  }));
 }
 export const FOOTWAY = {offset: 1.5, width: 2}; // metres beyond the carriageway edge, and wide
 // Metres within which a drawn road's end joins an existing street.

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type {RoadSurface} from '../../engine/data.ts';
 import {LINE_HEIGHT, lineMeshes, standLine} from '../../engine/lines.ts';
 import {addRoads} from '../../engine/roads.ts';
-import {FOOTWAY, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth} from '../../engine/streets.ts';
+import {FOOTWAY, offsetLine, PATH_FINISH, pathKerbs, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth} from '../../engine/streets.ts';
 import type {Point2, RoadCut, SiteLine, SiteRoad, SiteSurface, SurfaceFinish} from '../../engine/types.ts';
 import {usePhysicalDepth} from '../depth.ts';
 import type {GroundSurface} from './ground-surface.ts';
@@ -49,7 +49,7 @@ export function roadShapes(road: SiteRoad, points: Point2[]): Shape[] {
   points = points.filter((p, i) => !i || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-6);
   if (points.length < 2) return [];
   const finish = PATH_FINISH[road.type];
-  if (finish) return [{kind: 'footway', surface: finish, ...road.type === 'tiled-path' && {tileLayout: {points, width: roadWidth(road)}}, ...road.type === 'kerbed-path' && {kerbed: true}, ring: pathOutline(road.type, points, road.tiles), rise: RISE}];
+  if (finish) return [{kind: 'footway', surface: finish, ...road.type === 'tiled-path' && {tileLayout: {points, width: roadWidth(road)}}, ...road.type === 'kerbed-path' && {kerbed: true}, ring: pathOutline(road, points), rise: RISE}];
   const half = ROAD_WIDTH[road.type] / 2, band = (a: Point2[], b: Point2[]) => [...a, ...[...b].reverse()];
   const shapes: Shape[] = [{kind: 'carriageway', ring: band(offsetLine(points, half), offsetLine(points, -half)), rise: RISE + .01}];
   if (road.footways) for (const side of [1, -1]) {
@@ -101,7 +101,8 @@ export function detailPreview(surfaces: SiteSurface[], lines: SiteLine[], roads:
     for (const cell of cells(s)) lay(cell, s);
   }
   if (laid.length) group.add(addRoads(scratch, laid, anisotropy, cuts, context, kerbed));
-  if (lines.length) group.add(lineMeshes(lines.map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], width: l.width, points: standLine(local(l.points), height)})), {lifted: false}));
+  const kerbs = roads.flatMap(r => pathKerbs(r, local(r.points)).map(k => ({kind: 'kerb' as const, height: k.height, width: k.width, points: standLine(k.points, height)})));
+  if (lines.length || kerbs.length) group.add(lineMeshes([...lines.map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], width: l.width, points: standLine(local(l.points), height)})), ...kerbs], {lifted: false}));
   usePhysicalDepth(group);
   return group;
 }

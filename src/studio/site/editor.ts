@@ -12,7 +12,7 @@ import type {SurveyManifest, WorldData} from '../../engine/data.ts';
 import {snapToRoadEdge} from '../../engine/road-kerbs.ts';
 import {demolishRoads, contains, roadSection} from '../../engine/road-demolition.ts';
 import {LINE_HEIGHT, lineMeshes, lineWidth, standLine} from '../../engine/lines.ts';
-import {FOOTWAY, nearestOn, offsetLine, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SNAP} from '../../engine/streets.ts';
+import {FOOTWAY, KERB, nearestOn, offsetLine, OSM_PATH_WIDTH, PATH_FINISH, ROAD_WIDTH, roadWidth, tileCount, smoothLine, SNAP} from '../../engine/streets.ts';
 import type {AssetDefinition, LineKind, Placement, PlacementSite, Point2, RoadCut, RoadType, SiteLine, SiteRoad, SiteSurface, SiteTree, SurfaceFinish, Tree} from '../../engine/types.ts';
 import {centroid, roadShapes, detailPreview, disposeGroup, distanceToLine, inRing} from './details.ts';
 import {city} from '../project.ts';
@@ -57,6 +57,17 @@ const camera = new THREE.PerspectiveCamera(40, 1, .2, 3000), controls = new Orbi
 useBlenderOrbit(controls);
 controls.maxPolarAngle = Math.PI / 2 - .05;
 controls.zoomToCursor = true;
+// Each wheel step moves the camera a share of its distance to the orbit target, so zooming
+// stalls at the target's depth wherever that was left. Before the step, the target moves
+// along the view to the depth of what the cursor points at; the view does not turn.
+renderer.domElement.addEventListener('wheel', event => {
+  if (!loaded) return;
+  const caster = raycaster(event.clientX, event.clientY);
+  const hit = caster.intersectObjects([loaded.wallMesh, placed, ...loaded.refined.map(r => r.root)], true)[0]?.point ?? loaded.heights.intersect(caster.ray)?.point;
+  if (!hit) return;
+  const forward = camera.getWorldDirection(new THREE.Vector3()), depth = hit.clone().sub(camera.position).dot(forward);
+  if (depth > camera.near) controls.target.copy(camera.position).addScaledVector(forward, depth);
+}, {capture: true});
 let persist = false, rememberTimer = 0;
 function remember() {
   if (!persist || !site) return;
@@ -99,9 +110,13 @@ const objects = new Map<string, THREE.Object3D>(), placed = new THREE.Group(), h
 const pointer = {downX: 0, downY: 0, down: false, last: null as THREE.Vector3 | null, hover: null as Point2 | null};
 const options = {spacing: 10, facing: 'along', offset: 0, radius: 6, gap: 3, spin: true, inPlace: false, vary: true, shape: 'raise' as TerrainMode, lift: .2, blend: .4,
   finish: 'paving' as SurfaceFinish, lineKind: 'fence' as LineKind, lineHeight: LINE_HEIGHT.fence,
-  roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true, snapLine: true};
-// The town's streets in source x/z, for drawn roads to join; from the data build.
-let streetLines: Point2[][] = [];
+  roadType: 'residential' as RoadType, snapFootpath: true, tiles: 4, footways: true, curved: true, snapLine: true,
+  pathWidth: null as number | null, kerbLeft: false, kerbRight: false, kerbWidth: KERB.width, kerbHeight: KERB.height};
+// The town's mapped streets, and its footways and paths, in source x/z, for drawn roads
+// and paths to join; from the data build.
+let streetLines: Point2[][] = [], pathLines: Point2[][] = [];
+// Metres within which a drawn path's end moves onto another path's end.
+const PATH_END_REACH = 2;
 const ENDPOINT_RADIUS = .9;
 const snapMark = new THREE.Mesh(new THREE.RingGeometry(.6, ENDPOINT_RADIUS, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({color: '#e07b00', depthTest: false, side: THREE.DoubleSide}));
 snapMark.renderOrder = 999;
@@ -711,7 +726,21 @@ function snapLine(at: THREE.Vector3, kind = options.lineKind) {
 }
 // The first point at its snap; the last is the pointer's (already snapped) or the last click's snap.
 const roadEnds = (points: THREE.Vector3[]) => points.map((p, i) => options.roadType === 'kerbed-path' ? roadSnaps[i] ?? p : i === 0 ? roadSnaps[0] ?? p : i === points.length - 1 && i < path.length ? roadSnaps[i] ?? p : p);
-const draftRoad = (points: Point2[]): SiteRoad => ({id: 'draft', type: options.roadType, ...options.roadType === 'tiled-path' && {tiles: options.tiles}, points: options.curved && !(options.roadType === 'kerbed-path' && options.snapFootpath) ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}});
+function draftRoad(points: Point2[]): SiteRoad {
+  const road: SiteRoad = {id: 'draft', type: options.roadType, ...options.roadType === 'tiled-path' && {tiles: options.tiles}, points: options.curved && !(options.roadType === 'kerbed-path' && options.snapFootpath) ? smoothLine(points) : points, ...options.footways && !PATH_FINISH[options.roadType] && {footways: true}, ...PATH_FINISH[options.roadType] && pathSettings()};
+  return PATH_FINISH[road.type] ? {...road, ...easedEnds(road)} : road;
+}
+// A path ending on another of a different width eases from that width over its first or last metres.
+function easedEnds(road: SiteRoad): Partial<SiteRoad> {
+  const width = roadWidth(road), ends = [road.points[0], road.points[road.points.length - 1]].map(p => joinedWidth(p, road.id)).map(w => w !== null && Math.abs(w - width) > .01 ? round(w, 2) : null) as [number | null, number | null];
+  return ends.some(w => w !== null) ? {ends} : {};
+}
+// The path width and kerbs chosen for drawing, as a path stores them: defaults are left out.
+function pathSettings(): Partial<SiteRoad> {
+  const kerbs = options.kerbLeft && options.kerbRight ? 'both' : options.kerbLeft ? 'left' : options.kerbRight ? 'right' : undefined;
+  const kerb = {...options.kerbWidth !== KERB.width && {width: options.kerbWidth}, ...options.kerbHeight !== KERB.height && {height: options.kerbHeight}};
+  return {...options.pathWidth !== null && options.roadType !== 'tiled-path' && {width: options.pathWidth}, ...kerbs && {kerbs}, ...kerbs && Object.keys(kerb).length && {kerb}};
+}
 // A road point within reach of another drawn road's end, or of a street, moves onto it;
 // the data build joins it there. Local frame.
 function roadContext(kinds: string[] = ['carriageway']) {
@@ -720,6 +749,24 @@ function roadContext(kinds: string[] = ['carriageway']) {
   const cuts = [...loaded!.otherCuts, ...(site!.roadCuts ?? []).map(c => ({...c, ring: c.ring.map(([x, z]): Point2 => [x - ox, z - oz])}))].map(c => ({...c, exposeGround: true}));
   return demolishRoads(shapes.map(s => ({kind: s.kind, lift: 0, ring: s.ring.map(([x, z]): [number, number, number] => [x - ox, 0, z - oz])})), cuts);
 }
+function mappedPathEnd([x, z]: Point2, reach = PATH_END_REACH) {
+  let best: Point2 | undefined;
+  for (const line of pathLines) for (const end of [line[0], line[line.length - 1]]) {
+    const d = Math.hypot(end[0] - x, end[1] - z);
+    if (d <= reach) { reach = d; best = end; }
+  }
+  return best && [...best] as Point2;
+}
+// The width of whatever path ends at a point: a drawn one's own width there, or a mapped one's.
+function joinedWidth(at: Point2, exclude?: string) {
+  const close = (p: Point2) => Math.hypot(p[0] - at[0], p[1] - at[1]) < .05;
+  for (const r of site!.roads ?? []) {
+    if (r.id === exclude || !PATH_FINISH[r.type] || r.points.length < 2) continue;
+    if (close(r.points[0])) return r.ends?.[0] ?? roadWidth(r);
+    if (close(r.points[r.points.length - 1])) return r.ends?.[1] ?? roadWidth(r);
+  }
+  return mappedPathEnd(at, .05) ? OSM_PATH_WIDTH : null;
+}
 function snapRoad(at: THREE.Vector3, type = options.roadType, exclude?: string, cursor?: Point2) {
   const [ox, oz] = loaded!.frame.origin, x = at.x + ox, z = at.z + oz;
   const ray = cursor && raycaster(...cursor).ray;
@@ -727,7 +774,7 @@ function snapRoad(at: THREE.Vector3, type = options.roadType, exclude?: string, 
     const centre = new THREE.Vector3(px - ox, loaded!.heights.at(px - ox, pz - oz) + .1, pz - oz);
     return !!ray && Number.isFinite(centre.y) && insideEndpointMarker(ray, centre, ENDPOINT_RADIUS);
   });
-  let point = ends;
+  let point = ends ?? (PATH_FINISH[type] ? mappedPathEnd([x, z]) : undefined);
   if (!point && type === 'kerbed-path' && options.snapFootpath) {
     const rings = roadContext().filter(r => r.kind === 'carriageway').map(r => r.ring.map(([x, , z]): Point2 => [x, z]));
     const edge = snapToRoadEdge(rings, [at.x, at.z], ROAD_WIDTH[type] / 2);
@@ -1422,6 +1469,10 @@ function showOptions() {
     };
     parts.push(labelled('Type', typeSelect(options.roadType, v => { options.roadType = v; showOptions(); updatePreview(); })), ...(!PATH_FINISH[options.roadType] ? [tick('Footways', 'footways')] : []), ...(options.roadType === 'kerbed-path' ? [tick('Snap to road', 'snapFootpath')] : []), ...(options.roadType === 'kerbed-path' && options.snapFootpath ? [] : [tick('Curved', 'curved')]));
     if (options.roadType === 'tiled-path') parts.push(labelled('Width (tiles)', tilesSelect(options.tiles, v => { options.tiles = v; updatePreview(); })));
+    else if (PATH_FINISH[options.roadType]) parts.push(labelled('Width m', metres(options.pathWidth ?? ROAD_WIDTH[options.roadType], .1, .3, 10, v => { options.pathWidth = v === ROAD_WIDTH[options.roadType] ? null : v; updatePreview(); })));
+    if (PATH_FINISH[options.roadType]) parts.push(...kerbControls(
+      {left: options.kerbLeft, right: options.kerbRight, width: options.kerbWidth, height: options.kerbHeight},
+      k => { Object.assign(options, {kerbLeft: k.left, kerbRight: k.right, kerbWidth: k.width, kerbHeight: k.height}); showOptions(); updatePreview(); }));
     if (options.roadType === 'kerbed-path') parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Click along the road edge; kerbs appear only where the path meets a road.'}));
     if (!streetLines.length) parts.push(Object.assign(document.createElement('span'), {className: 'tip', textContent: 'Build data (npm run data) to snap to streets'}));
   }
@@ -1467,6 +1518,31 @@ function tilesSelect(value: number | undefined, onchange: (v: number) => void) {
   const s = document.createElement('select');
   for (let n = 1; n <= 6; n++) s.add(new Option(n + ' (' + n * .5 + ' m)', String(n)));
   s.value = String(tileCount(value)); s.onchange = () => onchange(Number(s.value)); return s;
+}
+function metres(value: number, step: number, min: number, max: number, onchange: (v: number) => void) {
+  const input = Object.assign(document.createElement('input'), {type: 'number', step: String(step), min: String(min), max: String(max), value: String(round(value, 2))});
+  input.onchange = () => { const v = round(Math.min(max, Math.max(min, Number(input.value) || min)), 2); input.value = String(v); onchange(v); };
+  return input;
+}
+type KerbChoice = {left: boolean; right: boolean; width: number; height: number};
+// Left and right are as seen walking the path in the direction it was drawn.
+function kerbControls(k: KerbChoice, onchange: (k: KerbChoice) => void) {
+  const tick = (label: string, side: 'left' | 'right') => {
+    const box = Object.assign(document.createElement('input'), {type: 'checkbox', checked: k[side]});
+    box.onchange = () => onchange({...k, [side]: box.checked});
+    return labelled(label, box);
+  };
+  const parts = [tick('Kerb left', 'left'), tick('Kerb right', 'right')];
+  if (k.left || k.right) parts.push(
+    labelled('Kerb width m', metres(k.width, .01, .05, .6, v => onchange({...k, width: v}))),
+    labelled('Kerb height m', metres(k.height, .01, .02, .5, v => onchange({...k, height: v}))));
+  return parts;
+}
+const kerbChoice = (r: SiteRoad): KerbChoice => ({left: r.kerbs === 'both' || r.kerbs === 'left', right: r.kerbs === 'both' || r.kerbs === 'right', width: r.kerb?.width ?? KERB.width, height: r.kerb?.height ?? KERB.height});
+function setKerbs(r: SiteRoad, k: KerbChoice) {
+  const kerbs = k.left && k.right ? 'both' : k.left ? 'left' : k.right ? 'right' : undefined, kerb = {...k.width !== KERB.width && {width: k.width}, ...k.height !== KERB.height && {height: k.height}};
+  if (kerbs) r.kerbs = kerbs; else delete r.kerbs;
+  if (kerbs && Object.keys(kerb).length) r.kerb = kerb; else delete r.kerb;
 }
 function typeSelect(value: RoadType, onchange: (v: RoadType) => void) {
   const s = document.createElement('select');
@@ -1660,8 +1736,14 @@ function showSelection() {
     const footways = Object.assign(document.createElement('input'), {type: 'checkbox', checked: !!r.footways});
     footways.onchange = () => edit(() => { if (footways.checked) r.footways = true; else delete r.footways; detailsChanged = true; });
     const length = r.points.reduce((s, p, i) => i ? s + Math.hypot(p[0] - r.points[i - 1][0], p[1] - r.points[i - 1][1]) : 0, 0);
+    // A new width changes how the ends ease into the paths they join.
+    const reshaped = (change: () => void) => edit(() => { change(); delete r.ends; if (PATH_FINISH[r.type]) Object.assign(r, easedEnds(r)); detailsChanged = true; });
+    const path = !!PATH_FINISH[r.type], pathControls = !path ? [] : [
+      ...r.type === 'tiled-path' ? [] : [labelled('Width m', metres(roadWidth(r), .1, .3, 10, v => reshaped(() => { if (v === ROAD_WIDTH[r.type]) delete r.width; else r.width = v; })))],
+      ...kerbControls(kerbChoice(r), k => edit(() => { setKerbs(r, k); detailsChanged = true; })),
+    ];
     panel.replaceChildren(heading(ROAD_TYPES.find(t => t[0] === r.type)![1]), Object.assign(document.createElement('p'), {textContent: 'Drag either endpoint to extend the road or path. Esc cancels; Undo restores the previous length.'}), Object.assign(document.createElement('small'), {textContent: `${r.id} · ${length.toFixed(1)} m long · ${roadWidth(r)} m wide`}),
-      labelled('Type', typeSelect(r.type, v => edit(() => { r.type = v; if (PATH_FINISH[v]) delete r.footways; detailsChanged = true; }))), ...(r.type === 'tiled-path' ? [labelled('Width (tiles)', tilesSelect(r.tiles, v => edit(() => { r.tiles = v; detailsChanged = true; })))] : []), ...(!PATH_FINISH[r.type] ? [labelled('Footways', footways)] : []), ...tools);
+      labelled('Type', typeSelect(r.type, v => reshaped(() => { r.type = v; if (PATH_FINISH[v]) delete r.footways; else { delete r.width; delete r.kerbs; delete r.kerb; } }))), ...(r.type === 'tiled-path' ? [labelled('Width (tiles)', tilesSelect(r.tiles, v => reshaped(() => { r.tiles = v; })))] : []), ...pathControls, ...(!path ? [labelled('Footways', footways)] : []), ...tools);
     return;
   }
   if (l) {
@@ -1921,7 +2003,7 @@ async function open(square: Square) {
   treesChanged = true;
   measure = new Measure(scene, element('labels'));
   scene.add(placed, highlights, preview, ring, endpoints, brushRing, hoverBox, snapMark, demolitionPreview);
-  streetLines = await fetch('/data/streets.json').then(r => r.ok ? r.json() : []).catch(() => []);
+  [streetLines, pathLines] = await Promise.all(['streets', 'paths'].map(name => fetch(`/data/${name}.json`).then(r => r.ok ? r.json() : []).catch(() => [])));
   detailsChanged = true;
   scene.add(new THREE.HemisphereLight('#e6efff', '#73775c', 1.1));
   sun = new THREE.DirectionalLight('#ffd8b0', 2.2);

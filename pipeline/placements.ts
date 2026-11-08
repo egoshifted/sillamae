@@ -4,7 +4,7 @@ import type {BuiltLine, RoadSurface} from '../src/engine/data.ts';
 import {LINE_HEIGHT, standLine} from '../src/engine/lines.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
 import {TREE_MATCH, TRIANGLE, type CityDefinition, type Placement, type PlacementSite, type Point2, type SceneData} from '../src/engine/types.ts';
-import {DRIVEN, FOOTWAY, nearestOn, offsetLine, PATH_FINISH, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth, SNAP} from '../src/engine/streets.ts';
+import {DRIVEN, FOOTWAY, nearestOn, offsetLine, PATH_FINISH, pathKerbs, pathOutline, ROAD_TAGS, ROAD_WIDTH, roadWidth, SNAP} from '../src/engine/streets.ts';
 import type {TerrainChunks} from '../src/engine/terrain-edit.ts';
 import type {Georeference, OsmExtract} from './geo.ts';
 import type {RoadShape} from './roads.ts';
@@ -57,16 +57,17 @@ export function dropHidden(v: Float32Array, scene: SceneData, sites: PlacementSi
 // Areas drawn in the studio, as footways in the local frame for the road layer to lay.
 export function studioSurfaces(sites: PlacementSite[], city: CityDefinition): RoadShape[] {
   const [ox, oz] = city.frame.origin;
-  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], ...r.type === 'tiled-path' && {tileLayout: {points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), width: roadWidth(r)}}, ...r.type === 'kerbed-path' && {kerbed: true}, studio: r.id, ring: pathOutline(r.type, r.points.map(([x, z]): Point2 => [x - ox, z - oz]), r.tiles)}))]);
+  return sites.flatMap(s => [...(s.surfaces ?? []).map(a => ({kind: 'footway' as const, surface: a.finish, ring: a.ring.map(([x, z]): Point2 => [x - ox, z - oz])})), ...(s.roads ?? []).filter(r => PATH_FINISH[r.type] && r.points.length >= 2).map(r => ({kind: 'footway' as const, surface: PATH_FINISH[r.type], ...r.type === 'tiled-path' && {tileLayout: {points: r.points.map(([x, z]): Point2 => [x - ox, z - oz]), width: roadWidth(r)}}, ...r.type === 'kerbed-path' && {kerbed: true}, studio: r.id, ring: pathOutline(r, r.points.map(([x, z]): Point2 => [x - ox, z - oz]))}))]);
 }
 
 // Lines drawn in the studio, stood on the built terrain in the local frame.
 export function studioLines(sites: PlacementSite[], city: CityDefinition, heightAt: HeightAt, base: number): BuiltLine[] {
   const [ox, oz] = city.frame.origin;
-  return sites.flatMap(s => (s.lines ?? []).map(l => ({
-    kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], ...l.width !== undefined && {width: l.width},
-    points: standLine(l.points.map(([x, z]): [number, number] => [x - ox, z - oz]), (x, z) => { const h = heightAt(x + ox, z + oz); return h === null ? null : h - base; }).map(p => p.map(v => Math.round(v * 1000) / 1000) as [number, number, number]),
-  })));
+  const stand = (points: Point2[]) => standLine(points.map(([x, z]): [number, number] => [x - ox, z - oz]), (x, z) => { const h = heightAt(x + ox, z + oz); return h === null ? null : h - base; }).map(p => p.map(v => Math.round(v * 1000) / 1000) as [number, number, number]);
+  return sites.flatMap(s => [
+    ...(s.lines ?? []).map(l => ({kind: l.kind, height: l.height ?? LINE_HEIGHT[l.kind], ...l.width !== undefined && {width: l.width}, points: stand(l.points)})),
+    ...(s.roads ?? []).flatMap(r => pathKerbs(r, r.points).map(k => ({kind: 'kerb' as const, height: k.height, width: k.width, points: stand(k.points)}))),
+  ]);
 }
 
 // Roads drawn in the studio join the OpenStreetMap streets before anything is
@@ -139,6 +140,14 @@ export function streetLines(osm: OsmExtract, {local}: Georeference, city: CityDe
   const [ox, oz] = city.frame.origin, round = (v: number) => Math.round(v * 100) / 100;
   return osm.highways.filter(w => DRIVEN.has(w.tags.highway) && !w.tags['studio:road']).map(w => w.points.map(p => { const [x, z] = local(p); return [round(x + ox), round(z + oz)] as Point2; }));
 }
+// Mapped footways and paths, source x/z, for drawn paths to continue from their ends. Crossings
+// and steps are not built as paths (see roads.ts); each is built OSM_PATH_WIDTH wide.
+export function pathLines(osm: OsmExtract, {local}: Georeference, city: CityDefinition) {
+  const [ox, oz] = city.frame.origin, round = (v: number) => Math.round(v * 100) / 100;
+  const crossing = (tags: Record<string, string>) => tags.footway === 'crossing' || 'crossing' in tags;
+  return osm.highways.filter(w => WALKED.has(w.tags.highway) && !crossing(w.tags) && !w.tags['studio:road']).map(w => w.points.map(p => { const [x, z] = local(p); return [round(x + ox), round(z + oz)] as Point2; }));
+}
+const WALKED = new Set(['footway', 'path', 'pedestrian', 'cycleway', 'bridleway']);
 
 // Placements of approved library assets only; drafts are previews and never ship.
 // Ground placements keep the height the studio stood them on (the top of a kerb

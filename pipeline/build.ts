@@ -19,7 +19,7 @@ import {blendSites, gridGround, seatBuildings, surveyWater} from './ground.ts';
 import {shoreline} from './shore.ts';
 import {deckAt, loadTracedWater} from './water-bodies.ts';
 import {buildNav} from './nav.ts';
-import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSite, markStudioRoads, streetLines, studioLines, studioSurfaces} from './placements.ts';
+import {addStudioRoads, applyTreeEdits, collectPlacements, dropHidden, loadSite, markStudioRoads, pathLines, streetLines, studioLines, studioSurfaces} from './placements.ts';
 import {buildRoads, clearFootwayPaint, groundIndex, layRoads, moveTreesOffPaths} from './roads.ts';
 import {buildStairs} from './stairs.ts';
 import {moveTreesOffRoads} from './trees.ts';
@@ -99,6 +99,8 @@ async function buildGround(key: string, site: PlacementSite, terrainEdits: Terra
     'nav.json': JSON.stringify(nav),
     // The OSM streets, without the studio's own, for drawn roads to snap to in the editor.
     'streets.json': JSON.stringify(streetLines(osm, georef, sillamae)),
+    // Mapped footways and paths, for drawn paths to continue from their ends.
+    'paths.json': JSON.stringify(pathLines(osm, georef, sillamae)),
     // The edits this data was built with, so the studio previews only what changed since.
     'terrain.json': JSON.stringify(terrainEdits),
   };

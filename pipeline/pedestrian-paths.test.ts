@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {studioSurfaces, addStudioRoads} from './placements.ts';
 import {roadShapes} from '../src/studio/site/details.ts';
-import {PATH_FINISH, ROAD_WIDTH, pathCoordinates} from '../src/engine/streets.ts';
+import {KERB, offsetLine, PATH_FINISH, pathKerbs, pathOutline, ROAD_WIDTH, pathCoordinates} from '../src/engine/streets.ts';
 import type {CityDefinition, PlacementSite, RoadType} from '../src/engine/types.ts';
 import type {Georeference} from './geo.ts';
 
@@ -55,4 +55,25 @@ test('worn tiled paths preserve all six tile widths and aligned layout through s
     assert.deepEqual(pathCoordinates([[0, 0], [0, 10]], tiles * .5, tiles * .25, 1), [0, 1]);
     assert.deepEqual(pathCoordinates([[0, 0], [10, 0]], tiles * .5, 1, -tiles * .25), [0, 1]);
   }
+});
+
+test('a path joining a narrower one eases from its width to its own', () => {
+  const road = {type: 'asphalt-path' as const, width: 3, ends: [2, null] as [number, null]}, ring = pathOutline(road, [[0, 0], [0, 10]]);
+  const widthAt = (z: number) => { const xs = ring.filter(p => Math.abs(p[1] - z) < 1e-6).map(p => p[0]); return Math.max(...xs) - Math.min(...xs); };
+  assert.ok(Math.abs(widthAt(0) - 2) < 1e-9);
+  assert.ok(widthAt(1.5) > 2 && widthAt(1.5) < 3);
+  assert.ok(Math.abs(widthAt(10) - 3) < 1e-9);
+});
+
+test('paths without a width or joins keep the outline they had', () => {
+  const points: [number, number][] = [[0, 0], [3, 4], [3, 10]];
+  assert.deepEqual(pathOutline({type: 'asphalt-path'}, points), [...offsetLine(points, .9), ...offsetLine(points, -.9).reverse()]);
+});
+
+test('kerbs stand just outside the chosen sides', () => {
+  const kerbs = pathKerbs({type: 'asphalt-path', width: 2, kerbs: 'left', kerb: {width: .2}}, [[0, 0], [0, 10]]);
+  assert.equal(kerbs.length, 1);
+  assert.deepEqual(kerbs[0].points.map(p => p.map(v => +v.toFixed(6))), [[1.1, 0], [1.1, 10]]);
+  assert.equal(kerbs[0].height, KERB.height);
+  assert.equal(pathKerbs({type: 'asphalt-path'}, [[0, 0], [0, 10]]).length, 0);
 });

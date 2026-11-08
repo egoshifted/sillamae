@@ -155,6 +155,11 @@ export interface SiteRoad {
   points: Point2[]; // source x/z along its centre
   tiles?: number; // worn tiled paths: 1–6 slabs across, each 0.5 m
   footways?: boolean; // a path along each side
+  width?: number; // paths other than tiled ones, metres; absent is the type's width
+  // Paths: the width of the path joined at the start and end, which this one eases from.
+  ends?: [number | null, number | null];
+  kerbs?: 'both' | 'left' | 'right'; // paths: kerbs along these sides, as seen walking the way it was drawn
+  kerb?: {width?: number; height?: number}; // metres; absent is a line kerb's size
 }
 
 // Everything the site editor has saved for the town, in one store with ids unique
