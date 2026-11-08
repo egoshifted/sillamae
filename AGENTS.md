@@ -23,6 +23,8 @@ Rules for AI coding agents (and people) working in this repository. The code and
 - Survey vertices are 7 floats: x, z, h, r, g, b, pick (building index, 0 = ground).
 - Survey ground is 2–5 stacked layers (5–35 cm apart) over a sea-level plane of ~281 huge water triangles. Never move ground layers independently or use the sea plane as the base surface; see `src/engine/survey/drape.ts`. Ground overlays need a depth lift appropriate to their actual survey layers (stairs use 1 m). Do not copy that lift blindly to aprons: excess bias can draw buried surfaces through foundations.
 - Shorelines come from the terrain model, whose water is flattened: `pipeline/shore.ts` grades the banks across one smooth edge and generates the water mesh under them, carrying distance from shore in its paint's red. Lakes are traced from the orthophoto by `npm run water` and kept only if the terrain model is flat there, as shadows and forest are just as dark. Survey water only seeds the rest, so a new water source must keep real bodies mostly surveyed or open to the sea, or dry hollows flood.
+- `npm run dev` and `npm run studio` skip the data build when only building folders changed, so run `npm run data` after changing a model's ground patches or entrances. `npm run build` and `studio:check` always build current data.
+- The data build must stay deterministic: a refactor that should not change the town keeps every hash in `public/data/.build.json` identical.
 - The tile loader inflates only when the body still starts with the gzip magic bytes, because some servers (the Vite dev server) already decode `.gz`.
 - Overpass: use bbox queries; area-by-name queries hang.
 

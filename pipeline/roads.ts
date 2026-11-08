@@ -9,6 +9,7 @@ import type {Finish, RoadKind, RoadSurface} from '../src/engine/data.ts';
 import {triangulate} from '../src/engine/roads.ts';
 import type {Bucket} from '../src/engine/survey/classify.ts';
 import type {HeightAt} from '../src/engine/survey/drape.ts';
+import {triangleGrid} from '../src/engine/survey/triangle-grid.ts';
 import {TRIANGLE, type CityDefinition, type Point2, type Polygon, type SceneData} from '../src/engine/types.ts';
 
 const TOWN_MARGIN = 30; // metres
@@ -487,24 +488,7 @@ const difference = (subject: Point2[][], cut: Point2[][]) => cut.length ? clip(C
 const intersection = (subject: Point2[][], cut: Point2[][]) => clip(ClipperLib.ClipType.ctIntersection, subject, cut);
 
 function groundIndex(buckets: Bucket[]) {
-  const triangles: {p: number[]; layer: number}[] = [], grid = new Map<number, number[]>();
-  const key = (x: number, z: number) => x * 65536 + z;
-  for (const b of buckets) {
-    if (b.kind === 'water') continue;
-    for (let t = 0; t < b.building.length; t++) {
-      if (b.building[t]) continue;
-      const p = b.source.slice(t * 9, t * 9 + 9), xs = [p[0], p[3], p[6]], zs = [p[1], p[4], p[7]];
-      if (Math.max(...xs) - Math.min(...xs) > HUGE || Math.max(...zs) - Math.min(...zs) > HUGE) continue;
-      const index = triangles.push({p, layer: b.layer?.[t] ?? 0}) - 1;
-      for (let cx = Math.floor(Math.min(...xs) / CELL); cx <= Math.floor(Math.max(...xs) / CELL); cx++)
-        for (let cz = Math.floor(Math.min(...zs) / CELL); cz <= Math.floor(Math.max(...zs) / CELL); cz++) {
-          const k = key(cx, cz);
-          let list = grid.get(k);
-          if (!list) grid.set(k, list = []);
-          list.push(index);
-        }
-    }
-  }
+  const grid = triangleGrid(buckets, (b, t) => b.kind !== 'water' && !b.building[t], HUGE);
   // The stack at a point is its lowest surface and the layers within STACK of
   // it; anything higher is not ground (a shelter roof painted as ground).
   const cache = new Map<number, Map<number, {low: number; top: number; layer: number} | null>>();
@@ -513,13 +497,7 @@ function groundIndex(buckets: Bucket[]) {
     const cached = cache.get(x);
     if (cached?.has(z)) return cached.get(z)!;
     const found: {h: number; layer: number}[] = [];
-    for (const index of grid.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      const {p: [x1, z1, h1, x2, z2, h2, x3, z3, h3], layer} = triangles[index], d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
-      if (Math.abs(d) < 1e-9) continue;
-      const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;
-      if (Math.min(a, b, c) < -1e-6) continue;
-      found.push({h: a * h1 + b * h2 + c * h3, layer});
-    }
+    grid.over(x, z, (h, layer) => found.push({h, layer}));
     const low = Math.min(...found.map(f => f.h)), stack = found.filter(f => f.h <= low + STACK);
     const result = found.length ? {low, top: Math.max(...stack.map(f => f.h)), layer: Math.max(...stack.map(f => f.layer))} : null;
     if (entries >= 200000) { cache.clear(); entries = 0; }

@@ -3,13 +3,12 @@ import path from 'node:path';
 import * as THREE from 'three';
 import {sillamae} from '../../city/sillamae/index.ts';
 import type {WorldData} from '../../engine/data.ts';
+import {installInertCanvas} from '../assembly/inert-canvas.ts';
 import {hash, localDirectory, option, repo, writeNew} from './local.ts';
 
 const out = localDirectory(option('out', true)!);
 // Node checks geometry only. Canvas painting and downloaded textures need browser captures.
-const blankImage = (x: number, y: number, width: number, height: number) => ({data: new Uint8ClampedArray(width * height * 4)});
-const inertContext = () => new Proxy({}, {get: (target: Record<string | symbol, unknown>, key) => key === 'createImageData' ? undefined : key === 'getImageData' ? blankImage : key in target ? target[key] : () => {}});
-Object.assign(globalThis, {document: {createElement: () => ({width: 0, height: 0, getContext: inertContext})}});
+installInertCanvas();
 const world: WorldData = JSON.parse(fs.readFileSync(path.join(repo, 'public/data/world.json'), 'utf8'));
 function snapshot(root: THREE.Object3D) {
   const rows: unknown[] = [];

@@ -1,4 +1,5 @@
 import type {Bucket, Site} from './classify.ts';
+import {triangleGrid} from './triangle-grid.ts';
 import {TRIANGLE, type SceneData} from '../types.ts';
 
 // Absolute height at source x/z, or null where there is no terrain model.
@@ -8,19 +9,57 @@ const TOLERANCE = .15; // metres
 const MIN_EDGE = 1;
 const MAX_DEPTH = 6;
 const KEEP_MARGIN = 5;
-const CELL = 4, HUGE = 200;
+const HUGE = 200;
 const LAYER_GAP = .02, MAX_LAYER = 7, UNDERWATER = .02;
 
 type Corner = {x: number; z: number; old: number; h: number; r: number; g: number; b: number};
 
-class PointMap<T> {
-  #columns = new Map<number, Map<number, T>>();
-  get(x: number, z: number) { return this.#columns.get(x)?.get(z); }
-  has(x: number, z: number) { return this.#columns.get(x)?.has(z) ?? false; }
-  set(x: number, z: number, value: T) {
-    let column = this.#columns.get(x);
-    if (!column) this.#columns.set(x, column = new Map());
-    column.set(z, value);
+// Open addressing over flat arrays: these take tens of millions of lookups, where
+// nested Maps cost more than the terrain queries they cache.
+class PointMap {
+  #bits = 20;
+  #xs = new Float64Array(1 << this.#bits);
+  #zs = new Float64Array(1 << this.#bits);
+  #values = new Float64Array(1 << this.#bits);
+  #used = new Uint8Array(1 << this.#bits);
+  #size = 0;
+  #slot(x: number, z: number) {
+    const mask = this.#used.length - 1, xs = this.#xs, zs = this.#zs, used = this.#used;
+    // The high bits: scaled grid coordinates end in zeros, which multiplying keeps in the low ones.
+    let i = (Math.imul(x * 64 | 0, 0x9e3779b1) + Math.imul(z * 64 | 0, 0x85ebca6b)) >>> (32 - this.#bits);
+    while (used[i] && (xs[i] !== x || zs[i] !== z)) i = (i + 1) & mask;
+    return i;
+  }
+  get(x: number, z: number) {
+    const i = this.#slot(x, z);
+    return this.#used[i] ? this.#values[i] : undefined;
+  }
+  has(x: number, z: number) { return this.#used[this.#slot(x, z)] === 1; }
+  set(x: number, z: number, value: number) {
+    const i = this.#slot(x, z);
+    this.#values[i] = value;
+    if (this.#used[i]) return;
+    this.#used[i] = 1;
+    this.#xs[i] = x;
+    this.#zs[i] = z;
+    if (++this.#size * 2 > this.#used.length) this.#grow();
+  }
+  #grow() {
+    const [xs, zs, values, used] = [this.#xs, this.#zs, this.#values, this.#used];
+    this.#bits++;
+    const size = 1 << this.#bits;
+    this.#xs = new Float64Array(size);
+    this.#zs = new Float64Array(size);
+    this.#values = new Float64Array(size);
+    this.#used = new Uint8Array(size);
+    for (let old = 0; old < used.length; old++) {
+      if (!used[old]) continue;
+      const i = this.#slot(xs[old], zs[old]);
+      this.#xs[i] = xs[old];
+      this.#zs[i] = zs[old];
+      this.#values[i] = values[old];
+      this.#used[i] = 1;
+    }
   }
 }
 
@@ -34,20 +73,21 @@ class PointMap<T> {
 export function drapeGround(buckets: Bucket[], heightAt: HeightAt, sites: Site[]) {
   const surfaces = surfaceIndex(buckets, false), base = (x: number, z: number) => surfaces(x, z)[0] ?? null;
   const waters = surfaceIndex(buckets, true), sea = seaLevel(buckets);
-  const kept = new PointMap<true>();
+  const kept = new PointMap();
   for (const b of buckets) for (let i = 0; i < b.source.length; i += 3) {
     const x = b.source[i], z = b.source[i + 1];
-    if (b.kind === 'water' || sites.some(s => x >= s.minX - KEEP_MARGIN && x <= s.maxX + KEEP_MARGIN && z >= s.minZ - KEEP_MARGIN && z <= s.maxZ + KEEP_MARGIN)) kept.set(x, z, true);
+    if (b.kind === 'water' || sites.some(s => x >= s.minX - KEEP_MARGIN && x <= s.maxX + KEEP_MARGIN && z >= s.minZ - KEEP_MARGIN && z <= s.maxZ + KEEP_MARGIN)) kept.set(x, z, 1);
   }
-  const corrections = new PointMap<number | null>();
+  const corrections = new PointMap(); // NaN: no correction applies here
   const correction = (x: number, z: number) => {
-    let c = corrections.get(x, z);
-    if (c !== undefined) return c;
+    const known = corrections.get(x, z);
+    if (known !== undefined) return Number.isNaN(known) ? null : known;
     const fine = kept.has(x, z) ? null : heightAt(x, z), old = fine === null ? null : base(x, z);
-    corrections.set(x, z, c = fine === null || old === null ? null : fine - old);
+    const c = fine === null || old === null ? null : fine - old;
+    corrections.set(x, z, c ?? NaN);
     return c;
   };
-  const waterTops = new PointMap<number>();
+  const waterTops = new PointMap();
   const underwater = (x: number, z: number, old: number) => {
     let top = waterTops.get(x, z);
     if (top === undefined) waterTops.set(x, z, top = Math.max(sea, ...waters(x, z)));
@@ -129,32 +169,10 @@ function seaLevel(buckets: Bucket[]) {
 // Heights of the survey ground (or water) surfaces at x/z, lowest first, from
 // the original buckets, horizon triangles left out.
 function surfaceIndex(buckets: Bucket[], water: boolean) {
-  const triangles: number[][] = [], grid = new Map<number, number[]>();
-  const cellKey = (cx: number, cz: number) => cx * 65536 + cz;
-  for (const b of buckets) for (let t = 0; t < b.building.length; t++) {
-    if (b.building[t] || (b.kind === 'water') !== water) continue;
-    const corners = b.source.slice(t * 9, t * 9 + 9);
-    const xs = [corners[0], corners[3], corners[6]], zs = [corners[1], corners[4], corners[7]];
-    if (Math.max(...xs) - Math.min(...xs) > HUGE || Math.max(...zs) - Math.min(...zs) > HUGE) continue;
-    const index = triangles.push(corners) - 1;
-    for (let cx = Math.floor(Math.min(...xs) / CELL); cx <= Math.floor(Math.max(...xs) / CELL); cx++)
-      for (let cz = Math.floor(Math.min(...zs) / CELL); cz <= Math.floor(Math.max(...zs) / CELL); cz++) {
-        const k = cellKey(cx, cz);
-        let list = grid.get(k);
-        if (!list) grid.set(k, list = []);
-        list.push(index);
-      }
-  }
+  const grid = triangleGrid(buckets, (b, t) => !b.building[t] && (b.kind === 'water') === water, HUGE);
   return (x: number, z: number) => {
     const heights: number[] = [];
-    for (const index of grid.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      const [x1, z1, h1, x2, z2, h2, x3, z3, h3] = triangles[index];
-      const d = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
-      if (Math.abs(d) < 1e-9) continue;
-      const a = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / d, b = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / d, c = 1 - a - b;
-      if (Math.min(a, b, c) < -1e-6) continue;
-      heights.push(a * h1 + b * h2 + c * h3);
-    }
+    grid.over(x, z, height => heights.push(height));
     return heights.sort((a, b) => a - b);
   };
 }
