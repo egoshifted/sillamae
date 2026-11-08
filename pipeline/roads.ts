@@ -303,9 +303,9 @@ function offset(rings: Point2[][], by: number, join: number): Point2[][] {
 // points are outdrawn by a depth lift. Refined sites own the ground they lay,
 // so roads stop at their patches.
 // deckAt: height of a bridge over open water at source x/z, else null.
-export function layRoads(shapes: RoadShape[], buckets: Bucket[], city: CityDefinition, base: number, patches: Polygon[], heightAt: HeightAt, deckAt: HeightAt = () => null) {
+export function layRoads(shapes: RoadShape[], ground: GroundIndex, city: CityDefinition, base: number, patches: Polygon[], heightAt: HeightAt, deckAt: HeightAt = () => null) {
   if (!shapes.length) return [];
-  const [ox, oz] = city.frame.origin, ground = groundIndex(buckets);
+  const [ox, oz] = city.frame.origin;
   const sites = area(patches.map(p => p.map(([x, z]): Point2 => [x - ox, z - oz])));
   // Surfaces are cut into cells: the viewer triangulates outlines only, and the
   // middle of a wide carriageway would otherwise sink below survey paint
@@ -487,7 +487,9 @@ function area(rings: Point2[][]): Point2[][] {
 const difference = (subject: Point2[][], cut: Point2[][]) => cut.length ? clip(ClipperLib.ClipType.ctDifference, subject, cut) : subject;
 const intersection = (subject: Point2[][], cut: Point2[][]) => clip(ClipperLib.ClipType.ctIntersection, subject, cut);
 
-function groundIndex(buckets: Bucket[]) {
+export type GroundIndex = ReturnType<typeof groundIndex>;
+
+export function groundIndex(buckets: Bucket[]) {
   const grid = triangleGrid(buckets, (b, t) => b.kind !== 'water' && !b.building[t], HUGE);
   // The stack at a point is its lowest surface and the layers within STACK of
   // it; anything higher is not ground (a shelter roof painted as ground).

@@ -89,7 +89,7 @@ export async function beginBuild(root: string, inputs = buildInputs, force = fal
       release(); process.removeListener('exit', release);
     };
     process.once('exit', release);
-    return {directory, close, commit() {
+    return {directory, inputs: snapshot, close, commit() {
       if (fingerprint() !== signature) throw Error('Data inputs changed during the build; existing output was retained');
       const outputs = files(directory, fs.readdirSync(directory).sort());
       fs.writeFileSync(path.join(directory, '.build.json'), JSON.stringify({signature, node: process.versions.node, inputs: snapshot, outputs}));

@@ -2,23 +2,25 @@ import type {Bucket} from './classify.ts';
 
 const CELL = 4; // metres
 
+// Outside triangleGrid: a closure there would keep every bucket alive as long as the grid.
+function each(buckets: Bucket[], keep: (bucket: Bucket, triangle: number) => boolean, huge: number, visit: (bucket: Bucket, triangle: number, minX: number, maxX: number, minZ: number, maxZ: number) => void) {
+  for (const b of buckets) for (let t = 0; t < b.building.length; t++) {
+    if (!keep(b, t)) continue;
+    const s = b.source, i = t * 9;
+    const minX = Math.min(s[i], s[i + 3], s[i + 6]), maxX = Math.max(s[i], s[i + 3], s[i + 6]);
+    const minZ = Math.min(s[i + 1], s[i + 4], s[i + 7]), maxZ = Math.max(s[i + 1], s[i + 4], s[i + 7]);
+    if (maxX - minX <= huge && maxZ - minZ <= huge) visit(b, t, minX, maxX, minZ, maxZ);
+  }
+}
+
 // The town has about ten million ground triangles, so these are flat arrays:
 // a small array per triangle cost more to destructure and collect than the
 // lookups themselves. Each cell keeps its triangles in bucket order. Changing
 // CELL changes results: the bary test below tolerates points just outside a
 // triangle, and only a triangle sharing the point's cell gets that test.
 export function triangleGrid(buckets: Bucket[], keep: (bucket: Bucket, triangle: number) => boolean, huge: number) {
-  const each = (visit: (bucket: Bucket, triangle: number, minX: number, maxX: number, minZ: number, maxZ: number) => void) => {
-    for (const b of buckets) for (let t = 0; t < b.building.length; t++) {
-      if (!keep(b, t)) continue;
-      const s = b.source, i = t * 9;
-      const minX = Math.min(s[i], s[i + 3], s[i + 6]), maxX = Math.max(s[i], s[i + 3], s[i + 6]);
-      const minZ = Math.min(s[i + 1], s[i + 4], s[i + 7]), maxZ = Math.max(s[i + 1], s[i + 4], s[i + 7]);
-      if (maxX - minX <= huge && maxZ - minZ <= huge) visit(b, t, minX, maxX, minZ, maxZ);
-    }
-  };
   let count = 0, firstX = Infinity, lastX = -Infinity, firstZ = Infinity, lastZ = -Infinity;
-  each((b, t, minX, maxX, minZ, maxZ) => {
+  each(buckets, keep, huge, (b, t, minX, maxX, minZ, maxZ) => {
     count++;
     firstX = Math.min(firstX, Math.floor(minX / CELL));
     lastX = Math.max(lastX, Math.floor(maxX / CELL));
@@ -29,7 +31,7 @@ export function triangleGrid(buckets: Bucket[], keep: (bucket: Bucket, triangle:
   const cell = (cx: number, cz: number) => (cx - firstX) * rows + cz - firstZ;
   const corners = new Float64Array(count * 9), layers = new Uint8Array(count), starts = new Int32Array(columns * rows + 1);
   let filled = 0;
-  each((b, t, minX, maxX, minZ, maxZ) => {
+  each(buckets, keep, huge, (b, t, minX, maxX, minZ, maxZ) => {
     const i = t * 9, s = b.source, at = filled * 9;
     for (let j = 0; j < 9; j++) corners[at + j] = s[i + j];
     layers[filled++] = b.layer?.[t] ?? 0;
@@ -39,7 +41,7 @@ export function triangleGrid(buckets: Bucket[], keep: (bucket: Bucket, triangle:
   for (let i = 1; i < starts.length; i++) starts[i] += starts[i - 1];
   const members = new Int32Array(starts[starts.length - 1] ?? 0), next = starts.slice();
   filled = 0;
-  each((b, t, minX, maxX, minZ, maxZ) => {
+  each(buckets, keep, huge, (b, t, minX, maxX, minZ, maxZ) => {
     for (let cx = Math.floor(minX / CELL); cx <= Math.floor(maxX / CELL); cx++)
       for (let cz = Math.floor(minZ / CELL); cz <= Math.floor(maxZ / CELL); cz++) members[next[cell(cx, cz)]++] = filled;
     filled++;
