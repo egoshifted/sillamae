@@ -22,6 +22,8 @@ import {createStage} from './stage.ts';
 import {TerrainEdit, type TerrainMode} from './terrain.ts';
 import {thumbnail} from './thumbnails.ts';
 import {loadSquare, MARGIN, type Square} from './scene.ts';
+import {connectSession, paintMcp, type McpStatus} from '../mcp/link.ts';
+import {createSiteSession, type SiteHost} from '../mcp/site-session.ts';
 import {mergeArea, takeArea} from './store.ts';
 import {chunkGrid, type TerrainChunks} from '../../engine/terrain-edit.ts';
 import {BROADLEAF, CONIFER, pickTree, TreeLayer, treeGhost, treeItems, type TreeItem} from './trees.ts';
@@ -81,7 +83,7 @@ type Gesture =
 
 // The open area, the town's store as last read or saved, and the area's items as
 // they were then: a save merges the area's edits into the store (see store.ts).
-let area: Square | undefined, town: PlacementSite | undefined, openedArea: PlacementSite | undefined, revision = '';
+let area: Square | undefined, town: PlacementSite | undefined, openedArea: PlacementSite | undefined, revision = '', worldData: WorldData | undefined;
 let loaded: Loaded | undefined, site: PlacementSite | undefined, sun: THREE.DirectionalLight | undefined, trees: TreeLayer | undefined, measure: Measure | undefined;
 // The terrain edit around the area, and the one the loaded data was built with: the
 // preview shows only the difference.
@@ -537,15 +539,15 @@ function settle() {
   reshaped.clear();
   treesChanged = true;
 }
-function dab(at: THREE.Vector3, target: number | null) {
+// The brush is the tool's own settings unless a model passes one (see the model connection).
+function dab(at: THREE.Vector3, target: number | null, brush = {shape: options.shape, radius: options.radius, strength: options.shape === 'raise' || options.shape === 'lower' ? options.lift : options.blend}) {
   if (!terrain || !loaded) return;
-  const [ox, oz] = loaded.frame.origin, r = options.radius, near = (x: number, z: number) => Math.hypot(x - at.x, z - at.z) < r;
+  const [ox, oz] = loaded.frame.origin, r = brush.radius, near = (x: number, z: number) => Math.hypot(x - at.x, z - at.z) < r;
   const riders = [
     ...site!.placements.filter(p => p.attach === 'ground' && near(p.p[0] - ox, p.p[1] - oz)).map(p => ({get: () => p.p[2], set: (v: number) => { p.p[2] = v; }, x: p.p[0] - ox, z: p.p[1] - oz})),
     ...edits().add.filter(t => near(t.p[0] - ox, t.p[1] - oz)).map(t => ({get: () => t.z, set: (v: number) => { t.z = v; treesChanged = true; }, x: t.p[0] - ox, z: t.p[1] - oz})),
   ].map(item => ({...item, before: shift(item.x, item.z)}));
-  const strength = options.shape === 'raise' || options.shape === 'lower' ? options.lift : options.blend;
-  const box = terrain.dab(options.shape, at.x, at.z, r, strength, (x, z) => loaded!.heights.at(x, z), target);
+  const box = terrain.dab(brush.shape, at.x, at.z, r, brush.strength, (x, z) => loaded!.heights.at(x, z), target);
   for (const item of riders) item.set(round(item.get() + shift(item.x, item.z) - item.before));
   reshape(box);
   sync(true);
@@ -1801,7 +1803,7 @@ function chooseSquare(data: WorldData, saved: PlacementSite) {
 }
 
 async function open(square: Square) {
-  const data = await world, [cx, cz] = square.centre, half = square.size / 2;
+  const data = worldData = await world, [cx, cz] = square.centre, half = square.size / 2;
   const response = await fetch('/__studio/site');
   if (!response.ok) throw Error('Could not read the saved site: ' + (await response.text()));
   ({revision, site: town} = await response.json() as {revision: string; site: PlacementSite});
@@ -1879,6 +1881,210 @@ element('choose').onclick = () => action(async () => {
   if (!response.ok) throw Error('Could not read the saved site: ' + (await response.text()));
   chooseSquare(await world, (await response.json()).site as PlacementSite);
 });
+
+// ---- Model connection -------------------------------------------------------------
+
+// A model works on the open area through the same edits as the tools, each one undo
+// step; see mcp/site-session.ts for the tools and TOOLS.md for connecting.
+const done = (ids?: string[]) => ({ok: true as const, ...(ids && {ids})});
+const exists = (key: string) => !!(placementOf(key) || pointsOf(key) || (key.startsWith('a:') && edits().add.some(t => 'a:' + t.id === key)));
+const unknown = (keys: string[]) => keys.filter(k => !exists(k));
+const localAt = (x: number, z: number) => {
+  const [ox, oz] = loaded!.frame.origin, h = loaded!.heights.at(x - ox, z - oz);
+  return h > -Infinity ? new THREE.Vector3(x - ox, h, z - oz) : null;
+};
+const buildingAtPoint = (x: number, z: number) => [...footprintOf].find(([, g]) => inRing(g, x, z))?.[0] ?? null;
+function grounded(x: number, z: number) {
+  const at = localAt(x, z);
+  if (!at) return {error: 'no ground is loaded there'};
+  const inside = buildingAtPoint(x, z);
+  return inside ? {error: `that is inside building ${inside}`} : at;
+}
+// The point on a building's walls nearest x/z, and the heading that faces out from it.
+function wallSpot(building: string, x: number, z: number) {
+  const g = footprintOf.get(building);
+  if (!g) return null;
+  const [cx, cz] = centroid(g);
+  let best: {x: number; z: number; heading: number; d: number} | null = null;
+  for (let i = 0; i < g.length; i++) {
+    const [ax, az] = g[i], [bx, bz] = g[(i + 1) % g.length], dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+    if (len < .01) continue;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (len * len))), px = ax + dx * t, pz = az + dz * t, d = Math.hypot(x - px, z - pz);
+    let nx = dz / len, nz = -dx / len;
+    if ((px - cx) * nx + (pz - cz) * nz < 0) { nx = -nx; nz = -nz; }
+    if (!best || d < best.d) best = {x: px, z: pz, heading: Math.atan2(nx, nz), d};
+  }
+  return best;
+}
+const siteHost: SiteHost = {
+  area: () => loaded && site && area ? {centre: area.centre, size: area.size, reach: MARGIN, dirty, undo: undo.length, redo: redo.length} : null,
+  items: () => ({objects: site!.placements, trees: {added: edits().add, removed: edits().remove}, roads: site!.roads ?? [], lines: site!.lines ?? [], areas: site!.surfaces ?? [], cuts: site!.roadCuts?.length ?? 0, hidden: site!.hidden ?? []}),
+  selection: () => [...selection],
+  library: () => library.filter(a => !a.retired).map(a => ({id: a.id, name: a.name, category: a.category, attach: a.attach, size: a.size, variants: a.variants.map(v => v.id)})),
+  buildings: () => {
+    const [ox, oz] = loaded!.frame.origin, refined = new Set(city.overrides.map(o => o.id)), hidden = new Set(site!.hidden ?? []);
+    return (worldData?.buildings ?? []).filter(b => b.g.some(([x, z]) => inSquare(x - ox, z - oz, MARGIN))).map(b => ({id: b.id, name: b.name, centre: b.c, footprint: b.g.map(([x, z]): Point2 => [round(x, 1), round(z, 1)]), height: round(b.h, 1), hidden: hidden.has(b.id), refined: refined.has(b.id)}));
+  },
+  streets: () => {
+    const [ox, oz] = loaded!.frame.origin;
+    return streetLines.filter(line => line.some(([x, z]) => inSquare(x - ox, z - oz, MARGIN)));
+  },
+  ground: points => points.map(([x, z]) => { const at = localAt(x, z); return {x, z, height: at ? round(at.y + loaded!.frame.base, 2) : null, indoors: buildingAtPoint(x, z)}; }),
+  camera: () => ({position: camera.position.toArray().map(v => round(v, 2)), target: controls.target.toArray().map(v => round(v, 2))}),
+  async screenshot(width) {
+    render();
+    const source = renderer.domElement, out = document.createElement('canvas');
+    out.width = width;
+    out.height = Math.round(width * source.height / source.width);
+    out.getContext('2d')!.drawImage(source, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', .85);
+  },
+  select(keys) {
+    const missing = unknown(keys);
+    if (missing.length) return {error: 'no such items in the area: ' + missing.join(', ')};
+    selection = new Set(keys);
+    sync();
+    return done(keys);
+  },
+  frame(keys) {
+    const picked = siteHost.select(keys);
+    if ('error' in picked) return picked;
+    frame();
+    render();
+    return picked;
+  },
+  place({asset: id, x, z, heading, variant, wall}) {
+    const asset = assetById.get(id)!, b: Brush = {kind: 'asset', asset, variant: variant ?? asset.variants[0].id};
+    let key = '';
+    if (wall) {
+      const spot = wallSpot(wall.building, x, z), at = spot && localAt(spot.x, spot.z);
+      if (!spot || !at) return {error: `no walls of building ${wall.building} here`};
+      if (!inSquare(at.x, at.z)) return {error: 'that wall is outside the open area'};
+      at.y += wall.height;
+      edit(() => { key = add(b, at, spot.heading, {heading: spot.heading, attach: 'wall', building: wall.building}); });
+    } else {
+      const at = grounded(x, z);
+      if ('error' in at) return at;
+      edit(() => { key = add(b, at, heading ?? 0); });
+    }
+    return done([key]);
+  },
+  addTree({x, z, conifer, height, radius}) {
+    const at = grounded(x, z);
+    if ('error' in at) return at;
+    let key = '';
+    edit(() => { key = add({kind: 'tree', type: conifer ? CONIFER : BROADLEAF, h: height, r: radius}, at, 0); });
+    return done([key]);
+  },
+  removeTree(x, z) {
+    const near = treeList().filter(i => Math.hypot(i.tree.p[0] - x, i.tree.p[1] - z) <= 2).sort((a, b) => Math.hypot(a.tree.p[0] - x, a.tree.p[1] - z) - Math.hypot(b.tree.p[0] - x, b.tree.p[1] - z))[0];
+    if (!near) return {error: 'no tree within 2 m'};
+    selection = new Set([near.key]);
+    edit(removeSelection);
+    return done([near.key]);
+  },
+  change(key, patch) {
+    if (!exists(key)) return {error: 'no such item in the area: ' + key};
+    const p = placementOf(key), road = roadOf(key), line = lineOf(key), surface = areaOf(key);
+    // Every check comes first, so a refused change leaves the item as it was.
+    if (patch.heading !== undefined && (!p || p.attach === 'wall')) return {error: 'only objects on the ground turn'};
+    const asset = p && assetById.get(p.asset);
+    if (patch.variant !== undefined && !asset?.variants.some(v => v.id === patch.variant)) return {error: 'not a variant of this object'};
+    if ((patch.type || patch.footways !== undefined || patch.tiles !== undefined) && !road) return {error: 'type, footways and tiles are for roads'};
+    if (patch.tiles !== undefined && (patch.type ?? road!.type) !== 'tiled-path') return {error: 'only tiled paths have tiles'};
+    if ((patch.lineKind || patch.height !== undefined) && !line) return {error: 'lineKind and height are for lines'};
+    if (patch.finish && !surface) return {error: 'finish is for areas'};
+    let moved = true;
+    edit(() => {
+      if (patch.x !== undefined && patch.z !== undefined) moved = moveTo(key, patch.x, patch.z);
+      if (!moved) return;
+      if (patch.heading !== undefined) p!.heading = round(patch.heading, 4);
+      if (patch.variant !== undefined) { if (patch.variant === asset!.variants[0].id) delete p!.variant; else p!.variant = patch.variant; }
+      if (patch.points) setPoints(key, patch.points);
+      if (road) {
+        if (patch.type) { road.type = patch.type; if (PATH_FINISH[patch.type]) delete road.footways; if (patch.type !== 'tiled-path') delete road.tiles; else road.tiles ??= 4; }
+        if (patch.footways !== undefined) { if (patch.footways && !PATH_FINISH[road.type]) road.footways = true; else delete road.footways; }
+        if (patch.tiles !== undefined) road.tiles = patch.tiles;
+      }
+      if (line) {
+        if (patch.lineKind) { line.kind = patch.lineKind; delete line.height; }
+        if (patch.height !== undefined) { if (patch.height === LINE_HEIGHT[line.kind]) delete line.height; else line.height = round(patch.height, 2); }
+      }
+      if (surface && patch.finish) surface.finish = patch.finish;
+      detailsChanged = treesChanged = true;
+    });
+    return moved ? done([key]) : {error: 'cannot move it there: off the ground, inside a building or outside the area'};
+  },
+  remove(keys) {
+    const missing = unknown(keys);
+    if (missing.length) return {error: 'no such items in the area: ' + missing.join(', ')};
+    selection = new Set(keys);
+    edit(removeSelection);
+    return done(keys);
+  },
+  draw(request) {
+    let key = '';
+    if (request.kind === 'area') {
+      const surface: SiteSurface = {id: newId('s'), finish: request.finish!, ring: request.points};
+      edit(() => { (site!.surfaces ??= []).push(surface); detailsChanged = true; key = 'area:' + surface.id; });
+    } else if (request.kind === 'line') {
+      const line: SiteLine = {id: newId('l'), kind: request.lineKind!, points: request.points, ...request.height !== undefined && request.height !== LINE_HEIGHT[request.lineKind!] && {height: round(request.height, 2)}};
+      edit(() => { (site!.lines ??= []).push(line); detailsChanged = true; key = 'line:' + line.id; });
+    } else {
+      const type = request.type!;
+      if (request.tiles !== undefined && type !== 'tiled-path') return {error: 'only tiled paths have tiles'};
+      const road: SiteRoad = {id: newId('r'), type, ...type === 'tiled-path' && {tiles: request.tiles ?? 4}, points: request.points, ...request.footways && !PATH_FINISH[type] && {footways: true}};
+      edit(() => { (site!.roads ??= []).push(road); detailsChanged = true; key = 'road:' + road.id; });
+    }
+    selection = new Set([key]);
+    sync();
+    return done([key]);
+  },
+  hide(ids, on) {
+    const refined = new Set(city.overrides.map(o => o.id)), bad = ids.filter(id => refined.has(id) || !pickOf.has(id));
+    if (!ids.length || bad.length) return {error: 'not survey buildings that can be hidden: ' + bad.join(', ')};
+    edit(() => { site!.hidden = on ? [...new Set([...site!.hidden ?? [], ...ids])] : (site!.hidden ?? []).filter(id => !ids.includes(id)); reshape(); });
+    return done(ids);
+  },
+  shape({mode, points, radius, strength, target}) {
+    const spots = points.map(([x, z]) => localAt(x, z));
+    if (spots.some(s => !s)) return {error: 'a point has no ground loaded'};
+    const level = mode !== 'flatten' ? null : target !== undefined ? target - loaded!.frame.base : spots[0]!.y;
+    edit(() => { for (const at of spots) dab(at!, level, {shape: mode, radius, strength}); });
+    settle();
+    sync();
+    return done();
+  },
+  setCamera(position, target) { camera.position.fromArray(position); controls.target.fromArray(target); controls.update(); render(); },
+  undo() { step(undo, redo); },
+  redo() { step(redo, undo); },
+  async save() {
+    await save();
+    return dirty ? {error: 'not everything was saved; draft previews are never saved'} : done();
+  },
+  open(centre, size, discard) {
+    if (dirty && !discard) return {error: 'the area has unsaved changes; save first, or pass discard: true'};
+    dirty = false;
+    window.setTimeout(() => { location.search = new URLSearchParams({x: String(centre[0]), z: String(centre[1]), size: String(size)}).toString(); }, 100);
+    return done();
+  },
+};
+const mcpButton = element<HTMLButtonElement>('mcp'), mcpPop = element<HTMLDivElement>('mcp-pop');
+mcpButton.textContent = 'MCP';
+const mcpNodes = {status: element<HTMLParagraphElement>('mcp-status'), channels: element<HTMLParagraphElement>('mcp-channels'), toggle: element<HTMLButtonElement>('mcp-toggle')};
+let mcpSharing = false;
+const closeMcp = () => { mcpPop.hidden = true; mcpButton.setAttribute('aria-expanded', 'false'); };
+mcpButton.onclick = () => {
+  if (!mcpPop.hidden) return closeMcp();
+  const rect = mcpButton.getBoundingClientRect();
+  mcpPop.hidden = false;
+  mcpPop.style.left = `${Math.min(rect.left, innerWidth - 240)}px`;
+  mcpPop.style.top = `${rect.bottom + 4}px`;
+  mcpButton.setAttribute('aria-expanded', 'true');
+};
+addEventListener('pointerdown', event => { if (!mcpPop.hidden && event.target instanceof Node && !mcpPop.contains(event.target) && !mcpButton.contains(event.target)) closeMcp(); }, true);
+const mcpLink = connectSession(() => createSiteSession(siteHost), (status: McpStatus) => { mcpSharing = status.sharing; paintMcp(status, mcpNodes); }, true, '/__studio/site-mcp/session');
+mcpNodes.toggle.onclick = () => { closeMcp(); if (mcpSharing) mcpLink.disconnect(); else mcpLink.connect(); };
 
 // For capture scripts and debugging, as window.studio in the building studio.
 Object.assign(window, {site: {

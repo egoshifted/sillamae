@@ -16,7 +16,7 @@ The plan, part editor, saved versions and model connection are covered in [Studi
 
 ## Edit the site
 
-All site work for the town is kept together in `data/source/site/`, so you can open any part of town and edit what is there. Choose a 100, 200 or 300 m square anywhere on the map; saved work is marked in blue. The square is only how much the editor loads at once, so open another one wherever you want to work next. Objects and trees are placed inside the square, while roads, paths, lines, areas and the terrain brush reach 15 m past its edge. Select an asset or tree in the palette. Each tool shows its options in the top bar and its shortcuts in the footer.
+All site work for the town is kept together in `data/source/site/`, so you can open any part of town and edit what is there. Choose a 100, 200 or 300 m square anywhere on the map; saved work is marked in blue. The square is only how much the editor loads at once, so open another one wherever you want to work next. Objects and trees are placed inside the square, while roads, paths, lines, areas and the terrain brush reach 15 m past its edge. Select an asset or tree in the palette. Each tool shows its options in the top bar and its shortcuts in the footer. An AI model can also work in the open area through the [site editor connection](TOOLS.md#site-editor-connection).
 
 | Task | Controls |
 | --- | --- |

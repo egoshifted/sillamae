@@ -91,6 +91,42 @@ claude mcp add --transport http sillamae-studio http://127.0.0.1:5174/__studio/m
 - One client and one tab connect at a time. A newer studio tab takes the session; a capture page does not. A second client is refused until the first has been idle for 30 s.
 - Channel settings stay after a client leaves. **Disconnect** then **Connect** resets them.
 
+## Site editor connection
+
+The site editor has its own MCP endpoint, so a model can work there while another works in the building studio. Like the building connection, it exists only on the dev server.
+
+```bash
+claude mcp add --transport http sillamae-site http://127.0.0.1:5174/__studio/site-mcp
+```
+
+1. Open the site editor on the area to work in. The **MCP** menu shows the status and enabled channels.
+2. Connect the client and call `look`. The `area`, `items`, `library`, `buildings` and `ground` channels can be read by default; only `select` can be written.
+3. Call `configure` to enable the actions the task needs, for example `{"write": {"place": true, "draw": true}}`, then call `tools/list` again.
+4. Work, check with `screenshot` (enable the `view` channel), and `save` when the owner agrees. Saving does not rebuild the atlas.
+
+| Tool | Needs | Use |
+| --- | --- | --- |
+| `configure` | | Enable `read` channels and `write` actions. |
+| `look` | | Read every enabled channel: `area`, `items`, `library`, `buildings`, `streets`, `camera`. |
+| `ground` | `ground` | Ground height and the building, if any, at x/z points. |
+| `screenshot` | `view` | A picture of the editor view. |
+| `select` | `select` | Select items, and frame the camera on them. |
+| `place` | `place` | Place a library asset on the ground, or on a building's wall. |
+| `add_tree`, `remove_tree` | `trees` | Add a tree, or remove a survey or added tree. |
+| `change`, `remove` | `edit` | Move, turn or restyle an item, or remove items. |
+| `draw` | `draw` | Draw a road or path, a fence, hedge, wall or kerb, or a surface area. |
+| `hide_buildings` | `hide` | Leave survey buildings out of the atlas, or bring them back. |
+| `shape_ground` | `terrain` | Raise, lower, flatten, smooth or reset the ground along points. |
+| `set_camera` | `camera` | Move the camera. |
+| `undo`, `redo` | `history` | Step through the tab's history. |
+| `save` | `save` | Merge the area's changes into the site store. |
+| `open_area` | `open` | Open another square; the tab reloads. |
+
+- Positions are source x/z in metres, as saved in the store; heights are absolute metres. Item ids are the editor's: `p:` objects, `a:` added trees, `road:`, `line:` and `area:` drawn items.
+- Every change is one undo step in the tab, exactly as if made by hand, and nothing reaches the store until `save`. The owner can undo a model's work, or reset the area.
+- Objects and trees go inside the open square; drawn items and the terrain brush reach 15 m past it. To work elsewhere, `open_area` there, after saving.
+- One client and one site editor tab connect at a time, as for the building studio. Opening another area keeps the client; its channel settings start again from the defaults.
+
 ## Toolbox
 
 - Add an item as a file in `toolbox/items/` and a line in `toolbox/items/index.ts`. Keep the origin on the surface, with +z facing away from it.

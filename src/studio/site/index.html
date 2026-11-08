@@ -7,6 +7,12 @@
   <span class="bar-name">Site editor</span>
   <span id="where">Choose a square</span>
   <span class="bar-spacer"></span>
+  <button type="button" id="mcp" class="bar-text" aria-haspopup="menu" aria-expanded="false" aria-label="Model connection"></button>
+  <div id="mcp-pop" class="menu-pop" data-no-i18n hidden>
+    <p id="mcp-status">Waiting for a model</p>
+    <p id="mcp-channels"></p>
+    <button type="button" id="mcp-toggle">Disconnect</button>
+  </div>
   <a class="bar-icon" href="../" title="Building studio" aria-label="Building studio"><i class="fa-solid fa-city" aria-hidden="true"></i></a>
   <a id="atlas" class="bar-icon" href="/" target="_blank" rel="noopener" title="Open atlas" aria-label="Open atlas"><i class="fa-solid fa-map" aria-hidden="true"></i></a>
   <a class="bar-icon" href="../ASSETS.md" title="Asset guide" aria-label="Asset guide"><i class="fa-solid fa-book" aria-hidden="true"></i></a>

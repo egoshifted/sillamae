@@ -10,6 +10,7 @@ test('a second model is refused until the first disconnects, and a missing tab r
   const tab = hub.attach({send: message => sent.push(message as {kind?: string; id?: number})});
   const first = await hub.http('POST', undefined, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {clientInfo: {name: 'cursor'}}});
   assert.equal(first.status, 200);
+  assert.equal((first.body as {result: {serverInfo: {name: string}}}).result.serverInfo.name, 'sillamae-studio', 'the server keeps its own name, not the client\'s');
   const id = first.headers['mcp-session-id'];
   assert.equal(sent.at(-1)?.kind, 'client');
   const second = await hub.http('POST', undefined, {jsonrpc: '2.0', id: 2, method: 'initialize', params: {}});

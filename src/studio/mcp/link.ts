@@ -10,8 +10,19 @@ export interface McpStatus {
   writes: string[];
 }
 
+// What a tab offers a model: its tools behind read channels and write actions.
+export interface McpSession {
+  profile(): {read: Record<string, boolean>; write: Record<string, boolean>};
+  call(method: string, params: unknown): Promise<unknown>;
+  kill(): void;
+}
+
 export function connectStudio(host: StudioHost, onStatus: (status: McpStatus) => void, share = true) {
-  let session = createSession(host);
+  return connectSession(() => createSession(host), onStatus, share);
+}
+
+export function connectSession(make: () => McpSession, onStatus: (status: McpStatus) => void, share = true, path = '/__studio/mcp/session') {
+  let session = make();
   let socket: WebSocket | null = null;
   let stopped = !share;
   let attempts = 0;
@@ -27,7 +38,7 @@ export function connectStudio(host: StudioHost, onStatus: (status: McpStatus) =>
   };
   const open = () => {
     if (stopped) return;
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/__studio/mcp/session');
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + path);
     socket = ws;
     ws.onopen = () => { attempts = 0; attached = false; ws.send(JSON.stringify({kind: 'hello'})); onStatus(snapshot()); };
     ws.onmessage = event => {
@@ -71,7 +82,7 @@ export function connectStudio(host: StudioHost, onStatus: (status: McpStatus) =>
       stopped = false;
       attempts = 0;
       attached = false;
-      session = createSession(host);
+      session = make();
       open();
     },
   };
