@@ -253,6 +253,322 @@
    ],
    "heading": -0.3844,
    "attach": "ground"
+  },
+  {
+   "id": "pmw8hpp8sty1",
+   "asset": "shrub-rounded-01",
+   "p": [
+    229.675,
+    615.295,
+    12.242
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hpq0dsy8",
+   "asset": "shrub-rounded-01",
+   "p": [
+    230.338,
+    619.088,
+    12.314
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hprah1bb",
+   "asset": "shrub-rounded-01",
+   "p": [
+    231.95,
+    616.969,
+    12.291
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hq5j251p",
+   "asset": "shrub-rounded-01",
+   "p": [
+    238.658,
+    622.894,
+    12.48
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "small"
+  },
+  {
+   "id": "pmw8hq7chep9",
+   "asset": "shrub-rounded-01",
+   "p": [
+    240.146,
+    623.509,
+    12.487
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hq99iug0",
+   "asset": "shrub-rounded-01",
+   "p": [
+    241.955,
+    624.403,
+    12.517
+   ],
+   "heading": 0,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8hqj59gtx",
+   "asset": "shrub-rounded-01",
+   "p": [
+    238.516,
+    621.724,
+    12.406
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hqlt5gb1",
+   "asset": "shrub-rounded-01",
+   "p": [
+    232.779,
+    618.979,
+    12.346
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hqyvuweo",
+   "asset": "shrub-rounded-01",
+   "p": [
+    244.826,
+    627.986,
+    12.619
+   ],
+   "heading": 0,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8hrtku2jc",
+   "asset": "shrub-rounded-01",
+   "p": [
+    252.322,
+    632.663,
+    12.69
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hrubdsyb",
+   "asset": "shrub-rounded-01",
+   "p": [
+    252.624,
+    634.66,
+    12.796
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hrwugwih",
+   "asset": "shrub-rounded-01",
+   "p": [
+    254.3,
+    634.213,
+    12.736
+   ],
+   "heading": 0,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8hs02nl3c",
+   "asset": "shrub-rounded-01",
+   "p": [
+    253.956,
+    635.974,
+    12.783
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "small"
+  },
+  {
+   "id": "pmw8hs2oi6ou",
+   "asset": "shrub-rounded-01",
+   "p": [
+    255.698,
+    635.766,
+    12.803
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8ht7vi1fg",
+   "asset": "shrub-rounded-01",
+   "p": [
+    280.135,
+    656.643,
+    13.307
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8htiwy283",
+   "asset": "shrub-rounded-01",
+   "p": [
+    271.295,
+    651.472,
+    12.877
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8hw7vaim5",
+   "asset": "lamp-post-concrete-01",
+   "p": [
+    302.177,
+    688.48,
+    14.211
+   ],
+   "heading": 1.0472,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8i5gre4a9",
+   "asset": "shrub-rounded-01",
+   "p": [
+    300.733,
+    717.015,
+    14.102
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8i5h26oo2",
+   "asset": "shrub-rounded-01",
+   "p": [
+    304.316,
+    714.809,
+    14.377
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8i5hbzyi3",
+   "asset": "shrub-rounded-01",
+   "p": [
+    302.112,
+    714.918,
+    14.223
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8i5l4stur",
+   "asset": "shrub-rounded-01",
+   "p": [
+    307.391,
+    708.034,
+    14.43
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8i675ej8z",
+   "asset": "shrub-rounded-01",
+   "p": [
+    309.834,
+    702.49,
+    14.473
+   ],
+   "heading": 0,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8i6oly7pj",
+   "asset": "bench-slatted-01",
+   "p": [
+    305.27,
+    712.487,
+    14.263
+   ],
+   "heading": 2.7736,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8i980802a",
+   "asset": "shrub-spreading-01",
+   "p": [
+    311.644,
+    694.461,
+    14.452
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8i99cp4g8",
+   "asset": "shrub-spreading-01",
+   "p": [
+    314.254,
+    693.383,
+    14.493
+   ],
+   "heading": 0,
+   "attach": "ground",
+   "size": "large"
+  },
+  {
+   "id": "pmw8i9cemmar",
+   "asset": "shrub-spreading-01",
+   "p": [
+    313.236,
+    691.919,
+    14.433
+   ],
+   "heading": 0,
+   "attach": "ground"
+  },
+  {
+   "id": "pmw8i9xs7uk5",
+   "asset": "bench-slatted-01",
+   "p": [
+    310.16,
+    700.42,
+    14.42
+   ],
+   "heading": 2.7736,
+   "attach": "ground"
   }
  ],
  "trees": {
@@ -380,6 +696,54 @@
    [
     299.3,
     587.29
+   ],
+   [
+    222.37,
+    619.48
+   ],
+   [
+    299.86,
+    671.14
+   ],
+   [
+    302.14,
+    670.58
+   ],
+   [
+    304.88,
+    670.67
+   ],
+   [
+    296.41,
+    674.7
+   ],
+   [
+    296.59,
+    704.18
+   ],
+   [
+    290.06,
+    712.38
+   ],
+   [
+    311.81,
+    696.18
+   ],
+   [
+    309.11,
+    701.6
+   ],
+   [
+    323.86,
+    667.74
+   ],
+   [
+    302.91,
+    719.35
+   ],
+   [
+    298.67,
+    719.31
    ]
   ],
   "add": [
@@ -762,6 +1126,95 @@
     "h": 17.3,
     "r": 3.1,
     "type": "Okaspuu"
+   },
+   {
+    "id": "tmw8hue54osg",
+    "p": [
+     302.468,
+     670.209
+    ],
+    "z": 14.215,
+    "h": 5.5,
+    "r": 2.4,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw8hulsadtx",
+    "p": [
+     309.378,
+     671.942
+    ],
+    "z": 14.253,
+    "h": 12,
+    "r": 3.5,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw8hv5s1x7i",
+    "p": [
+     304.987,
+     681.827
+    ],
+    "z": 14.324,
+    "h": 12.13,
+    "r": 2.93,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw8hzktraqa",
+    "p": [
+     294.234,
+     704.213
+    ],
+    "z": 14.054,
+    "h": 16.96,
+    "r": 6.06,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw8i4rejjum",
+    "p": [
+     301.058,
+     719.783
+    ],
+    "z": 14.023,
+    "h": 15.2,
+    "r": 3.4,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw8i5tpf91d",
+    "p": [
+     306.755,
+     705.062
+    ],
+    "z": 14.296,
+    "h": 5.09,
+    "r": 1.29,
+    "type": "Lehtpuu",
+    "young": true
+   },
+   {
+    "id": "tmw8i5vgucxo",
+    "p": [
+     308.668,
+     703.441
+    ],
+    "z": 14.38,
+    "h": 9.71,
+    "r": 2.92,
+    "type": "Lehtpuu"
+   },
+   {
+    "id": "tmw8i8q9q8sw",
+    "p": [
+     311.272,
+     697.012
+    ],
+    "z": 14.489,
+    "h": 9.71,
+    "r": 2.92,
+    "type": "Lehtpuu"
    }
   ]
  },
@@ -1125,6 +1578,235 @@
     2,
     null
    ]
+  },
+  {
+   "id": "rmw8hjub1g8m",
+   "type": "kerbed-path",
+   "points": [
+    [
+     235.474,
+     617.02
+    ],
+    [
+     290.174,
+     662.243
+    ]
+   ]
+  },
+  {
+   "id": "rmw8hkxv1uh4",
+   "type": "kerbed-path",
+   "points": [
+    [
+     299.435,
+     666.305
+    ],
+    [
+     290.174,
+     662.243
+    ]
+   ]
+  },
+  {
+   "id": "rmw8hlmjr365",
+   "type": "kerbed-path",
+   "points": [
+    [
+     295.259,
+     706.059
+    ],
+    [
+     304.691,
+     686.067
+    ],
+    [
+     312.036,
+     670.385
+    ]
+   ]
+  },
+  {
+   "id": "rmw8hlshzkq5",
+   "type": "kerbed-path",
+   "points": [
+    [
+     299.435,
+     666.305
+    ],
+    [
+     310.83,
+     670.972
+    ]
+   ]
+  },
+  {
+   "id": "rmw8hn81ye9f",
+   "type": "asphalt-path",
+   "points": [
+    [
+     275.463,
+     657.361
+    ],
+    [
+     277.554,
+     652.392
+    ]
+   ],
+   "width": 2.5
+  },
+  {
+   "id": "rmw8hnfe73oc",
+   "type": "asphalt-path",
+   "points": [
+    [
+     261.955,
+     646.29
+    ],
+    [
+     264.046,
+     641.321
+    ]
+   ],
+   "width": 2.5
+  },
+  {
+   "id": "rmw8hnqmqyns",
+   "type": "asphalt-path",
+   "points": [
+    [
+     248.544,
+     634.77
+    ],
+    [
+     250.635,
+     629.801
+    ]
+   ],
+   "width": 2.5
+  },
+  {
+   "id": "rmw8ho32ezgn",
+   "type": "asphalt-path",
+   "points": [
+    [
+     235.343,
+     623.173
+    ],
+    [
+     237.434,
+     618.204
+    ]
+   ],
+   "width": 2.5
+  },
+  {
+   "id": "rmw8hp3tcilo",
+   "type": "tiled-path",
+   "tiles": 1,
+   "points": [
+    [
+     220.668,
+     631.506
+    ],
+    [
+     228.782,
+     612.904
+    ]
+   ]
+  },
+  {
+   "id": "rmw8i26mu6fh",
+   "type": "kerbed-path",
+   "points": [
+    [
+     297.827,
+     719.382
+    ],
+    [
+     311.985,
+     689.367
+    ],
+    [
+     327.146,
+     656.336
+    ]
+   ],
+   "width": 2
+  },
+  {
+   "id": "rmw8i3542kma",
+   "type": "asphalt-path",
+   "points": [
+    [
+     309.534,
+     712.637
+    ],
+    [
+     302.689,
+     709.971
+    ]
+   ],
+   "width": 2
+  },
+  {
+   "id": "rmw8i3aiptyt",
+   "type": "asphalt-path",
+   "points": [
+    [
+     315.014,
+     700.717
+    ],
+    [
+     308.169,
+     698.051
+    ]
+   ],
+   "width": 2
+  },
+  {
+   "id": "rmw8i3lbevaa",
+   "type": "asphalt-path",
+   "points": [
+    [
+     320.385,
+     688.657
+    ],
+    [
+     313.54,
+     685.991
+    ]
+   ],
+   "width": 2
+  },
+  {
+   "id": "rmw8i3v91vm2",
+   "type": "asphalt-path",
+   "points": [
+    [
+     331.9,
+     665.139
+    ],
+    [
+     325.055,
+     662.473
+    ]
+   ],
+   "width": 2
+  },
+  {
+   "id": "rmw8i44lkja9",
+   "type": "asphalt-path",
+   "points": [
+    [
+     325.211,
+     677.044
+    ],
+    [
+     318.366,
+     674.378
+    ]
+   ],
+   "width": 2
   }
  ]
 }
