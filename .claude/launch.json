@@ -8,6 +8,12 @@
       "port": 5173
     },
     {
+      "name": "studio",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--host", "127.0.0.1", "--port", "5174", "--strictPort"],
+      "port": 5174
+    },
+    {
       "name": "preview",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "preview", "--host", "127.0.0.1", "--port", "4173", "--strictPort"],

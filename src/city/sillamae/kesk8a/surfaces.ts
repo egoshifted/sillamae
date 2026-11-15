@@ -24,13 +24,13 @@ const tiles: Partial<Record<Finish, number>> = {wall: 3, trim: 3, soffit: 3, fou
 const sheetTile = {across: 3.6, down: 2.4};
 
 // Stays near white because it multiplies the wall colour; only broad patches read at town scale.
-const plaster = () => texture(256, (x, y) => {
+export const plaster = () => texture(256, (x, y) => {
   const broad = noise(x, y, 64, 64, 256), fine = noise(x, y, 8, 8, 256);
   return 240 + broad * 10 + fine * 5;
 }, true);
 
 // Lapped rows every 1.2 m with joints staggered by half a sheet, as on the owner's close view of the roof.
-const sheets = () => {
+export const sheets = () => {
   const size = 512, rowHeight = size / 2, sheetWidth = size / 3;
   return texture(size, (x, y) => {
     const row = Math.floor(y / rowHeight), along = x + (row % 2 ? sheetWidth / 2 : 0), sheet = Math.floor(along / sheetWidth) % 3;
